@@ -469,7 +469,7 @@ This action is completed by sending a limit 0 GET request to the API with the `T
 The Ed-Fi API already has pagination built-in via the `limit` and `offset` parameters passed in GET-requests.
 
 Here is an example of what calls to the API look like using pagination (page size 500), charted across time by change versions.
-![EdFiPagination](./images/edfi_api_pagination.gif)
+![EdFiPagination](https://github.com/edanalytics/edfi_api_client/raw/main/images/edfi_api_pagination.gif)
 
 This client provides a second type of pagination that uses change versions to improve performance when pulling from the API, referred to here as _change version stepping_.
 
@@ -477,7 +477,7 @@ A change version window of a specified length is defined, and calls to the API p
 Ordinary pagination still occurs within each window until zero rows are returned, after which the change version window steps and the process is repeated.
 
 Here is an example of what calls to the API look like using change version stepping (step-window size 2000 and page size 500).
-![EdFiChangeVersionStepping](./images/edfi_api_changeversion.gif)
+![EdFiChangeVersionStepping](https://github.com/edanalytics/edfi_api_client/raw/main/images/edfi_api_changeversion.gif)
 
 
 Note that change versions are currently accessible only for **resources**, not for composites.
