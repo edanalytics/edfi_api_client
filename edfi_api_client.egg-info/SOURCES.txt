@@ -1,0 +1,14 @@
+LICENSE
+README.md
+setup.py
+edfi_api_client/__init__.py
+edfi_api_client/edfi_client.py
+edfi_api_client/edfi_endpoint.py
+edfi_api_client/edfi_params.py
+edfi_api_client/util.py
+edfi_api_client.egg-info/PKG-INFO
+edfi_api_client.egg-info/SOURCES.txt
+edfi_api_client.egg-info/dependency_links.txt
+edfi_api_client.egg-info/not-zip-safe
+edfi_api_client.egg-info/requires.txt
+edfi_api_client.egg-info/top_level.txt

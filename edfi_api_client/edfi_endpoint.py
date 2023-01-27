@@ -254,6 +254,10 @@ class EdFiEndpoint:
                     "404: Resource not found.",
                     response=response
                 )
+            elif response.status_code == 500:
+                raise RequestsWarning(
+                    "500: Internal server error."
+                )
             elif response.status_code == 504:
                 raise RequestsWarning(
                     "504: Gateway time-out for URL. The connection may need to be reset."
