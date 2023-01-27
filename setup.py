@@ -6,7 +6,7 @@ README = (HERE / "README.md").read_text()
 
 setuptools.setup(
       name='edfi_api_client',
-      version='0.1.0',
+      version='0.1.1',
       description='Ed-Fi API client and tools',
       license_files=['LICENSE'],
       url='https://github.com/edanalytics/edfi_api_client',
