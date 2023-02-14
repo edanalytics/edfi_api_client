@@ -8,6 +8,7 @@ from typing import Callable, Optional
 
 from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiComposite
+from edfi_api_client.edfi_swagger import EdFiSwagger
 
 
 class EdFiClient:
@@ -151,7 +152,7 @@ class EdFiClient:
             return None
 
 
-    def get_swagger(self, component: str = 'resources') -> dict:
+    def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
         """
         OpenAPI Specification describes the entire Ed-Fi API surface in a
         JSON payload.
@@ -163,7 +164,9 @@ class EdFiClient:
         swagger_url = util.url_join(
             self.base_url, 'metadata', self.version_url_string, component, 'swagger.json'
         )
-        return requests.get(swagger_url, verify=self.verify_ssl).json()
+
+        payload = requests.get(swagger_url, verify=self.verify_ssl).json()
+        return EdFiSwagger(component, payload)
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
