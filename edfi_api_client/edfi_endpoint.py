@@ -25,6 +25,11 @@ class EdFiEndpoint:
     url: str
     params: EdFiParams
 
+    # Swagger name and attributes loaded lazily from Swagger
+    swagger_type: str
+    _description: Optional[str]  = None
+    _has_deletes: Optional[bool] = None
+
 
     @abc.abstractmethod
     def build_url(self,
@@ -292,6 +297,8 @@ class EdFiResource(EdFiEndpoint):
         self.url = self.build_url(self.name, namespace=self.namespace, get_deletes=self.get_deletes)
         self.params = EdFiParams(params, **kwargs)
 
+        self.swagger_type = 'resources'
+
 
     def __repr__(self):
         """
@@ -433,6 +440,14 @@ class EdFiResource(EdFiEndpoint):
 
 
 
+class EdFiDescriptor(EdFiResource):
+    """
+
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.swagger_type = 'descriptors'
+
 
 class EdFiComposite(EdFiEndpoint):
     """
@@ -463,6 +478,8 @@ class EdFiComposite(EdFiEndpoint):
             filter_type=self.filter_type, filter_id=self.filter_id
         )
         self.params = EdFiParams(params, **kwargs)
+
+        self.swagger_type = 'composites'
 
 
     def __repr__(self):

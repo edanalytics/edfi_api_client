@@ -7,7 +7,7 @@ from requests.exceptions import HTTPError
 from typing import Callable, Optional
 
 from edfi_api_client import util
-from edfi_api_client.edfi_endpoint import EdFiResource, EdFiComposite
+from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.edfi_swagger import EdFiSwagger
 
 
@@ -333,12 +333,13 @@ class EdFiClient:
 
         params: Optional[dict] = None,
         **kwargs
-    ) -> EdFiResource:
+    ) -> EdFiDescriptor:
         """
         Even though descriptors and resources are accessed via the same endpoint,
         this may not be known to users, so a separate method is defined.
         """
-        return self.resource(
+        return EdFiDescriptor(
+            client=self,
             name=name, namespace=namespace, get_deletes=False,
             params=params, **kwargs
         )
