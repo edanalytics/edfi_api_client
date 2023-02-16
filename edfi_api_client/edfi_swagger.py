@@ -40,6 +40,13 @@ class EdFiSwagger:
         self.reference_skeys: dict = self.get_reference_skeys(exclude=['link',])
 
 
+    def __repr__(self):
+        """
+        Ed-Fi {self.type} OpenAPI Swagger Specification
+        """
+        return f"<Ed-Fi {self.type.title()} OpenAPI Swagger Specification>"
+
+
     def _get_namespaced_resources_and_deletes(self):
         """
         Internal function to parse values in `paths`.
