@@ -70,6 +70,13 @@ class EdFiClient:
         self.version_url_string = self._get_version_url_string()
         self.instance_locator = self.get_instance_locator()
 
+        # Swagger variables for populating resource metadata (retrieved lazily)
+        self.swaggers = {
+            'resources'  : None,
+            'descriptors': None,
+            'composites' : None,
+        }
+
         # If ID and secret are passed, build a session.
         self.session = None
 
@@ -166,7 +173,11 @@ class EdFiClient:
         )
 
         payload = requests.get(swagger_url, verify=self.verify_ssl).json()
-        return EdFiSwagger(component, payload)
+        swagger = EdFiSwagger(component, payload)
+
+        # Save the swagger in memory to save time on subsequent calls.
+        self.swaggers[component] = swagger
+        return swagger
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
