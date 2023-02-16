@@ -76,6 +76,8 @@ class EdFiClient:
             'descriptors': None,
             'composites' : None,
         }
+        self._resources   = None
+        self._descriptors = None
 
         # If ID and secret are passed, build a session.
         self.session = None
@@ -159,6 +161,7 @@ class EdFiClient:
             return None
 
 
+    ### Methods related to retrieving the Swagger or attributes retrieved therein
     def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
         """
         OpenAPI Specification describes the entire Ed-Fi API surface in a
@@ -178,6 +181,42 @@ class EdFiClient:
         # Save the swagger in memory to save time on subsequent calls.
         self.swaggers[component] = swagger
         return swagger
+
+    def _set_swagger(self, component: str):
+        """
+        Populate the respective swagger object in `self.swaggers` if not already populated.
+
+        :param component:
+        :return:
+        """
+        if self.swaggers.get(component) is None:
+            self.verbose_log(
+                f"[Get {component.title()} Swagger] Retrieving Swagger into memory..."
+            )
+            self.get_swagger(component)
+
+
+    @property
+    def resources(self):
+        """
+
+        :return:
+        """
+        if self._resources is None:
+            self._set_swagger('resources')
+            self._resources = self.swaggers['resources'].resources
+        return self._resources
+
+    @property
+    def descriptors(self):
+        """
+
+        :return:
+        """
+        if self._descriptors is None:
+            self._set_swagger('descriptors')
+            self._descriptors = self.swaggers['descriptors'].resources
+        return self._descriptors
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs

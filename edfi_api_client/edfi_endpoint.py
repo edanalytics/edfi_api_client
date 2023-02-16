@@ -173,12 +173,7 @@ class EdFiEndpoint:
         :return:
         """
         # Only GET the Swagger if not already populated in the client.
-        if self.client.swaggers.get(self.swagger_type) is None:
-            self.client.verbose_log(
-                f"`{self.swagger_type}` Swagger has not yet been retrieved. Getting now..."
-            )
-            self.client.get_swagger(self.swagger_type)
-
+        self.client._set_swagger(self.swagger_type)
         swagger = self.client.swaggers[self.swagger_type]
 
         # Populate the attributes found in the swagger.
