@@ -436,6 +436,18 @@ class EdFi2Client(EdFiClient):
             "Swagger specification not implemented in Ed-Fi 2."
         )
 
+    @property
+    def resources(self):
+        raise NotImplementedError(
+            "Resources collected from Swagger specification that is not implemented in Ed-Fi 2."
+        )
+
+    @property
+    def descriptors(self):
+        raise NotImplementedError(
+            "Descriptors collected from Swagger specification that is not implemented in Ed-Fi 2."
+        )
+
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
     def _get_version_url_string(self) -> str:
