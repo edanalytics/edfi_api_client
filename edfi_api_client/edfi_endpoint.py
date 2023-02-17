@@ -4,7 +4,7 @@ import requests
 import time
 
 from requests.exceptions import HTTPError, RequestsWarning
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, Tuple, Union
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
@@ -20,7 +20,7 @@ class EdFiEndpoint:
     """
     client: 'EdFiClient'
     name: str
-    namespace: str
+    namespace: Optional[str]
 
     url: str
     params: EdFiParams
@@ -31,20 +31,36 @@ class EdFiEndpoint:
     _has_deletes: Optional[bool] = None
 
 
-    @abc.abstractmethod
-    def build_url(self,
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        **kwargs
+    def __init__(self,
+        client: 'EdFiClient',
+        name: Union[str, Tuple[str, str]],
+        namespace: str = 'ed-fi'
     ):
+        self.client: 'EdFiClient' = client
+
+        # Name and namespace can be passed manually
+        if isinstance(name, str):
+            self.name: str = util.snake_to_camel(name)
+            self.namespace: str = namespace
+
+        # Or as a `(namespace, name)` tuple as output from Swagger
+        else:
+            try:
+                self.namespace, self.name = name
+            except ValueError:
+                logging.error(
+                    "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
+                )
+
+        # Namespaces are not implemented in EdFi 2.x.
+        if self.client.is_edfi2():
+            self.namespace = None
+
+
+    @abc.abstractmethod
+    def build_url(self):
         """
         This method builds the endpoint URL with namespacing and optional pathing.
-
-        :param name:
-        :param namespace:
-        :param kwargs:
         :return:
         """
         raise NotImplementedError
@@ -321,12 +337,10 @@ class EdFiResource(EdFiEndpoint):
         params: Optional[dict] = None,
         **kwargs
     ):
-        self.client: 'EdFiClient' = client
-        self.name: str = util.snake_to_camel(name)
-        self.namespace: str = namespace
+        super().__init__(client, name, namespace)
         self.get_deletes: bool = get_deletes
 
-        self.url = self.build_url(self.name, namespace=self.namespace, get_deletes=self.get_deletes)
+        self.url = self.build_url()
         self.params = EdFiParams(params, **kwargs)
 
         self.swagger_type = 'resources'
@@ -334,8 +348,7 @@ class EdFiResource(EdFiEndpoint):
 
     def __repr__(self):
         """
-        Resource (Deletes)                     [{namespace}/{name}]
-                           with {N} parameters
+        Resource (Deletes) (with {N} parameters) [{namespace}/{name}]
         """
         _deletes_string = " Deletes" if self.get_deletes else ""
         _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
@@ -344,13 +357,7 @@ class EdFiResource(EdFiEndpoint):
         return f"<Resource{_deletes_string}{_params_string} [{_full_name}]>"
 
 
-    def build_url(self,
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        get_deletes: bool = False
-    ) -> str:
+    def build_url(self) -> str:
         """
         Build the name/descriptor URL to GET from the API.
 
@@ -359,20 +366,14 @@ class EdFiResource(EdFiEndpoint):
         :param get_deletes:
         :return:
         """
-        # Namespaces are not implemented in EdFi 2.x.
-        if self.client.is_edfi2():
-            namespace = None
-
         # Deletes are an optional path addition.
-        deletes = None
-        if get_deletes:
-            deletes = 'deletes'
+        deletes = 'deletes' if self.get_deletes else None
 
         return util.url_join(
             self.client.base_url,
             self.client.version_url_string,
             self.client.instance_locator,
-            namespace, name, deletes
+            self.namespace, self.name, deletes
         )
 
 
@@ -474,6 +475,7 @@ class EdFiResource(EdFiEndpoint):
 
 class EdFiDescriptor(EdFiResource):
     """
+    Ed-Fi Descriptors are used identically to Resources, but they are listed in a separate Swagger.
 
     """
     def __init__(self, *args, **kwargs):
@@ -498,17 +500,12 @@ class EdFiComposite(EdFiEndpoint):
         params: Optional[dict] = None,
         **kwargs
     ):
-        self.client: 'EdFiClient' = client
-        self.name: str = util.snake_to_camel(name)
-        self.namespace: str = namespace
+        super().__init__(client, name, namespace)
         self.composite: str = composite
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
 
-        self.url = self.build_url(
-            self.name, namespace=self.namespace, composite=self.composite,
-            filter_type=self.filter_type, filter_id=self.filter_id
-        )
+        self.url = self.build_url()
         self.params = EdFiParams(params, **kwargs)
 
         self.swagger_type = 'composites'
@@ -527,40 +524,26 @@ class EdFiComposite(EdFiEndpoint):
         return f"<{_composite} Composite{_params_string} [{_full_name}]{_filter_string}>"
 
 
-    def build_url(self,
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        composite: str = 'enrollment',
-
-        filter_type: Optional[str] = None,
-        filter_id: Optional[str] = None,
-    ) -> str:
+    def build_url(self) -> str:
         """
         Build the composite URL to GET from the API.
 
-        :param name:
-        :param namespace:
-        :param composite:
-        :param filter_type:
-        :param filter_id:
         :return:
         """
-        # Namespaces are not implemented in EdFi 2.x.
-        if self.client.is_edfi2():
-            namespace = None
-
         # If a filter is applied, the URL changes to match the filter type.
-        if filter_type is None and filter_id is None:
+        if self.filter_type is None and self.filter_id is None:
             return util.url_join(
-                self.client.base_url, 'composites/v1', self.client.instance_locator, namespace, composite, name.title()
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite, self.name.title()
             )
 
-        elif filter_type is not None and filter_id is not None:
+        elif self.filter_type is not None and self.filter_id is not None:
             return util.url_join(
-                self.client.base_url, 'composites/v1', self.client.instance_locator, namespace, composite,
-                filter_type, filter_id, name
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite,
+                self.filter_type, self.filter_id, self.name
             )
 
         else:
