@@ -73,6 +73,50 @@ Client key and secret not provided. Connection with ODS will not be attempted.
 Connection to ODS successful!
 ```
 
+### Attributes
+
+Authentication with the ODS is not required:
+
+<details>
+<summary><code>resources</code></summary>
+
+-----
+
+### resources
+This method is unavailable in Ed-Fi2.
+
+Retrieve a list of namespaced-resources from the `resources` Swagger payload.
+
+```python
+>>> api.resources
+[('ed-fi', 'academicWeeks'), ('ed-fi', 'accounts'), ('ed-fi', 'accountCodes'), ...]
+```
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>descriptors</code></summary>
+
+-----
+
+### descriptors
+This method is unavailable in Ed-Fi2.
+
+Retrieve a list of namespaced-descriptors from the `descriptors` Swagger payload.
+
+```python
+>>> api.descriptors
+[('ed-fi', 'absenceEventCategoryDescriptors'), ('ed-fi', 'academicHonorCategoryDescriptors'), ...]
+```
+-----
+
+</details>
+
+
+
 ### Methods
 
 Authentication with the ODS is not required:
@@ -187,8 +231,7 @@ If `component` is unspecified, `resources` will be collected.
  ...}
 ```
 
-Note: the returned dictionary is large and unwieldy*.
-A future update will add an `EdFiSwagger` class to assist in navigation.
+Returns an `EdFiSwagger` class containing the complete JSON payload, as well as extracted metadata from the Swagger.
 
 -----
 
@@ -347,6 +390,46 @@ All methods that return `EdFiEndpoint` and child classes require a session with 
 >>> students_composite
 <Enrollment Composite [edFi/students]>
 ```
+
+### Attributes
+
+<details>
+<summary><code>description</code></summary>
+
+-----
+
+### description
+This attribute retrieves the Ed-Fi endpoint's description if present in its respective Swagger payload.
+
+```python
+>>> api.resource('bellSchedules').description
+'This entity represents the schedule of class period meeting times.'
+```
+
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>has_deletes</code></summary>
+
+-----
+
+### has_deletes
+This attribute returns whether a deletes path is present the Ed-Fi endpoint's respective Swagger payload.
+
+```python
+>>> api.resource('bellSchedules').has_deletes
+True
+```
+
+-----
+
+</details>
+
+
 
 ### Methods
 
