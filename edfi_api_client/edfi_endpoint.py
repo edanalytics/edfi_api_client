@@ -359,7 +359,8 @@ class EdFiResource(EdFiEndpoint):
         max_wait: int = 500,
 
         step_change_version: bool = False,
-        change_version_step_size: int = 50000
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True,
     ) -> Iterator[List[dict]]:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
@@ -371,14 +372,24 @@ class EdFiResource(EdFiEndpoint):
         :param max_wait:
         :param step_change_version:
         :param change_version_step_size:
+        :param reverse_paging:
         :return:
         """
         # Reset pagination parameters
         paged_params = self.params.copy()
-        paged_params.init_page_by_offset(page_size)
 
-        if step_change_version:
-            paged_params.init_page_by_change_version_step(change_version_step_size)
+        # Prepare pagination variables, depending on type of pagination being used
+        if step_change_version and reverse_paging:
+            paged_params.init_page_by_change_version_step()
+            total_count = self._get_total_count(paged_params)
+            paged_params.init_reverse_page_by_offset(total_count, page_size)
+
+        elif step_change_version:
+            paged_params.init_page_by_offset(page_size)
+            paged_params.init_page_by_change_version_step()
+
+        else:
+            paged_params.init_page_by_offset(page_size)
 
         # Begin pagination-loop
         self.client.verbose_log(f"[Paged Get Resource] Endpoint  : {self.url}")
@@ -394,26 +405,49 @@ class EdFiResource(EdFiEndpoint):
             else:
                 res = self._get_response(self.url, params=paged_params)
 
-            # If no rows are returned, end pagination.
-            if len(res.json()) == 0:
+            # Reverse offset pagination requires an entirely distinct workflow than traditional offset pagination.
+            # It is also only applicable when change-version stepping.
+            if step_change_version and reverse_paging:
 
-                if step_change_version:
+                if paged_params['offset'] < 0:
+                    self.client.verbose_log(
+                        f"[Paged Get Resource] @ Reverse-paginated into negatives. Stepping change version..."
+                    )
                     try:
-                        self.client.verbose_log(f"[Paged Get Resource] @ Retrieved zero rows. Stepping change version...")
-                        paged_params.page_by_change_version_step()
-                        # This raises a StopIteration if max change version is exceeded.
+                        paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
+                        total_count = self._get_total_count(paged_params)
+                        paged_params.init_reverse_page_by_offset(total_count, page_size)
                     except StopIteration:
                         self.client.verbose_log(f"[Paged Get Resource] @ Change version exceeded max. Ending pagination.")
                         break
                 else:
-                    self.client.verbose_log(f"[Paged Get Resource] @ Retrieved zero rows. Ending pagination.")
-                    break
+                    self.client.verbose_log(
+                        f"[Paged Get Resource] @ Retrieved {len(res.json())} rows. Reverse-paginating offset..."
+                    )
+                    yield res.json()
+                    paged_params.reverse_page_by_offset()
 
-            # Otherwise, paginate offset.
             else:
-                self.client.verbose_log(f"[Paged Get Resource] @ Retrieved {len(res.json())} rows. Paging offset...")
-                yield res.json()
-                paged_params.page_by_offset()
+                # If no rows are returned, end pagination.
+                if len(res.json()) == 0:
+
+                    if step_change_version:
+                        try:
+                            self.client.verbose_log(f"[Paged Get Resource] @ Retrieved zero rows. Stepping change version...")
+                            paged_params.page_by_change_version_step()
+                            # This raises a StopIteration if max change version is exceeded.
+                        except StopIteration:
+                            self.client.verbose_log(f"[Paged Get Resource] @ Change version exceeded max. Ending pagination.")
+                            break
+                    else:
+                        self.client.verbose_log(f"[Paged Get Resource] @ Retrieved zero rows. Ending pagination.")
+                        break
+
+                # Otherwise, paginate offset.
+                else:
+                    self.client.verbose_log(f"[Paged Get Resource] @ Retrieved {len(res.json())} rows. Paging offset...")
+                    yield res.json()
+                    paged_params.page_by_offset()
 
 
     def total_count(self):
@@ -425,12 +459,23 @@ class EdFiResource(EdFiEndpoint):
         :return:
         """
         params = self.params.copy()
-        params['totalCount'] = True
-        params['limit'] = 0
+        return self._get_total_count(params)
 
-        res = self._get_response(self.url, params=params)
+
+    def _get_total_count(self, params: EdFiParams):
+        """
+        `total_count()` is accessible by the user and during reverse offset-pagination.
+        This internal helper method prevents code needing to be defined twice.
+
+        :param params:
+        :return:
+        """
+        _params = params.copy()
+        _params['totalCount'] = True
+        _params['limit'] = 0
+
+        res = self._get_response(self.url, params=_params)
         return int(res.headers.get('Total-Count'))
-
 
 
 
@@ -553,9 +598,10 @@ class EdFiComposite(EdFiEndpoint):
         :param max_wait:
         :return:
         """
-        if 'step_change_version' in kwargs or 'change_version_step_size' in kwargs:
+        if 'step_change_version' in kwargs or 'change_version_step_size' in kwargs or 'reverse_paging' in kwargs:
             raise KeyError(
-                "Change versions are not implemented in composites! Remove `step_change_version` and `change_version_step_size` from arguments."
+                "Change versions are not implemented in composites!\n"
+                "Remove `step_change_version`, `change_version_step_size`, and/or `reverse_paging` from arguments."
             )
 
         # Reset pagination parameters

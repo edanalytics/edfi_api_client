@@ -1,4 +1,5 @@
 import logging
+import math
 
 from typing import List, Optional
 
@@ -160,3 +161,29 @@ class EdFiParams(dict):
 
             # Reset the offset counter for the next window of change versions.
             self['offset'] = 0
+
+
+    def init_reverse_page_by_offset(self, total_count: int, page_size: int = 100):
+        """
+
+        :param total_count:
+        :param page_size:
+        :return:
+        """
+        self.page_size = page_size
+
+        self['limit'] = self.page_size
+        self['offset'] = math.floor(total_count / self.page_size) * self.page_size
+
+
+    def reverse_page_by_offset(self):
+        """
+
+        :return:
+        """
+        if self.page_size is None:
+            raise ValueError(
+                "To reverse-paginate by offset, you must first prepare the class using `init_reverse_page_by_offset()`!"
+            )
+
+        self['offset'] -= self.page_size
