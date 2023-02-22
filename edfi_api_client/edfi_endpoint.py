@@ -375,26 +375,37 @@ class EdFiResource(EdFiEndpoint):
         :param reverse_paging:
         :return:
         """
+        self.client.verbose_log(f"[Paged Get Resource] Endpoint  : {self.url}")
+
         # Reset pagination parameters
         paged_params = self.params.copy()
 
-        # Prepare pagination variables, depending on type of pagination being used
+        ### Prepare pagination variables, depending on type of pagination being used
         if step_change_version and reverse_paging:
+            self.client.verbose_log(
+                f"[Paged Get Resource] Pagination Method: Change Version Stepping with Reverse-Offset Pagination"
+            )
             paged_params.init_page_by_change_version_step()
             total_count = self._get_total_count(paged_params)
             paged_params.init_reverse_page_by_offset(total_count, page_size)
 
         elif step_change_version:
+            self.client.verbose_log(
+                f"[Paged Get Resource] Pagination Method: Change Version Stepping with Offset Pagination"
+            )
             paged_params.init_page_by_offset(page_size)
             paged_params.init_page_by_change_version_step()
 
         else:
+            self.client.verbose_log(
+                f"[Paged Get Resource] Pagination Method: Offset Pagination"
+            )
             paged_params.init_page_by_offset(page_size)
 
         # Begin pagination-loop
-        self.client.verbose_log(f"[Paged Get Resource] Endpoint  : {self.url}")
-
         while True:
+
+            ### GET from the API and yield the resulting JSON payload
             self.client.verbose_log(f"[Paged Get Resource] Parameters: {paged_params}")
 
             if retry_on_failure:
@@ -405,14 +416,20 @@ class EdFiResource(EdFiEndpoint):
             else:
                 res = self._get_response(self.url, params=paged_params)
 
-            # Reverse offset pagination requires an entirely distinct workflow than traditional offset pagination.
-            # It is also only applicable when change-version stepping.
+            self.client.verbose_log(f"[Paged Get Resource] Retrieved {len(res.json())} rows.")
+            yield res.json()
+
+            ### Paginate, depending on the method specified in arguments
+            # Reverse offset pagination is only applicable during change-version stepping.
             if step_change_version and reverse_paging:
+                self.client.verbose_log("@ Reverse-paginating offset...")
+                paged_params.reverse_page_by_offset()
 
                 if paged_params['offset'] < 0:
                     self.client.verbose_log(
                         f"[Paged Get Resource] @ Reverse-paginated into negatives. Stepping change version..."
                     )
+
                     try:
                         paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
                         total_count = self._get_total_count(paged_params)
@@ -420,12 +437,6 @@ class EdFiResource(EdFiEndpoint):
                     except StopIteration:
                         self.client.verbose_log(f"[Paged Get Resource] @ Change version exceeded max. Ending pagination.")
                         break
-                else:
-                    self.client.verbose_log(
-                        f"[Paged Get Resource] @ Retrieved {len(res.json())} rows. Reverse-paginating offset..."
-                    )
-                    yield res.json()
-                    paged_params.reverse_page_by_offset()
 
             else:
                 # If no rows are returned, end pagination.
@@ -433,9 +444,8 @@ class EdFiResource(EdFiEndpoint):
 
                     if step_change_version:
                         try:
-                            self.client.verbose_log(f"[Paged Get Resource] @ Retrieved zero rows. Stepping change version...")
-                            paged_params.page_by_change_version_step()
-                            # This raises a StopIteration if max change version is exceeded.
+                            self.client.verbose_log(f"[Paged Get Resource] @ Stepping change version...")
+                            paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
                         except StopIteration:
                             self.client.verbose_log(f"[Paged Get Resource] @ Change version exceeded max. Ending pagination.")
                             break
@@ -445,8 +455,7 @@ class EdFiResource(EdFiEndpoint):
 
                 # Otherwise, paginate offset.
                 else:
-                    self.client.verbose_log(f"[Paged Get Resource] @ Retrieved {len(res.json())} rows. Paging offset...")
-                    yield res.json()
+                    self.client.verbose_log(f"@ Paginating offset...")
                     paged_params.page_by_offset()
 
 
