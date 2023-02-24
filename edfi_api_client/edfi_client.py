@@ -204,7 +204,7 @@ class EdFiClient:
         """
         if self._resources is None:
             self._set_swagger('resources')
-            self._resources = self.swaggers['resources'].resources
+            self._resources = self.swaggers['resources'].endpoints
         return self._resources
 
     @property
@@ -215,7 +215,7 @@ class EdFiClient:
         """
         if self._descriptors is None:
             self._set_swagger('descriptors')
-            self._descriptors = self.swaggers['descriptors'].resources
+            self._descriptors = self.swaggers['descriptors'].endpoints
         return self._descriptors
 
 

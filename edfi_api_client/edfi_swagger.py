@@ -11,7 +11,7 @@ class EdFiSwagger:
         """
         TODO: Can `component` be extracted from the swagger?
 
-        :param component: Type of swagger payload passed (i.e., 'resources' or 'descriptors'
+        :param component: Type of swagger payload passed (i.e., 'resources' or 'descriptors')
         :param swagger_payload:
         :return:
         """
@@ -28,10 +28,10 @@ class EdFiSwagger:
                 .get('tokenUrl')
         )
 
-        # Extract namespaces and resources, and whether there is a deletes endpoints from `paths`
-        _resource_deletes = self._get_namespaced_resources_and_deletes()
-        self.resources: list = list(_resource_deletes.keys())
-        self.deletes  : list = list(filter(_resource_deletes.get, _resource_deletes))  # Filter where values are True
+        # Extract namespaces and endpoints, and whether there is a deletes endpoint from `paths`
+        _endpoint_deletes = self._get_namespaced_endpoints_and_deletes()
+        self.endpoints: list = list(_endpoint_deletes.keys())
+        self.deletes  : list = list(filter(_endpoint_deletes.get, _endpoint_deletes))  # Filter where values are True
 
         # Extract resource descriptions from `tags`
         self.descriptions: dict = self.get_descriptions()
@@ -47,7 +47,7 @@ class EdFiSwagger:
         return f"<Ed-Fi {self.type.title()} OpenAPI Swagger Specification>"
 
 
-    def _get_namespaced_resources_and_deletes(self):
+    def _get_namespaced_endpoints_and_deletes(self):
         """
         Internal function to parse values in `paths`.
 
@@ -76,7 +76,7 @@ class EdFiSwagger:
 
     def get_descriptions(self):
         """
-        Descriptions for all EdFi resources and descriptors are found under `tags` as [name, description] JSON objects.
+        Descriptions for all EdFi endpoints are found under `tags` as [name, description] JSON objects.
         Their extraction is optional for YAML templates, but they look nice.
 
         :param swagger: Swagger JSON object
@@ -110,9 +110,3 @@ class EdFiSwagger:
             skey_mapping[reference] = columns
 
         return skey_mapping
-
-
-if __name__ == '__main__':
-    from edfi_api_client import EdFiClient
-    api = EdFiClient("https://dw-lex1.districts-2122.scedfi.edanalytics.org")
-    swaggy = api.get_swagger('resources')
