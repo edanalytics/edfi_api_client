@@ -570,17 +570,25 @@ If either are undefined, an error is raised.
 This value is not optimized. Try raising it to send fewer requests to the API.
 
 
-<details>
-<summary>Important Caveat: API De-synchronization when Change-Version Stepping</summary>
+**Important Caveat: API De-synchronization when Change-Version Stepping**
 
------
- 
 There is a known problem that can occur when pulling from the API using change-version stepping.
 If any rows within the change-version window are updated mid-pull, their change-version is updated and they escape the window.
 When this occurs, all other rows in the window shift to fill the place of the missing row, resulting in rows entering previously-pulled offset-windows and being missed in subsequent calls to the API.
 This leads to a gradual de-synchronization between the API and datalakes built from the API.
 
-For example, say there are 15 rows in the `students` resource with change versions between 0 and 20.
+
+
+We have added a new offset-pagination method to counteract this bug, known as "reverse paging."
+By default, when `step_change_version=True` in resource pulls, requests are made to the API starting at the greatest offset and iterating backwards until offset zero.
+If a row is updated and a shift occurs mid-pull, one or more rows in the change version may be ingested multiple times, but no rows will be lost altogether.
+
+<details>
+<summary>For example:</summary>
+
+-----
+
+Say there are 15 rows in the `students` resource with change versions between 0 and 20.
 We pull these rows using a page-size of 4.
 
 ![EdFiDesync1](https://github.com/edanalytics/edfi_api_client/raw/main/images/changeversion_desync1.png)
@@ -591,12 +599,10 @@ When this occurs, record number 13 will shift from page 4 into a page that has a
 Therefore, it will be missed from the final output.
 
 ![EdFiDesync2](https://github.com/edanalytics/edfi_api_client/raw/main/images/changeversion_desync2.png)
-
-We have added a new offset-pagination method to counteract this bug, known as "reverse paging."
-By default, when `step_change_version=True` in resource pulls, requests are made to the API starting at the greatest offset and iterating backwards until offset zero.
-If a row is updated and a shift occurs mid-pull, one or more rows in the change version may be ingested multiple times, but no rows will be lost altogether.
-
-In our example, page 4 will be ingested first. When record number 6 is updated and the rows shift, record 13 will move into page 3 and will be ingested a second time.
+ 
+Using reverse-paging, page 4 will be ingested first. When record number 6 is updated and the rows shift, record 13 will move into page 3 and will be ingested a second time.
 However, this row will not be lost.
+
+-----
 
 </details>
