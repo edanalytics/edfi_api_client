@@ -422,20 +422,21 @@ class EdFiResource(EdFiEndpoint):
             ### Paginate, depending on the method specified in arguments
             # Reverse offset pagination is only applicable during change-version stepping.
             if step_change_version and reverse_paging:
-                self.client.verbose_log("@ Reverse-paginating offset...")
-                paged_params.reverse_page_by_offset()
-
-                if paged_params['offset'] < 0:
+                self.client.verbose_log("[Paged Get Resource] @ Reverse-paginating offset...")
+                try:
+                    paged_params.reverse_page_by_offset()
+                except StopIteration:
                     self.client.verbose_log(
                         f"[Paged Get Resource] @ Reverse-paginated into negatives. Stepping change version..."
                     )
-
                     try:
                         paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
                         total_count = self._get_total_count(paged_params)
                         paged_params.init_reverse_page_by_offset(total_count, page_size)
                     except StopIteration:
-                        self.client.verbose_log(f"[Paged Get Resource] @ Change version exceeded max. Ending pagination.")
+                        self.client.verbose_log(
+                            f"[Paged Get Resource] @ Change version exceeded max. Ending pagination."
+                        )
                         break
 
             else:
