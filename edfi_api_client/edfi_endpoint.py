@@ -54,6 +54,12 @@ class EdFiEndpoint:
         params = self.params.copy()
         params['limit'] = 1
 
+        # Remove offset and change-version params to improve performance against the ODS.
+        params_to_remove = ('offset', 'minChangeVersion', 'maxChangeVersion')
+        for param in params_to_remove:
+            if param in params:
+                del params[param]
+
         res = self.client.session.get(self.url, params=params)
 
         # To ping a composite, a limit of at least one is required.
