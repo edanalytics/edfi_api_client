@@ -385,7 +385,7 @@ class EdFiResource(EdFiEndpoint):
             self.client.verbose_log(
                 f"[Paged Get Resource] Pagination Method: Change Version Stepping with Reverse-Offset Pagination"
             )
-            paged_params.init_page_by_change_version_step()
+            paged_params.init_page_by_change_version_step(change_version_step_size)
             total_count = self._get_total_count(paged_params)
             paged_params.init_reverse_page_by_offset(total_count, page_size)
 
@@ -394,7 +394,7 @@ class EdFiResource(EdFiEndpoint):
                 f"[Paged Get Resource] Pagination Method: Change Version Stepping with Offset Pagination"
             )
             paged_params.init_page_by_offset(page_size)
-            paged_params.init_page_by_change_version_step()
+            paged_params.init_page_by_change_version_step(change_version_step_size)
 
         else:
             self.client.verbose_log(
