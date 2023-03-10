@@ -1,4 +1,4 @@
-# Unreleased
+# edfi_api_client v0.1.2
 ## New features
 - New "reverse_paging" pagination method for `EdFiResource.get_pages()`
 
