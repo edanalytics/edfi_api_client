@@ -572,7 +572,7 @@ This value is not optimized. Try raising it to send fewer requests to the API.
 
 **Important Caveat: API De-synchronization when Change-Version Stepping**
 
-There is a known problem that can occur when pulling from the API using change-version stepping.
+There is a known problem that can occur when pulling from the API using change-version limits and without snapshotting..
 If any rows within the change-version window are updated mid-pull, their change-version is updated and they escape the window.
 When this occurs, all other rows in the window shift to fill the place of the missing row, resulting in rows entering previously-pulled offset-windows and being missed in subsequent calls to the API.
 This leads to a gradual de-synchronization between the API and datalakes built from the API.
