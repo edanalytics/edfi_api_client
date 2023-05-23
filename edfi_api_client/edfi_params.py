@@ -1,4 +1,5 @@
 import logging
+import math
 
 from typing import List, Optional
 
@@ -94,7 +95,7 @@ class EdFiParams(dict):
 
 
     ### Methods for preparing params for pagination and completing pagination
-    def init_page_by_offset(self, page_size: int = 100):
+    def init_page_by_offset(self, page_size: int):
         """
 
         :param page_size:
@@ -109,7 +110,7 @@ class EdFiParams(dict):
         self['offset'] = 0
 
 
-    def init_page_by_change_version_step(self, change_version_step_size: int = 50000):
+    def init_page_by_change_version_step(self, change_version_step_size: int):
         """
 
         :param change_version_step_size:
@@ -160,3 +161,32 @@ class EdFiParams(dict):
 
             # Reset the offset counter for the next window of change versions.
             self['offset'] = 0
+
+
+    def init_reverse_page_by_offset(self, total_count: int, page_size: int):
+        """
+
+        :param total_count:
+        :param page_size:
+        :return:
+        """
+        self.page_size = page_size
+
+        self['limit'] = self.page_size
+        self['offset'] = math.floor(total_count / self.page_size) * self.page_size
+
+
+    def reverse_page_by_offset(self):
+        """
+
+        :return:
+        """
+        if self.page_size is None:
+            raise ValueError(
+                "To reverse-paginate by offset, you must first prepare the class using `init_reverse_page_by_offset()`!"
+            )
+
+        self['offset'] -= self.page_size
+
+        if self['offset'] < 0:
+            raise StopIteration
