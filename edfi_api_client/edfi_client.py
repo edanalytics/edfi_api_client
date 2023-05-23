@@ -7,7 +7,8 @@ from requests.exceptions import HTTPError
 from typing import Callable, Optional
 
 from edfi_api_client import util
-from edfi_api_client.edfi_endpoint import EdFiResource, EdFiComposite
+from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
+from edfi_api_client.edfi_swagger import EdFiSwagger
 
 
 class EdFiClient:
@@ -68,6 +69,15 @@ class EdFiClient:
         # Build endpoint URL pieces
         self.version_url_string = self._get_version_url_string()
         self.instance_locator = self.get_instance_locator()
+
+        # Swagger variables for populating resource metadata (retrieved lazily)
+        self.swaggers = {
+            'resources'  : None,
+            'descriptors': None,
+            'composites' : None,
+        }
+        self._resources   = None
+        self._descriptors = None
 
         # If ID and secret are passed, build a session.
         self.session = None
@@ -151,7 +161,8 @@ class EdFiClient:
             return None
 
 
-    def get_swagger(self, component: str = 'resources') -> dict:
+    ### Methods related to retrieving the Swagger or attributes retrieved therein
+    def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
         """
         OpenAPI Specification describes the entire Ed-Fi API surface in a
         JSON payload.
@@ -163,7 +174,49 @@ class EdFiClient:
         swagger_url = util.url_join(
             self.base_url, 'metadata', self.version_url_string, component, 'swagger.json'
         )
-        return requests.get(swagger_url, verify=self.verify_ssl).json()
+
+        payload = requests.get(swagger_url, verify=self.verify_ssl).json()
+        swagger = EdFiSwagger(component, payload)
+
+        # Save the swagger in memory to save time on subsequent calls.
+        self.swaggers[component] = swagger
+        return swagger
+
+    def _set_swagger(self, component: str):
+        """
+        Populate the respective swagger object in `self.swaggers` if not already populated.
+
+        :param component:
+        :return:
+        """
+        if self.swaggers.get(component) is None:
+            self.verbose_log(
+                f"[Get {component.title()} Swagger] Retrieving Swagger into memory..."
+            )
+            self.get_swagger(component)
+
+
+    @property
+    def resources(self):
+        """
+
+        :return:
+        """
+        if self._resources is None:
+            self._set_swagger('resources')
+            self._resources = self.swaggers['resources'].endpoints
+        return self._resources
+
+    @property
+    def descriptors(self):
+        """
+
+        :return:
+        """
+        if self._descriptors is None:
+            self._set_swagger('descriptors')
+            self._descriptors = self.swaggers['descriptors'].endpoints
+        return self._descriptors
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
@@ -319,12 +372,13 @@ class EdFiClient:
 
         params: Optional[dict] = None,
         **kwargs
-    ) -> EdFiResource:
+    ) -> EdFiDescriptor:
         """
         Even though descriptors and resources are accessed via the same endpoint,
         this may not be known to users, so a separate method is defined.
         """
-        return self.resource(
+        return EdFiDescriptor(
+            client=self,
             name=name, namespace=namespace, get_deletes=False,
             params=params, **kwargs
         )
@@ -380,6 +434,18 @@ class EdFi2Client(EdFiClient):
     def get_swagger(self, component: str = 'resources') -> dict:
         raise NotImplementedError(
             "Swagger specification not implemented in Ed-Fi 2."
+        )
+
+    @property
+    def resources(self):
+        raise NotImplementedError(
+            "Resources collected from Swagger specification that is not implemented in Ed-Fi 2."
+        )
+
+    @property
+    def descriptors(self):
+        raise NotImplementedError(
+            "Descriptors collected from Swagger specification that is not implemented in Ed-Fi 2."
         )
 
 
