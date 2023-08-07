@@ -1,3 +1,7 @@
+# edfi_api_client v0.1.3
+## Fixes
+- Compatibility fix for Ed-Fi 6.0: casing changed for change version API responses
+
 # edfi_api_client v0.1.2
 ## New features
 - New "reverse_paging" pagination method for `EdFiResource.get_pages()`
