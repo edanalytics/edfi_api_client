@@ -290,7 +290,8 @@ class EdFiClient:
             )
             raise HTTPError(http_error_msg, response=res)
 
-        return res.json()['NewestChangeVersion']
+        lower_json = {key.lower(): value for key, value in res.json().items()}
+        return lower_json['newestchangeversion']
 
 
     @require_session
