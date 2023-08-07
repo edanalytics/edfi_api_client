@@ -290,6 +290,7 @@ class EdFiClient:
             )
             raise HTTPError(http_error_msg, response=res)
 
+        # Ed-Fi 6.0 changes the key from `NewestChangeVersion` to `newestChangeVersion`.
         lower_json = {key.lower(): value for key, value in res.json().items()}
         return lower_json['newestchangeversion']
 
