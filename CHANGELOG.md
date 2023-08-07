@@ -1,4 +1,4 @@
-# edfi_api_client v0.1.3
+# edfi_api_client v0.1.4
 ## Fixes
 - Compatibility fix for Ed-Fi 6.0: casing changed for change version API responses
 
