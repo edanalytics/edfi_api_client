@@ -303,7 +303,7 @@ class EdFiEndpoint:
                 )
             elif response.status_code == 401:
                 raise RequestsWarning(
-                    "401: Unauthorized for URL. The connection may need to be reset."
+                    "401: Unauthenticated for URL. The connection may need to be reset."
                 )
             elif response.status_code == 403:
                 # Only raise an HTTPError where the resource is impossible to access.
@@ -318,7 +318,7 @@ class EdFiEndpoint:
                     response=response
                 )
             elif response.status_code == 500:
-                raise HTTPError(
+                raise RequestsWarning(
                     "500: Internal server error."
                 )
             elif response.status_code == 504:
