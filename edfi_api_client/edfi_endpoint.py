@@ -212,6 +212,9 @@ class EdFiEndpoint:
         def wrapped(self, *args, **kwargs):
             # Refresh token if refresh_time has passed
             if self.client.session.refresh_time < int(time.time()):
+                self.client.verbose_log(
+                    "Session authentication is expired. Attempting reconnection..."
+                )
                 self.client.connect()
             return func(self, *args, **kwargs)
         return wrapped
@@ -258,9 +261,7 @@ class EdFiEndpoint:
         for n_tries in range(max_retries):
 
             try:
-                response = self.client.session.get(url, params=params)
-                self.custom_raise_for_status(response)
-                return response
+                return self._get_response(url, params=params)
 
             except RequestsWarning:
                 # If an API call fails, it may be due to rate-limiting.
@@ -268,16 +269,6 @@ class EdFiEndpoint:
                 time.sleep(
                     min((2 ** n_tries) * 2, max_wait)
                 )
-
-                # Tokens have expiry times; refresh the token if it expires mid-run.
-                authentication_delta = int(time.time()) - self.client.session.timestamp_unix
-
-                self.client.verbose_log(
-                    f"Maybe the session needs re-authentication? ({util.seconds_to_text(authentication_delta)} since last authentication)\n"
-                    "Attempting reconnection..."
-                )
-                self.client.connect()
-
                 logging.warning(f"Retry number: {n_tries}")
 
         # This block is reached only if max_retries has been reached.
