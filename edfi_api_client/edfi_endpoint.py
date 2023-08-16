@@ -261,7 +261,8 @@ class EdFiEndpoint:
         for n_tries in range(max_retries):
 
             try:
-                return self._get_response(url, params=params)
+                response = self._get_response(url, params=params)
+                return response
 
             except RequestsWarning:
                 # If an API call fails, it may be due to rate-limiting.
