@@ -297,8 +297,8 @@ class EdFiEndpoint:
                 f"API Error: {response.status_code} {response.reason}"
             )
             if response.status_code == 400:
-                raise RequestsWarning(
-                    "400: Bad request. Check your params. Is 'limit' set too high? Does the connection need to be reset?"
+                raise HTTPError(
+                    "400: Bad request. Check your params. Is 'limit' set too high?"
                 )
             elif response.status_code == 401:
                 raise RequestsWarning(
@@ -317,7 +317,7 @@ class EdFiEndpoint:
                     response=response
                 )
             elif response.status_code == 500:
-                raise RequestsWarning(
+                raise HTTPError(
                     "500: Internal server error."
                 )
             elif response.status_code == 504:
