@@ -3,8 +3,9 @@ import logging
 import requests
 import time
 
+from functools import wraps
 from requests.exceptions import HTTPError, RequestsWarning
-from typing import Iterator, List, Optional, Tuple, Union
+from typing import Callable, Iterator, List, Optional, Tuple, Union
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
@@ -200,6 +201,22 @@ class EdFiEndpoint:
 
 
     ### Internal GET response methods and error-handling
+    def reconnect_if_expired(func: Callable) -> Callable:
+        """
+        This decorator resets the connection with the API if expired.
+
+        :param func:
+        :return:
+        """
+        @wraps(func)
+        def wrapped(self, *args, **kwargs):
+            # Refresh token if refresh_time has passed
+            if self.client.session.refresh_time < int(time.time()):
+                self.client.connect()
+            return func(self, *args, **kwargs)
+        return wrapped
+
+    @reconnect_if_expired
     def _get_response(self,
         url: str,
         params: Optional[EdFiParams] = None
@@ -216,6 +233,7 @@ class EdFiEndpoint:
         return response
 
 
+    @reconnect_if_expired
     def _get_response_with_exponential_backoff(self,
         url: str,
         params: Optional[EdFiParams] = None,

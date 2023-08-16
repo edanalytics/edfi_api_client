@@ -299,8 +299,9 @@ class EdFiClient:
         self.session = requests.Session()
         self.session.headers.update(req_header)
 
-        # Add new attribute to track when connection was established.
+        # Add new attributes to track when connection was established and when to refresh the access token.
         self.session.timestamp_unix = int(time.time())
+        self.session.refresh_time = int(self.session.timestamp_unix + access_response.json().get('expires_in') - 120)
         self.session.verify = self.verify_ssl
 
         self.verbose_log("Connection to ODS successful!")
@@ -506,8 +507,9 @@ class EdFi2Client(EdFiClient):
         self.session.headers.update(req_header)
         self.session.headers.update(json_header)
 
-        # Add new attribute to track when connection was established.
+        # Add new attributes to track when connection was established and when to refresh the access token.
         self.session.timestamp_unix = int(time.time())
+        self.session.refresh_time = int(self.session.timestamp_unix + access_response.json().get('expires_in') - 120)
         self.session.verify = self.verify_ssl
 
         self.verbose_log("Connection to ODS successful!")
