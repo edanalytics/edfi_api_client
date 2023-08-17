@@ -256,13 +256,10 @@ class EdFiEndpoint:
         :return:
         """
         # Attempt the GET until success or `max_retries` reached.
-        response = None
-
         for n_tries in range(max_retries):
 
             try:
-                response = self._get_response(url, params=params)
-                return response
+                return self._get_response(url, params=params)
 
             except RequestsWarning:
                 # If an API call fails, it may be due to rate-limiting.
@@ -274,14 +271,14 @@ class EdFiEndpoint:
 
         # This block is reached only if max_retries has been reached.
         else:
-            logging.error("API GET failed: max retries exceeded for URL.")
-
             self.client.verbose_log(message=(
                 f"[Get with Retry Failed] Endpoint  : {url}\n"
                 f"[Get with Retry Failed] Parameters: {params}"
             ), verbose=True)
 
-            self.custom_raise_for_status(response)
+            raise RuntimeError(
+                "API GET failed: max retries exceeded for URL."
+            )
 
 
     @staticmethod
