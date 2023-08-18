@@ -3,8 +3,9 @@ import logging
 import requests
 import time
 
+from functools import wraps
 from requests.exceptions import HTTPError, RequestsWarning
-from typing import Iterator, List, Optional, Tuple, Union
+from typing import Callable, Iterator, List, Optional, Tuple, Union
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
@@ -200,6 +201,25 @@ class EdFiEndpoint:
 
 
     ### Internal GET response methods and error-handling
+    def reconnect_if_expired(func: Callable) -> Callable:
+        """
+        This decorator resets the connection with the API if expired.
+
+        :param func:
+        :return:
+        """
+        @wraps(func)
+        def wrapped(self, *args, **kwargs):
+            # Refresh token if refresh_time has passed
+            if self.client.session.refresh_time < int(time.time()):
+                self.client.verbose_log(
+                    "Session authentication is expired. Attempting reconnection..."
+                )
+                self.client.connect()
+            return func(self, *args, **kwargs)
+        return wrapped
+
+    @reconnect_if_expired
     def _get_response(self,
         url: str,
         params: Optional[EdFiParams] = None
@@ -216,6 +236,7 @@ class EdFiEndpoint:
         return response
 
 
+    @reconnect_if_expired
     def _get_response_with_exponential_backoff(self,
         url: str,
         params: Optional[EdFiParams] = None,
@@ -235,14 +256,10 @@ class EdFiEndpoint:
         :return:
         """
         # Attempt the GET until success or `max_retries` reached.
-        response = None
-
         for n_tries in range(max_retries):
 
             try:
-                response = self.client.session.get(url, params=params)
-                self.custom_raise_for_status(response)
-                return response
+                return self._get_response(url, params=params)
 
             except RequestsWarning:
                 # If an API call fails, it may be due to rate-limiting.
@@ -250,28 +267,18 @@ class EdFiEndpoint:
                 time.sleep(
                     min((2 ** n_tries) * 2, max_wait)
                 )
-
-                # Tokens have expiry times; refresh the token if it expires mid-run.
-                authentication_delta = int(time.time()) - self.client.session.timestamp_unix
-
-                self.client.verbose_log(
-                    f"Maybe the session needs re-authentication? ({util.seconds_to_text(authentication_delta)} since last authentication)\n"
-                    "Attempting reconnection..."
-                )
-                self.client.connect()
-
                 logging.warning(f"Retry number: {n_tries}")
 
         # This block is reached only if max_retries has been reached.
         else:
-            logging.error("API GET failed: max retries exceeded for URL.")
-
             self.client.verbose_log(message=(
                 f"[Get with Retry Failed] Endpoint  : {url}\n"
                 f"[Get with Retry Failed] Parameters: {params}"
             ), verbose=True)
 
-            self.custom_raise_for_status(response)
+            raise RuntimeError(
+                "API GET failed: max retries exceeded for URL."
+            )
 
 
     @staticmethod
@@ -288,12 +295,12 @@ class EdFiEndpoint:
                 f"API Error: {response.status_code} {response.reason}"
             )
             if response.status_code == 400:
-                raise RequestsWarning(
-                    "400: Bad request. Check your params. Is 'limit' set too high? Does the connection need to be reset?"
+                raise HTTPError(
+                    "400: Bad request. Check your params. Is 'limit' set too high?"
                 )
             elif response.status_code == 401:
                 raise RequestsWarning(
-                    "401: Unauthorized for URL. The connection may need to be reset."
+                    "401: Unauthenticated for URL. The connection may need to be reset."
                 )
             elif response.status_code == 403:
                 # Only raise an HTTPError where the resource is impossible to access.
