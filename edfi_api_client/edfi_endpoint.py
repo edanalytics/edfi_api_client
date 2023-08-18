@@ -3,8 +3,9 @@ import logging
 import requests
 import time
 
+from functools import wraps
 from requests.exceptions import HTTPError, RequestsWarning
-from typing import Iterator, List, Optional
+from typing import Callable, Iterator, List, Optional, Tuple, Union
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
@@ -20,26 +21,47 @@ class EdFiEndpoint:
     """
     client: 'EdFiClient'
     name: str
-    namespace: str
+    namespace: Optional[str]
 
     url: str
     params: EdFiParams
 
+    # Swagger name and attributes loaded lazily from Swagger
+    swagger_type: str
+    _description: Optional[str]  = None
+    _has_deletes: Optional[bool] = None
+
+
+    def __init__(self,
+        client: 'EdFiClient',
+        name: Union[str, Tuple[str, str]],
+        namespace: str = 'ed-fi'
+    ):
+        self.client: 'EdFiClient' = client
+
+        # Name and namespace can be passed manually
+        if isinstance(name, str):
+            self.name: str = util.snake_to_camel(name)
+            self.namespace: str = namespace
+
+        # Or as a `(namespace, name)` tuple as output from Swagger
+        else:
+            try:
+                self.namespace, self.name = name
+            except ValueError:
+                logging.error(
+                    "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
+                )
+
+        # Namespaces are not implemented in EdFi 2.x.
+        if self.client.is_edfi2():
+            self.namespace = None
+
 
     @abc.abstractmethod
-    def build_url(self,
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        **kwargs
-    ):
+    def build_url(self):
         """
         This method builds the endpoint URL with namespacing and optional pathing.
-
-        :param name:
-        :param namespace:
-        :param kwargs:
         :return:
         """
         raise NotImplementedError
@@ -146,7 +168,58 @@ class EdFiEndpoint:
         raise NotImplementedError
 
 
+    @property
+    def description(self):
+        if self._description is None:
+            self._description = self._get_attributes_from_swagger()['description']
+        return self._description
+
+    @property
+    def has_deletes(self):
+        if self._has_deletes is None:
+            self._has_deletes = self._get_attributes_from_swagger()['has_deletes']
+        return self._has_deletes
+
+
+    def _get_attributes_from_swagger(self):
+        """
+        Retrieve endpoint-metadata from the Swagger document.
+
+        Populate the respective swagger object in `self.client` if not already populated.
+
+        :return:
+        """
+        # Only GET the Swagger if not already populated in the client.
+        self.client._set_swagger(self.swagger_type)
+        swagger = self.client.swaggers[self.swagger_type]
+
+        # Populate the attributes found in the swagger.
+        return {
+            'description': swagger.descriptions.get(self.name),
+            'has_deletes': (self.namespace, self.name) in swagger.deletes,
+        }
+
+
     ### Internal GET response methods and error-handling
+    def reconnect_if_expired(func: Callable) -> Callable:
+        """
+        This decorator resets the connection with the API if expired.
+
+        :param func:
+        :return:
+        """
+        @wraps(func)
+        def wrapped(self, *args, **kwargs):
+            # Refresh token if refresh_time has passed
+            if self.client.session.refresh_time < int(time.time()):
+                self.client.verbose_log(
+                    "Session authentication is expired. Attempting reconnection..."
+                )
+                self.client.connect()
+            return func(self, *args, **kwargs)
+        return wrapped
+
+    @reconnect_if_expired
     def _get_response(self,
         url: str,
         params: Optional[EdFiParams] = None
@@ -163,6 +236,7 @@ class EdFiEndpoint:
         return response
 
 
+    @reconnect_if_expired
     def _get_response_with_exponential_backoff(self,
         url: str,
         params: Optional[EdFiParams] = None,
@@ -182,14 +256,10 @@ class EdFiEndpoint:
         :return:
         """
         # Attempt the GET until success or `max_retries` reached.
-        response = None
-
         for n_tries in range(max_retries):
 
             try:
-                response = self.client.session.get(url, params=params)
-                self.custom_raise_for_status(response)
-                return response
+                return self._get_response(url, params=params)
 
             except RequestsWarning:
                 # If an API call fails, it may be due to rate-limiting.
@@ -197,28 +267,18 @@ class EdFiEndpoint:
                 time.sleep(
                     min((2 ** n_tries) * 2, max_wait)
                 )
-
-                # Tokens have expiry times; refresh the token if it expires mid-run.
-                authentication_delta = int(time.time()) - self.client.session.timestamp_unix
-
-                self.client.verbose_log(
-                    f"Maybe the session needs re-authentication? ({util.seconds_to_text(authentication_delta)} since last authentication)\n"
-                    "Attempting reconnection..."
-                )
-                self.client.connect()
-
                 logging.warning(f"Retry number: {n_tries}")
 
         # This block is reached only if max_retries has been reached.
         else:
-            logging.error("API GET failed: max retries exceeded for URL.")
-
             self.client.verbose_log(message=(
                 f"[Get with Retry Failed] Endpoint  : {url}\n"
                 f"[Get with Retry Failed] Parameters: {params}"
             ), verbose=True)
 
-            self.custom_raise_for_status(response)
+            raise RuntimeError(
+                "API GET failed: max retries exceeded for URL."
+            )
 
 
     @staticmethod
@@ -235,12 +295,12 @@ class EdFiEndpoint:
                 f"API Error: {response.status_code} {response.reason}"
             )
             if response.status_code == 400:
-                raise RequestsWarning(
-                    "400: Bad request. Check your params. Is 'limit' set too high? Does the connection need to be reset?"
+                raise HTTPError(
+                    "400: Bad request. Check your params. Is 'limit' set too high?"
                 )
             elif response.status_code == 401:
                 raise RequestsWarning(
-                    "401: Unauthorized for URL. The connection may need to be reset."
+                    "401: Unauthenticated for URL. The connection may need to be reset."
                 )
             elif response.status_code == 403:
                 # Only raise an HTTPError where the resource is impossible to access.
@@ -284,19 +344,18 @@ class EdFiResource(EdFiEndpoint):
         params: Optional[dict] = None,
         **kwargs
     ):
-        self.client: 'EdFiClient' = client
-        self.name: str = util.snake_to_camel(name)
-        self.namespace: str = namespace
+        super().__init__(client, name, namespace)
         self.get_deletes: bool = get_deletes
 
-        self.url = self.build_url(self.name, namespace=self.namespace, get_deletes=self.get_deletes)
+        self.url = self.build_url()
         self.params = EdFiParams(params, **kwargs)
+
+        self.swagger_type = 'resources'
 
 
     def __repr__(self):
         """
-        Resource (Deletes)                     [{namespace}/{name}]
-                           with {N} parameters
+        Resource (Deletes) (with {N} parameters) [{namespace}/{name}]
         """
         _deletes_string = " Deletes" if self.get_deletes else ""
         _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
@@ -305,13 +364,7 @@ class EdFiResource(EdFiEndpoint):
         return f"<Resource{_deletes_string}{_params_string} [{_full_name}]>"
 
 
-    def build_url(self,
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        get_deletes: bool = False
-    ) -> str:
+    def build_url(self) -> str:
         """
         Build the name/descriptor URL to GET from the API.
 
@@ -320,20 +373,14 @@ class EdFiResource(EdFiEndpoint):
         :param get_deletes:
         :return:
         """
-        # Namespaces are not implemented in EdFi 2.x.
-        if self.client.is_edfi2():
-            namespace = None
-
         # Deletes are an optional path addition.
-        deletes = None
-        if get_deletes:
-            deletes = 'deletes'
+        deletes = 'deletes' if self.get_deletes else None
 
         return util.url_join(
             self.client.base_url,
             self.client.version_url_string,
             self.client.instance_locator,
-            namespace, name, deletes
+            self.namespace, self.name, deletes
         )
 
 
@@ -488,6 +535,15 @@ class EdFiResource(EdFiEndpoint):
         return int(res.headers.get('Total-Count'))
 
 
+class EdFiDescriptor(EdFiResource):
+    """
+    Ed-Fi Descriptors are used identically to Resources, but they are listed in a separate Swagger.
+
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.swagger_type = 'descriptors'
+
 
 class EdFiComposite(EdFiEndpoint):
     """
@@ -506,18 +562,15 @@ class EdFiComposite(EdFiEndpoint):
         params: Optional[dict] = None,
         **kwargs
     ):
-        self.client: 'EdFiClient' = client
-        self.name: str = util.snake_to_camel(name)
-        self.namespace: str = namespace
+        super().__init__(client, name, namespace)
         self.composite: str = composite
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
 
-        self.url = self.build_url(
-            self.name, namespace=self.namespace, composite=self.composite,
-            filter_type=self.filter_type, filter_id=self.filter_id
-        )
+        self.url = self.build_url()
         self.params = EdFiParams(params, **kwargs)
+
+        self.swagger_type = 'composites'
 
 
     def __repr__(self):
@@ -533,40 +586,26 @@ class EdFiComposite(EdFiEndpoint):
         return f"<{_composite} Composite{_params_string} [{_full_name}]{_filter_string}>"
 
 
-    def build_url(self,
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        composite: str = 'enrollment',
-
-        filter_type: Optional[str] = None,
-        filter_id: Optional[str] = None,
-    ) -> str:
+    def build_url(self) -> str:
         """
         Build the composite URL to GET from the API.
 
-        :param name:
-        :param namespace:
-        :param composite:
-        :param filter_type:
-        :param filter_id:
         :return:
         """
-        # Namespaces are not implemented in EdFi 2.x.
-        if self.client.is_edfi2():
-            namespace = None
-
         # If a filter is applied, the URL changes to match the filter type.
-        if filter_type is None and filter_id is None:
+        if self.filter_type is None and self.filter_id is None:
             return util.url_join(
-                self.client.base_url, 'composites/v1', self.client.instance_locator, namespace, composite, name.title()
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite, self.name.title()
             )
 
-        elif filter_type is not None and filter_id is not None:
+        elif self.filter_type is not None and self.filter_id is not None:
             return util.url_join(
-                self.client.base_url, 'composites/v1', self.client.instance_locator, namespace, composite,
-                filter_type, filter_id, name
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite,
+                self.filter_type, self.filter_id, self.name
             )
 
         else:

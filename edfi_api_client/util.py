@@ -30,27 +30,3 @@ def url_join(*args) -> str:
     return '/'.join(
         map(lambda x: str(x).rstrip('/'), filter(lambda x: x is not None, args))
     )
-
-
-def seconds_to_text(seconds: int) -> str:
-    """
-
-    :param seconds:
-    :return:
-    """
-    delta_str = str(datetime.timedelta(seconds=seconds))
-    hours, minutes, seconds = list(map(int, delta_str.split(':')))
-
-    time_strings = []
-
-    if hours:
-        desc = "hours" if hours > 1 else "hour"
-        time_strings.append( f"{hours} {desc}")
-    if minutes:
-        desc = "minutes" if minutes > 1 else "minute"
-        time_strings.append( f"{minutes} {desc}" )
-    if seconds:
-        desc = "seconds" if seconds > 1 else "second"
-        time_strings.append( f"{seconds} {desc}" )
-
-    return ", ".join(time_strings)
