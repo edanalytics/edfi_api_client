@@ -1,11 +1,10 @@
-import abc
 import logging
 import requests
 import time
 
 from functools import wraps
 from requests.exceptions import HTTPError, RequestsWarning
-from typing import Callable, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Iterator, List, Optional
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
@@ -17,25 +16,28 @@ if TYPE_CHECKING:
 
 class EdFiEndpoint:
     """
-
+    This is an abstract class for interacting with Ed-Fi resources and descriptors.
+    Composites override EdFiEndpoint with custom composite-logic.
     """
-    client: 'EdFiClient'
-    name: str
-    namespace: Optional[str]
+    type: str = 'Endpoint'
+    swagger_type: str = None
 
-    url: str
-    params: EdFiParams
-
-    # Swagger name and attributes loaded lazily from Swagger
-    swagger_type: str
-    _description: Optional[str]  = None
-    _has_deletes: Optional[bool] = None
-
+    def __new__(cls, *args, name: str, **kwargs):
+        if "descriptor" in name.lower():
+            return object.__new__(EdFiDescriptor)
+        else:
+            return object.__new__(EdFiResource)
 
     def __init__(self,
-        client: 'EdFiClient',
-        name: Union[str, Tuple[str, str]],
-        namespace: str = 'ed-fi'
+         client: 'EdFiClient',
+         name: str,
+
+         *,
+         namespace: str = 'ed-fi',
+         get_deletes: bool = False,
+
+         params: Optional[dict] = None,
+         **kwargs
     ):
         self.client: 'EdFiClient' = client
 
@@ -57,15 +59,44 @@ class EdFiEndpoint:
         if self.client.is_edfi2():
             self.namespace = None
 
+        # Build URL and dynamic params object
+        self.get_deletes: bool = get_deletes
+        self.url = self.build_url()
+        self.params = EdFiParams(params, **kwargs)
 
-    @abc.abstractmethod
-    def build_url(self):
+        # Swagger attributes are loaded lazily
+        self._description: Optional[str] = None
+        self._has_deletes: Optional[bool] = None
+
+    def __repr__(self):
         """
-        This method builds the endpoint URL with namespacing and optional pathing.
+        Endpoint (Deletes) (with {N} parameters) [{namespace}/{name}]
+        """
+        _deletes_string = " Deletes" if self.get_deletes else ""
+        _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
+        _full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
+
+        return f"<{self.type}{_deletes_string}{_params_string} [{_full_name}]>"
+
+
+    def build_url(self) -> str:
+        """
+        Build the name/descriptor URL to GET from the API.
+
+        :param name:
+        :param namespace:
+        :param get_deletes:
         :return:
         """
-        raise NotImplementedError
+        # Deletes are an optional path addition.
+        deletes = 'deletes' if self.get_deletes else None
 
+        return util.url_join(
+            self.client.base_url,
+            self.client.version_url_string,
+            self.client.instance_locator,
+            self.namespace, self.name, deletes
+        )
 
     def ping(self) -> requests.Response:
         """
@@ -76,7 +107,7 @@ class EdFiEndpoint:
         params = self.params.copy()
         params['limit'] = 1
 
-        res = self.client.session.get(self.url, params=params)
+        res = self._get_response(self.url, params=params)
 
         # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
@@ -85,20 +116,23 @@ class EdFiEndpoint:
 
         return res
 
-
     def get(self, limit: Optional[int] = None) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
         :return:
         """
+        self.client.verbose_log(
+            f"[Get {self.type}] Endpoint  : {self.url}\n"
+            f"[Get {self.type}] Parameters: {self.params}"
+        )
+
         params = self.params.copy()
 
         if limit is not None:
             params['limit'] = limit
 
         return self._get_response(self.url, params=params).json()
-
 
     def get_rows(self,
         *,
@@ -127,11 +161,8 @@ class EdFiEndpoint:
         )
 
         for paged_result in paged_result_iter:
-            for row in paged_result:
-                yield row
+            yield from paged_result
 
-
-    @abc.abstractmethod
     def get_pages(self,
         *,
         page_size: int = 100,
@@ -140,7 +171,9 @@ class EdFiEndpoint:
         max_retries: int = 5,
         max_wait: int = 500,
 
-        **kwargs
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True,
     ) -> Iterator[List[dict]]:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
@@ -150,14 +183,96 @@ class EdFiEndpoint:
         :param retry_on_failure:
         :param max_retries:
         :param max_wait:
-        :param kwargs:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
         :return:
         """
-        raise NotImplementedError
+        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
+        # Reset pagination parameters
+        paged_params = self.params.copy()
 
-    @abc.abstractmethod
-    def total_count(self) -> int:
+        ### Prepare pagination variables, depending on type of pagination being used
+        if step_change_version and reverse_paging:
+            self.client.verbose_log(
+                f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination"
+            )
+            paged_params.init_page_by_change_version_step(change_version_step_size)
+            total_count = self._get_total_count(paged_params)
+            paged_params.init_reverse_page_by_offset(total_count, page_size)
+
+        elif step_change_version:
+            self.client.verbose_log(
+                f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Offset Pagination"
+            )
+            paged_params.init_page_by_offset(page_size)
+            paged_params.init_page_by_change_version_step(change_version_step_size)
+
+        else:
+            self.client.verbose_log(
+                f"[Paged Get {self.type}] Pagination Method: Offset Pagination"
+            )
+            paged_params.init_page_by_offset(page_size)
+
+        # Begin pagination-loop
+        while True:
+
+            ### GET from the API and yield the resulting JSON payload
+            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
+
+            if retry_on_failure:
+                res = self._get_response_with_exponential_backoff(
+                    self.url, params=paged_params,
+                    max_retries=max_retries, max_wait=max_wait
+                )
+            else:
+                res = self._get_response(self.url, params=paged_params)
+
+            self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+            yield res.json()
+
+            ### Paginate, depending on the method specified in arguments
+            # Reverse offset pagination is only applicable during change-version stepping.
+            if step_change_version and reverse_paging:
+                self.client.verbose_log("[Paged Get {self.type}] @ Reverse-paginating offset...")
+                try:
+                    paged_params.reverse_page_by_offset()
+                except StopIteration:
+                    self.client.verbose_log(
+                        f"[Paged Get {self.type}] @ Reverse-paginated into negatives. Stepping change version..."
+                    )
+                    try:
+                        paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
+                        total_count = self._get_total_count(paged_params)
+                        paged_params.init_reverse_page_by_offset(total_count, page_size)
+                    except StopIteration:
+                        self.client.verbose_log(
+                            f"[Paged Get {self.type}] @ Change version exceeded max. Ending pagination."
+                        )
+                        break
+            else:
+                # If no rows are returned, end pagination.
+                if len(res.json()) == 0:
+
+                    if step_change_version:
+                        try:
+                            self.client.verbose_log(f"[Paged Get {self.type}] @ Stepping change version...")
+                            paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
+                        except StopIteration:
+                            self.client.verbose_log(
+                                f"[Paged Get {self.type}] @ Change version exceeded max. Ending pagination.")
+                            break
+                    else:
+                        self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
+                        break
+
+                # Otherwise, paginate offset.
+                else:
+                    self.client.verbose_log(f"@ Paginating offset...")
+                    paged_params.page_by_offset()
+
+    def total_count(self):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -165,9 +280,26 @@ class EdFiEndpoint:
 
         :return:
         """
-        raise NotImplementedError
+        params = self.params.copy()
+        return self._get_total_count(params)
+
+    def _get_total_count(self, params: EdFiParams):
+        """
+        `total_count()` is accessible by the user and during reverse offset-pagination.
+        This internal helper method prevents code needing to be defined twice.
+
+        :param params:
+        :return:
+        """
+        _params = params.copy()
+        _params['totalCount'] = True
+        _params['limit'] = 0
+
+        res = self._get_response(self.url, params=_params)
+        return int(res.headers.get('Total-Count'))
 
 
+    ### Swagger-adjacent properties and helper methods
     @property
     def description(self):
         if self._description is None:
@@ -280,7 +412,6 @@ class EdFiEndpoint:
                 "API GET failed: max retries exceeded for URL."
             )
 
-
     @staticmethod
     def custom_raise_for_status(response):
         """
@@ -327,228 +458,29 @@ class EdFiEndpoint:
                 response.raise_for_status()
 
 
-
-
 class EdFiResource(EdFiEndpoint):
     """
-
+    Ed-Fi Resources are the primary use-case of the API.
     """
-    def __init__(self,
-        client: 'EdFiClient',
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        get_deletes: bool = False,
-
-        params: Optional[dict] = None,
-        **kwargs
-    ):
-        super().__init__(client, name, namespace)
-        self.get_deletes: bool = get_deletes
-
-        self.url = self.build_url()
-        self.params = EdFiParams(params, **kwargs)
-
-        self.swagger_type = 'resources'
+    type: str = 'Resource'
+    swagger_type: str = 'resources'
 
 
-    def __repr__(self):
-        """
-        Resource (Deletes) (with {N} parameters) [{namespace}/{name}]
-        """
-        _deletes_string = " Deletes" if self.get_deletes else ""
-        _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        _full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
-
-        return f"<Resource{_deletes_string}{_params_string} [{_full_name}]>"
-
-
-    def build_url(self) -> str:
-        """
-        Build the name/descriptor URL to GET from the API.
-
-        :param name:
-        :param namespace:
-        :param get_deletes:
-        :return:
-        """
-        # Deletes are an optional path addition.
-        deletes = 'deletes' if self.get_deletes else None
-
-        return util.url_join(
-            self.client.base_url,
-            self.client.version_url_string,
-            self.client.instance_locator,
-            self.namespace, self.name, deletes
-        )
-
-
-    def get(self, limit: Optional[int] = None):
-        """
-        This method returns the rows from a single GET request using the exact params passed by the user.
-
-        :return:
-        """
-        self.client.verbose_log(
-            f"[Get Resource] Endpoint  : {self.url}\n"
-            f"[Get Resource] Parameters: {self.params}"
-        )
-        return super().get(limit)
-
-
-    def get_pages(self,
-        *,
-        page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
-        step_change_version: bool = False,
-        change_version_step_size: int = 50000,
-        reverse_paging: bool = True,
-    ) -> Iterator[List[dict]]:
-        """
-        This method completes a series of GET requests, paginating params as necessary based on endpoint.
-        Rows are returned as a generator.
-
-        :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
-        :param step_change_version:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        self.client.verbose_log(f"[Paged Get Resource] Endpoint  : {self.url}")
-
-        # Reset pagination parameters
-        paged_params = self.params.copy()
-
-        ### Prepare pagination variables, depending on type of pagination being used
-        if step_change_version and reverse_paging:
-            self.client.verbose_log(
-                f"[Paged Get Resource] Pagination Method: Change Version Stepping with Reverse-Offset Pagination"
-            )
-            paged_params.init_page_by_change_version_step(change_version_step_size)
-            total_count = self._get_total_count(paged_params)
-            paged_params.init_reverse_page_by_offset(total_count, page_size)
-
-        elif step_change_version:
-            self.client.verbose_log(
-                f"[Paged Get Resource] Pagination Method: Change Version Stepping with Offset Pagination"
-            )
-            paged_params.init_page_by_offset(page_size)
-            paged_params.init_page_by_change_version_step(change_version_step_size)
-
-        else:
-            self.client.verbose_log(
-                f"[Paged Get Resource] Pagination Method: Offset Pagination"
-            )
-            paged_params.init_page_by_offset(page_size)
-
-        # Begin pagination-loop
-        while True:
-
-            ### GET from the API and yield the resulting JSON payload
-            self.client.verbose_log(f"[Paged Get Resource] Parameters: {paged_params}")
-
-            if retry_on_failure:
-                res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
-                    max_retries=max_retries, max_wait=max_wait
-                )
-            else:
-                res = self._get_response(self.url, params=paged_params)
-
-            self.client.verbose_log(f"[Paged Get Resource] Retrieved {len(res.json())} rows.")
-            yield res.json()
-
-            ### Paginate, depending on the method specified in arguments
-            # Reverse offset pagination is only applicable during change-version stepping.
-            if step_change_version and reverse_paging:
-                self.client.verbose_log("[Paged Get Resource] @ Reverse-paginating offset...")
-                try:
-                    paged_params.reverse_page_by_offset()
-                except StopIteration:
-                    self.client.verbose_log(
-                        f"[Paged Get Resource] @ Reverse-paginated into negatives. Stepping change version..."
-                    )
-                    try:
-                        paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
-                        total_count = self._get_total_count(paged_params)
-                        paged_params.init_reverse_page_by_offset(total_count, page_size)
-                    except StopIteration:
-                        self.client.verbose_log(
-                            f"[Paged Get Resource] @ Change version exceeded max. Ending pagination."
-                        )
-                        break
-
-            else:
-                # If no rows are returned, end pagination.
-                if len(res.json()) == 0:
-
-                    if step_change_version:
-                        try:
-                            self.client.verbose_log(f"[Paged Get Resource] @ Stepping change version...")
-                            paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
-                        except StopIteration:
-                            self.client.verbose_log(f"[Paged Get Resource] @ Change version exceeded max. Ending pagination.")
-                            break
-                    else:
-                        self.client.verbose_log(f"[Paged Get Resource] @ Retrieved zero rows. Ending pagination.")
-                        break
-
-                # Otherwise, paginate offset.
-                else:
-                    self.client.verbose_log(f"@ Paginating offset...")
-                    paged_params.page_by_offset()
-
-
-    def total_count(self):
-        """
-        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
-        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
-        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
-
-        :return:
-        """
-        params = self.params.copy()
-        return self._get_total_count(params)
-
-
-    def _get_total_count(self, params: EdFiParams):
-        """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
-
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = True
-        _params['limit'] = 0
-
-        res = self._get_response(self.url, params=_params)
-        return int(res.headers.get('Total-Count'))
-
-
-class EdFiDescriptor(EdFiResource):
+class EdFiDescriptor(EdFiEndpoint):
     """
     Ed-Fi Descriptors are used identically to Resources, but they are listed in a separate Swagger.
-
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.swagger_type = 'descriptors'
+    type: str = 'Descriptor'
+    swagger_type: str = 'descriptors'
 
 
 class EdFiComposite(EdFiEndpoint):
     """
 
     """
+    type: str = 'Composite'
+    swagger_type: str = 'composites'
+
     def __init__(self,
         client: 'EdFiClient',
         name: str,
@@ -562,16 +494,12 @@ class EdFiComposite(EdFiEndpoint):
         params: Optional[dict] = None,
         **kwargs
     ):
-        super().__init__(client, name, namespace)
+        # Assign composite-specific arguments that are used in `self.build_url()`.
         self.composite: str = composite
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
 
-        self.url = self.build_url()
-        self.params = EdFiParams(params, **kwargs)
-
-        self.swagger_type = 'composites'
-
+        super().__init__(client=client, name=name, namespace=namespace, params=params)
 
     def __repr__(self):
         """
@@ -584,7 +512,6 @@ class EdFiComposite(EdFiEndpoint):
         _filter_string = f" (filtered on {self.filter_type})" if self.filter_type else ""
 
         return f"<{_composite} Composite{_params_string} [{_full_name}]{_filter_string}>"
-
 
     def build_url(self) -> str:
         """
@@ -613,20 +540,6 @@ class EdFiComposite(EdFiEndpoint):
                 "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
             )
 
-
-    def get(self, limit: Optional[int] = None):
-        """
-        This method returns the rows from a single GET request using the exact params passed by the user.
-
-        :return:
-        """
-        self.client.verbose_log(
-            f"[Get Composite] Endpoint  : {self.url}\n"
-            f"[Get Composite] Parameters: {self.params}"
-        )
-        return super().get(limit)
-
-
     def get_pages(self,
         *,
         page_size: int = 100,
@@ -653,35 +566,12 @@ class EdFiComposite(EdFiEndpoint):
                 "Remove `step_change_version`, `change_version_step_size`, and/or `reverse_paging` from arguments."
             )
 
-        # Reset pagination parameters
-        paged_params = self.params.copy()
-        paged_params.init_page_by_offset(page_size)
-
-        # Begin pagination-loop
-        self.client.verbose_log(f"[Paged Get Composite] Endpoint  : {self.url}")
-
-        while True:
-            self.client.verbose_log(f"[Paged Get Composite] Parameters: {paged_params}")
-
-            if retry_on_failure:
-                res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
-                    max_retries=max_retries, max_wait=max_wait
-                )
-            else:
-                res = self._get_response(self.url, params=paged_params)
-
-            # If no rows are returned, end pagination.
-            if len(res.json()) == 0:
-                self.client.verbose_log(f"[Paged Get Composite] @ Retrieved zero rows. Ending pagination.")
-                break
-
-            # Otherwise, paginate offset.
-            else:
-                self.client.verbose_log(f"[Paged Get Composite] @ Retrieved {len(res.json())} rows. Paging offset...")
-                yield res.json()
-                paged_params.page_by_offset()
-
+        super().get_pages(
+            page_size=page_size,
+            retry_on_failure=retry_on_failure,
+            max_retries=max_retries,
+            max_wait=max_wait
+        )
 
     def total_count(self):
         """
