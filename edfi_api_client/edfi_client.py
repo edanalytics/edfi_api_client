@@ -195,6 +195,13 @@ class EdFiClient:
             )
             self.get_swagger(component)
 
+    @property
+    def endpoints(self):
+        """
+
+        :return:
+        """
+        return self.resources + self.descriptors
 
     @property
     def resources(self):
