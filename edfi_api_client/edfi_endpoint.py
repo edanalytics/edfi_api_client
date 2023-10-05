@@ -235,7 +235,7 @@ class EdFiEndpoint:
             ### Paginate, depending on the method specified in arguments
             # Reverse offset pagination is only applicable during change-version stepping.
             if step_change_version and reverse_paging:
-                self.client.verbose_log("[Paged Get {self.type}] @ Reverse-paginating offset...")
+                self.client.verbose_log(f"[Paged Get {self.type}] @ Reverse-paginating offset...")
                 try:
                     paged_params.reverse_page_by_offset()
                 except StopIteration:
