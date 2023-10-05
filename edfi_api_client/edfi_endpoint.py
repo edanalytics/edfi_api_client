@@ -190,33 +190,20 @@ class EdFiEndpoint:
         """
         self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
-        # Reset pagination parameters
-        paged_params = self.params.copy()
-
-        ### Prepare pagination variables, depending on type of pagination being used
-        if step_change_version and reverse_paging:
-            self.client.verbose_log(
-                f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination"
+        if step_change_version:
+            paged_params_list = self.build_cv_pagination_params(
+                self.params,
+                page_size=page_size,
+                change_version_step_size=change_version_step_size,
+                reverse_paging=reverse_paging
             )
-            paged_params.init_page_by_change_version_step(change_version_step_size)
-            total_count = self._get_total_count(paged_params)
-            paged_params.init_reverse_page_by_offset(total_count, page_size)
-
-        elif step_change_version:
-            self.client.verbose_log(
-                f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Offset Pagination"
-            )
-            paged_params.init_page_by_offset(page_size)
-            paged_params.init_page_by_change_version_step(change_version_step_size)
-
         else:
-            self.client.verbose_log(
-                f"[Paged Get {self.type}] Pagination Method: Offset Pagination"
+            paged_params_list = self.build_pagination_params(
+                self.params, page_size=page_size
             )
-            paged_params.init_page_by_offset(page_size)
 
         # Begin pagination-loop
-        while True:
+        for paged_params in paged_params_list:
 
             ### GET from the API and yield the resulting JSON payload
             self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
@@ -232,45 +219,66 @@ class EdFiEndpoint:
             self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
-            ### Paginate, depending on the method specified in arguments
-            # Reverse offset pagination is only applicable during change-version stepping.
-            if step_change_version and reverse_paging:
-                self.client.verbose_log(f"[Paged Get {self.type}] @ Reverse-paginating offset...")
-                try:
-                    paged_params.reverse_page_by_offset()
-                except StopIteration:
-                    self.client.verbose_log(
-                        f"[Paged Get {self.type}] @ Reverse-paginated into negatives. Stepping change version..."
-                    )
-                    try:
-                        paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
-                        total_count = self._get_total_count(paged_params)
-                        paged_params.init_reverse_page_by_offset(total_count, page_size)
-                    except StopIteration:
-                        self.client.verbose_log(
-                            f"[Paged Get {self.type}] @ Change version exceeded max. Ending pagination."
-                        )
-                        break
-            else:
-                # If no rows are returned, end pagination.
-                if len(res.json()) == 0:
+    def build_pagination_params(self, params: EdFiParams, page_size: int) -> List[EdFiParams]:
+        """
+        Get the total row count from the API, then build param copies that increment offset by limit.
 
-                    if step_change_version:
-                        try:
-                            self.client.verbose_log(f"[Paged Get {self.type}] @ Stepping change version...")
-                            paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
-                        except StopIteration:
-                            self.client.verbose_log(
-                                f"[Paged Get {self.type}] @ Change version exceeded max. Ending pagination.")
-                            break
-                    else:
-                        self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
-                        break
+        :param params:
+        :param page_size:
+        :return:
+        """
+        pagination_params = []
 
-                # Otherwise, paginate offset.
-                else:
-                    self.client.verbose_log(f"@ Paginating offset...")
-                    paged_params.page_by_offset()
+        total_count = self._get_total_count(params)
+
+        for offset in range(0, total_count, page_size):
+            offset_params = params.copy()
+            offset_params["limit"] = page_size
+            offset_params["offset"] = offset
+
+            pagination_params.append(offset_params)
+
+        return pagination_params
+
+    def build_cv_pagination_params(self,
+        params: EdFiParams,
+        page_size: int,
+        change_version_step_size: int,
+        reverse_paging: bool = False
+    ) -> List[EdFiParams]:
+        """
+        Get the total row count from the API per CV window.
+        Build param copies that increment offset by limit for each window.
+
+        :param params:
+        :param page_size:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        if params.min_change_version is None or params.max_change_version is None:
+            raise ValueError(
+                "! Cannot paginate change version steps without specifying min and max change versions!"
+            )
+
+        pagination_params = []
+
+        change_version_step_windows = range(params.min_change_version, params.max_change_version, change_version_step_size)
+        for idx, cv_window_start in enumerate(change_version_step_windows):
+            cv_window_end = min(params.max_change_version, cv_window_start + change_version_step_size)
+            cv_params = params.copy()
+            cv_params['minChangeVersion'] = cv_window_start + bool(idx)  # Add one to prevent overlaps
+            cv_params['maxChangeVersion'] = cv_window_end
+
+            cv_param_windows = self.build_pagination_params(cv_params, page_size)
+
+            # Reverse to pull the latest page first to circumvent row-slippage.
+            if reverse_paging:
+                cv_param_windows = cv_param_windows[::-1]
+
+            pagination_params.extend(cv_param_windows)
+
+        return pagination_params
 
     def total_count(self):
         """
@@ -476,7 +484,7 @@ class EdFiDescriptor(EdFiEndpoint):
 
 class EdFiComposite(EdFiEndpoint):
     """
-
+    TODO: Update Composite pagination to use old technique (since composites lack Total-Count functionality)
     """
     type: str = 'Composite'
     swagger_type: str = 'composites'
