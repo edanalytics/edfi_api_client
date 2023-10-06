@@ -49,10 +49,6 @@ class EdFiEndpoint:
                     "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
                 )
 
-        # Namespaces are not implemented in EdFi 2.x.
-        if self.client.is_edfi2():
-            self.namespace = None
-
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
         self.url = self.build_url()

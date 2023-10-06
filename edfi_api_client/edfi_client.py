@@ -19,26 +19,11 @@ class EdFiClient:
     :param base_url: The root URL of the API, without components like `data/v3`
     :param client_key: Authentication key
     :param client_secret: Authentication secret
-    :param api_version: 3 for Suite 3, 2 for older 2.x instances
+    :param api_version: 3 for Suite 3, 2 for older 2.x instances (functionality removed)
     :param api_mode: ['shared_instance', 'sandbox', 'district_specific', 'year_specific', 'instance_year_specific']
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
     """
-    def __new__(cls, *args, **kwargs):
-        """
-        The user should never need to reference an `EdFi2Client` directly.
-        This override of dunder-new makes the choice depending on passed `api_version`.
-
-        :param args:
-        :param kwargs:
-        """
-        api_version = kwargs.get('api_version', 3)
-
-        if int(api_version) == 2:
-            return object.__new__(EdFi2Client)
-        else:
-            return object.__new__(EdFiClient)
-
     def __init__(self,
         base_url     : str,
         client_key   : Optional[str] = None,
@@ -88,7 +73,7 @@ class EdFiClient:
 
     def __repr__(self):
         """
-        (Un)Authenticated Ed-Fi(2/3) Client [{api_mode}]
+        (Un)Authenticated Ed-Fi3 Client [{api_mode}]
         """
         _session_string = "Authenticated" if self.session else "Unauthenticated"
         _api_mode = util.snake_to_camel(self.api_mode)
@@ -102,7 +87,6 @@ class EdFiClient:
     def get_info(self) -> dict:
         """
         Ed-Fi3 returns a helpful payload from the base URL.
-        Note: This method should not be used for Ed-Fi2; no standardized payload is returned.
 
         {
             'version': '5.2',
@@ -392,121 +376,4 @@ class EdFiClient:
             name=name, namespace=namespace, composite=composite,
             filter_type=filter_type, filter_id=filter_id,
             params=params, **kwargs
-        )
-
-
-
-class EdFi2Client(EdFiClient):
-    """
-
-    """
-    ### Methods for accessing the Base URL payload and Swagger
-    def get_info(self) -> dict:
-        raise NotImplementedError(
-            "Information endpoint not implemented in Ed-Fi 2."
-        )
-
-    def get_api_mode(self) -> str:
-        raise NotImplementedError(
-            "API mode cannot be inferred in Ed-Fi 2. Please specify using `api_mode`."
-        )
-
-    def get_ods_version(self) -> str:
-        raise NotImplementedError(
-            "ODS version cannot be inferred in Ed-Fi 2."
-        )
-
-    def get_data_model_version(self) -> str:
-        raise NotImplementedError(
-            "Data model version cannot be inferred in Ed-Fi 2."
-        )
-
-    def get_swagger(self, component: str = 'resources') -> dict:
-        raise NotImplementedError(
-            "Swagger specification not implemented in Ed-Fi 2."
-        )
-
-    @property
-    def resources(self):
-        raise NotImplementedError(
-            "Resources collected from Swagger specification that is not implemented in Ed-Fi 2."
-        )
-
-    @property
-    def descriptors(self):
-        raise NotImplementedError(
-            "Descriptors collected from Swagger specification that is not implemented in Ed-Fi 2."
-        )
-
-
-    ### Helper methods for building elements of endpoint URLs for GETs and POSTs
-    def _get_version_url_string(self) -> str:
-        return "api/v2.0"
-
-
-    ### Methods for logging and versioning
-    def is_edfi2(self) -> bool:
-        return True
-
-
-    ### Methods for connecting to the ODS
-    def connect(self) -> requests.Session:
-        """
-        Create a session with authorization headers.
-
-        :return:
-        """
-        login_path = 'oauth/authorize'
-        token_path = 'oauth/token'
-
-        json_header = {'Content-Type': 'application/json'}
-        login_data = {
-            'Client_id': self.client_key,
-            'Response_type': 'code',
-        }
-
-        response_login = requests.post(
-            util.url_join(self.base_url, login_path),
-            data=login_data,
-            verify=self.verify_ssl
-        )
-        response_login.raise_for_status()
-
-        login_code = response_login.json().get('code')
-
-        token_data = {
-            'Client_id': self.client_key,
-            'Client_secret': self.client_secret,
-            'Code': login_code,
-            'Grant_type': 'authorization_code'
-        }
-        access_response = requests.post(
-            util.url_join(self.base_url, token_path),
-            json=token_data,
-            headers=json_header,
-            verify=self.verify_ssl
-        )
-        access_response.raise_for_status()
-
-        access_token = access_response.json().get('access_token')
-        req_header = {'Authorization': 'Bearer {}'.format(access_token)}
-
-        # Create a session and add headers to it.
-        self.session = requests.Session()
-        self.session.headers.update(req_header)
-        self.session.headers.update(json_header)
-
-        # Add new attributes to track when connection was established and when to refresh the access token.
-        self.session.timestamp_unix = int(time.time())
-        self.session.refresh_time = int(self.session.timestamp_unix + access_response.json().get('expires_in') - 120)
-        self.session.verify = self.verify_ssl
-
-        self.verbose_log("Connection to ODS successful!")
-        return self.session
-
-
-    ### Methods for accessing ODS endpoints
-    def get_newest_change_version(self) -> int:
-        raise NotImplementedError(
-            "Change versions not implemented in Ed-Fi 2!"
         )
