@@ -124,13 +124,13 @@ class EdFiEndpoint:
     def get_rows(self,
         *,
         page_size: int = 100,
-        change_version_step_size: int = 50000,
 
         retry_on_failure: bool = False,
         max_retries: int = 5,
         max_wait: int = 500,
 
         step_change_version: bool = False,
+        change_version_step_size: int = 50000,
         reverse_paging: bool = True
     ) -> Iterator[dict]:
         """
@@ -147,9 +147,9 @@ class EdFiEndpoint:
         :return:
         """
         paged_result_iter = self.get_pages(
-            page_size=page_size, change_version_step_size=change_version_step_size,
+            page_size=page_size,
             retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, reverse_paging=reverse_paging
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
         )
 
         for paged_result in paged_result_iter:
