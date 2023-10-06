@@ -424,7 +424,7 @@ class EdFiDescriptor(EdFiEndpoint):
 
 class EdFiComposite(EdFiEndpoint):
     """
-    TODO: Update Composite pagination to use old technique (since composites lack Total-Count functionality)
+
     """
     type: str = 'Composite'
     swagger_type: str = 'composites'
@@ -514,12 +514,41 @@ class EdFiComposite(EdFiEndpoint):
                 "Remove `step_change_version`, `change_version_step_size`, and/or `reverse_paging` from arguments."
             )
 
-        super().get_pages(
-            page_size=page_size,
-            retry_on_failure=retry_on_failure,
-            max_retries=max_retries,
-            max_wait=max_wait
-        )
+        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+
+        # Reset pagination parameters
+        paged_params = self.params.copy()
+        paged_params['limit'] = page_size
+        paged_params['offset'] = 0
+
+        # Begin pagination-loop
+        while True:
+
+            ### GET from the API and yield the resulting JSON payload
+            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
+
+            if retry_on_failure:
+                res = self._get_response_with_exponential_backoff(
+                    self.url, params=paged_params,
+                    max_retries=max_retries, max_wait=max_wait
+                )
+            else:
+                res = self._get_response(self.url, params=paged_params)
+
+            # If rows have been returned, there may be more to ingest.
+            if res.json():
+                self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+                yield res.json()
+
+                self.client.verbose_log(f"@ Paginating offset...")
+                paged_params['offset'] += page_size
+
+            # If no rows are returned, end pagination.
+            else:
+                self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
+                break
+
 
     def total_count(self):
         """

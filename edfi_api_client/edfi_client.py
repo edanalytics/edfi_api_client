@@ -39,7 +39,6 @@ class EdFiClient:
         else:
             return object.__new__(EdFiClient)
 
-
     def __init__(self,
         base_url     : str,
         client_key   : Optional[str] = None,
@@ -87,7 +86,6 @@ class EdFiClient:
         else:
             self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
 
-
     def __repr__(self):
         """
         (Un)Authenticated Ed-Fi(2/3) Client [{api_mode}]
@@ -128,16 +126,13 @@ class EdFiClient:
         """
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
-
     def get_api_mode(self) -> str:
         """
         Retrieve api_mode from the metadata exposed at the API root.
-
         :return:
         """
         api_mode = self.get_info().get('apiMode')
         return util.camel_to_snake(api_mode)
-
 
     def get_ods_version(self) -> Optional[str]:
         """
@@ -145,7 +140,6 @@ class EdFiClient:
         :return:
         """
         return self.get_info().get('version')
-
 
     def get_data_model_version(self) -> Optional[str]:
         """
@@ -408,7 +402,6 @@ class EdFiClient:
             name=name, namespace=namespace, get_deletes=False,
             params=params, **kwargs
         )
-
 
     @require_session
     def composite(self,
