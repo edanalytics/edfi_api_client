@@ -187,17 +187,22 @@ class EdFiEndpoint:
         """
         self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
+        # Build a list of pagination params to iterate during ingestion.
         if step_change_version:
-            paged_params_list = self.build_cv_pagination_params(
-                self.params,
-                page_size=page_size,
-                change_version_step_size=change_version_step_size,
-                reverse_paging=reverse_paging
-            )
+            paged_params_list = []
+
+            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
+                total_count = self._get_total_count(cv_window_params)
+                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
+
+                if reverse_paging:
+                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
+
+                paged_params_list.extend(cv_offset_params_list)
+
         else:
-            paged_params_list = self.build_pagination_params(
-                self.params, page_size=page_size
-            )
+            total_count = self._get_total_count(self.params)
+            paged_params_list = self.params.build_offset_window_params(page_size, total_count=total_count)
 
         # Begin pagination-loop
         for paged_params in paged_params_list:
@@ -216,67 +221,6 @@ class EdFiEndpoint:
             self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
-    def build_pagination_params(self, params: EdFiParams, page_size: int) -> List[EdFiParams]:
-        """
-        Get the total row count from the API, then build param copies that increment offset by limit.
-
-        :param params:
-        :param page_size:
-        :return:
-        """
-        pagination_params = []
-
-        total_count = self._get_total_count(params)
-
-        for offset in range(0, total_count, page_size):
-            offset_params = params.copy()
-            offset_params["limit"] = page_size
-            offset_params["offset"] = offset
-
-            pagination_params.append(offset_params)
-
-        return pagination_params
-
-    def build_cv_pagination_params(self,
-        params: EdFiParams,
-        page_size: int,
-        change_version_step_size: int,
-        reverse_paging: bool = False
-    ) -> List[EdFiParams]:
-        """
-        Get the total row count from the API per CV window.
-        Build param copies that increment offset by limit for each window.
-
-        :param params:
-        :param page_size:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        if params.min_change_version is None or params.max_change_version is None:
-            raise ValueError(
-                "! Cannot paginate change version steps without specifying min and max change versions!"
-            )
-
-        pagination_params = []
-
-        change_version_step_windows = range(params.min_change_version, params.max_change_version, change_version_step_size)
-        for idx, cv_window_start in enumerate(change_version_step_windows):
-            cv_window_end = min(params.max_change_version, cv_window_start + change_version_step_size)
-            cv_params = params.copy()
-            cv_params['minChangeVersion'] = cv_window_start + bool(idx)  # Add one to prevent overlaps
-            cv_params['maxChangeVersion'] = cv_window_end
-
-            cv_param_windows = self.build_pagination_params(cv_params, page_size)
-
-            # Reverse to pull the latest page first to circumvent row-slippage.
-            if reverse_paging:
-                cv_param_windows = cv_param_windows[::-1]
-
-            pagination_params.extend(cv_param_windows)
-
-        return pagination_params
-
     def total_count(self):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
@@ -285,12 +229,11 @@ class EdFiEndpoint:
 
         :return:
         """
-        params = self.params.copy()
-        return self._get_total_count(params)
+        return self._get_total_count(self.params)
 
     def _get_total_count(self, params: EdFiParams):
         """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
+        `total_count()` is accessible by the user and during pagination.
         This internal helper method prevents code needing to be defined twice.
 
         :param params:
