@@ -7,7 +7,7 @@ from requests.exceptions import HTTPError
 from typing import Callable, Optional
 
 from edfi_api_client import util
-from edfi_api_client.edfi_endpoint import EdFiEndpoint, EdFiResource, EdFiDescriptor, EdFiComposite
+from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.edfi_swagger import EdFiSwagger
 
 
@@ -196,14 +196,6 @@ class EdFiClient:
             self.get_swagger(component)
 
     @property
-    def endpoints(self):
-        """
-
-        :return:
-        """
-        return self.resources + self.descriptors
-
-    @property
     def resources(self):
         """
 
@@ -356,23 +348,6 @@ class EdFiClient:
         return lower_json['newestchangeversion']
 
     @require_session
-    def endpoint(self,
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
-        get_deletes: bool = False,
-
-        params: Optional[dict] = None,
-        **kwargs
-    ) -> EdFiEndpoint:
-        return EdFiEndpoint(
-            client=self,
-            name=name, namespace=namespace, get_deletes=get_deletes,
-            params=params, **kwargs
-        )
-
-    @require_session
     def resource(self,
         name: str,
 
@@ -408,7 +383,6 @@ class EdFiClient:
             name=name, namespace=namespace, get_deletes=False,
             params=params, **kwargs
         )
-
 
     @require_session
     def composite(self,
