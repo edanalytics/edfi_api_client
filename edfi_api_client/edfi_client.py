@@ -245,15 +245,12 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
-
     def _get_version_url_string(self) -> str:
         return "data/v3"
-
 
     ### Methods for logging and versioning
     def is_edfi2(self) -> bool:
         return False
-
 
     def verbose_log(self, message: str, verbose: bool = False):
         """
@@ -299,7 +296,6 @@ class EdFiClient:
 
         self.verbose_log("Connection to ODS successful!")
         return self.session
-
 
     def require_session(func: Callable) -> Callable:
         """
