@@ -557,12 +557,13 @@ class EdFiComposite(EdFiEndpoint):
                 "Remove `step_change_version`, `change_version_step_size`, and/or `reverse_paging` from arguments."
             )
 
-        super().get_pages(
+        composite_pages = super().get_pages(
             page_size=page_size,
             retry_on_failure=retry_on_failure,
             max_retries=max_retries,
             max_wait=max_wait
         )
+        yield from composite_pages
 
     def total_count(self):
         """
