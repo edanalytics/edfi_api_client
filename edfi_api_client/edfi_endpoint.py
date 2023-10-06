@@ -179,6 +179,10 @@ class EdFiEndpoint:
 
         # Build a list of pagination params to iterate during ingestion.
         if step_change_version:
+            self.client.verbose_log(
+                f"[Paged Get {self.type}] Pagination Method: Change Version Stepping{' with Reverse-Offset Pagination' if reverse_paging else ''}"
+            )
+
             paged_params_list = []
 
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
@@ -191,6 +195,10 @@ class EdFiEndpoint:
                 paged_params_list.extend(cv_offset_params_list)
 
         else:
+            self.client.verbose_log(
+                f"[Paged Get {self.type}] Pagination Method: Offset Pagination"
+            )
+
             total_count = self._get_total_count(self.params)
             paged_params_list = self.params.build_offset_window_params(page_size, total_count=total_count)
 
