@@ -83,9 +83,6 @@ class EdFiEndpoint:
         """
         Build the name/descriptor URL to GET from the API.
 
-        :param name:
-        :param namespace:
-        :param get_deletes:
         :return:
         """
         # Deletes are an optional path addition.
