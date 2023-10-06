@@ -19,14 +19,8 @@ class EdFiEndpoint:
     This is an abstract class for interacting with Ed-Fi resources and descriptors.
     Composites override EdFiEndpoint with custom composite-logic.
     """
-    type: str = 'Endpoint'
+    type: str = None
     swagger_type: str = None
-
-    def __new__(cls, *args, name: str, **kwargs):
-        if "descriptor" in name.lower():
-            return object.__new__(EdFiDescriptor)
-        else:
-            return object.__new__(EdFiResource)
 
     def __init__(self,
          client: 'EdFiClient',
