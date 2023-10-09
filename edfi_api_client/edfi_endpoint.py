@@ -1,6 +1,5 @@
 import functools
 import logging
-import json
 import requests
 
 from edfi_api_client.edfi_params import EdFiParams
@@ -154,12 +153,12 @@ class EdFiEndpoint:
         :param reverse_paging:
         :return:
         """
-        rows = self.get_rows(
+        pages = self.get_pages(
             page_size=page_size,
             retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
         )
-        return self.client.session.rows_to_disk(path, rows)
+        return self.client.session.payload_to_disk(path, pages)
 
     def get_rows(self,
         *,
@@ -222,29 +221,20 @@ class EdFiEndpoint:
         """
         logging.debug(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
-        # Build a list of pagination params to iterate during ingestion.
         if step_change_version:
             if reverse_paging:
                 logging.debug(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
             else:
                 logging.debug(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
-
-            paged_params_list = []
-
-            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self.client.session.get_total_count(self.url, cv_window_params)
-                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
-
-                if reverse_paging:
-                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
-
-                paged_params_list.extend(cv_offset_params_list)
-
         else:
             logging.debug(f"[Paged Get {self.type}] Pagination Method: Limit-Offset Stepping")
 
-            total_count = self.client.session.get_total_count(self.url, self.params)
-            paged_params_list = self.params.build_offset_window_params(page_size, total_count=total_count)
+        # Build a list of pagination params to iterate during ingestion.
+        paged_params_list = self.client.session.iterate_paged_window_params(
+            self.url, params=self.params,
+            page_size=page_size,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
 
         # Iterate the params and yield the response payloads.
         responses = self.client.session.get_all(

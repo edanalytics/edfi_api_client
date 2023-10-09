@@ -1,5 +1,7 @@
-import datetime
+import json
 import re
+
+from typing import List
 
 
 def camel_to_snake(name: str) -> str:
@@ -30,3 +32,6 @@ def url_join(*args) -> str:
     return '/'.join(
         map(lambda x: str(x).rstrip('/'), filter(lambda x: x is not None, args))
     )
+
+def page_to_bytes(page: List[dict]) -> bytes:
+    return b''.join(map(lambda row: json.dumps(row).encode('utf-8') + b'\n', page))

@@ -275,7 +275,8 @@ class EdFiClient:
         self.swaggers[component] = swagger
         return swagger
 
-    def list_resources(self):
+    @property
+    def resources(self):
         """
 
         :return:
@@ -286,7 +287,9 @@ class EdFiClient:
             self.get_swagger(swagger_type)
 
         return self.swaggers[swagger_type].endpoints
-    def list_descriptors(self):
+
+    @property
+    def descriptors(self):
         """
 
         :return:

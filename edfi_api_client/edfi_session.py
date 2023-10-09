@@ -15,7 +15,7 @@ from requests.exceptions import HTTPError
 from edfi_api_client import util
 
 from typing import Awaitable, AsyncIterator
-from typing import Callable, Iterator, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_params import EdFiParams
@@ -178,16 +178,16 @@ class EdFiSession:
         return int(res.headers.get('Total-Count'))
 
     @staticmethod
-    def rows_to_disk(path: str, rows: Iterator[dict]) -> str:
+    def payload_to_disk(path: str, pages: Iterator[List[dict]]) -> str:
         """
 
         :param path:
-        :param rows:
+        :param pages:
         :return:
         """
         with open(path, 'wb') as fp:
-            for row in rows:
-                fp.write(json.dumps(row).encode('utf-8') + b'\n')
+            for page in pages:
+                fp.write(util.page_to_bytes(page))
 
         return path
 
@@ -221,6 +221,41 @@ class EdFiSession:
                 exit(1)
 
             raise HTTPError(error_message, response=response)
+
+    def iterate_paged_window_params(self,
+        url: str,
+        params: 'EdFiParams',
+        *,
+        page_size: int = 100,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True
+    ) -> Iterator['EdFiParams']:
+        """
+
+        :param url:
+        :param params:
+        :param page_size:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        if step_change_version:
+
+            for cv_window_params in params.build_change_version_window_params(change_version_step_size):
+                total_count = self.get_total_count(url, cv_window_params)
+                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
+
+                if reverse_paging:
+                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
+
+                yield from cv_offset_params_list
+
+        else:
+            total_count = self.get_total_count(url, params)
+            yield from params.build_offset_window_params(page_size, total_count=total_count)
 
 
 class AsyncEdFiSession(EdFiSession):
@@ -302,7 +337,7 @@ class AsyncEdFiSession(EdFiSession):
             client_session = self.session
 
         async for params in params_iter:
-            yield self.get(url, params=params, client_session=client_session, **kwargs)
+            return await self.get(url, params=params, client_session=client_session, **kwargs)
 
     @EdFiSession.reconnect_if_expired
     async def get_total_count(self,
@@ -321,10 +356,10 @@ class AsyncEdFiSession(EdFiSession):
         :param client_session:
         :return:
         """
-        return super().get_total_count(url, params=params, client_session=client_session)
+        return await super().get_total_count(url, params=params, client_session=client_session)
 
     @staticmethod
-    async def rows_to_disk(path: str, rows: AsyncIterator[dict]) -> str:
+    async def payload_to_disk(path: str, pages: AsyncIterator[List[dict]]) -> str:
         """
 
         :param path:
@@ -332,150 +367,46 @@ class AsyncEdFiSession(EdFiSession):
         :return:
         """
         async with aiofiles.open(path, 'wb') as fp:
-            async for row in rows:
-                await fp.write(json.dumps(row).encode('utf-8') + b'\n')
+            async for page in pages:
+                await fp.write(util.page_to_bytes(page))
 
         return path
 
-# ## Async GET methods
-# async def async_to_json(self,
-#     path: str,
-#
-#     *,
-#     page_size: int = 100,
-#
-#     retry_on_failure: bool = False,
-#     max_retries: int = 5,
-#     max_wait: int = 500,
-#
-#     step_change_version: bool = False,
-#     change_version_step_size: int = 50000,
-#     reverse_paging: bool = True
-# ) -> Awaitable[str]:
-#     """
-#
-#     :param path:
-#     :param page_size:
-#     :param retry_on_failure:
-#     :param max_retries:
-#     :param max_wait:
-#     :param step_change_version:
-#     :param change_version_step_size:
-#     :param reverse_paging:
-#     :return:
-#     """
-#     paged_results = self.async_get_pages(
-#         page_size=page_size,
-#         retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-#         step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-#     )
-#
-#     async with aiofiles.open(path, 'wb') as fp:
-#         async for page in paged_results:
-#             await fp.write(self.page_to_bytes(page))
-#
-#     return path
-#
-# async def async_get_rows(self,
-#     *,
-#     page_size: int = 100,
-#
-#     retry_on_failure: bool = False,
-#     max_retries: int = 5,
-#     max_wait: int = 500,
-#
-#     step_change_version: bool = False,
-#     change_version_step_size: int = 50000,
-#     reverse_paging: bool = True
-# ) -> AsyncIterator[dict]:
-#     """
-#     This method returns all rows from an endpoint, applying pagination logic as necessary.
-#     Rows are returned as a generator.
-#
-#     :param page_size:
-#     :param retry_on_failure:
-#     :param max_retries:
-#     :param max_wait:
-#     :param step_change_version:
-#     :param change_version_step_size:
-#     :param reverse_paging:
-#     :return:
-#     """
-#     paged_result_iter = self.async_get_pages(
-#         page_size=page_size,
-#         retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-#         step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-#     )
-#
-#     async for paged_result in paged_result_iter:
-#         for row in paged_result:
-#             yield row
-#
-# async def async_get_pages(self,
-#     *,
-#     page_size: int = 100,
-#
-#     retry_on_failure: bool = False,
-#     max_retries: int = 5,
-#     max_wait: int = 500,
-#
-#     step_change_version: bool = False,
-#     change_version_step_size: int = 50000,
-#     reverse_paging: bool = True,
-# ) -> AsyncIterator[List[dict]]:
-#     """
-#     This method completes a series of GET requests, paginating params as necessary based on endpoint.
-#     Rows are returned as a generator.
-#
-#     :param page_size:
-#     :param retry_on_failure:
-#     :param max_retries:
-#     :param max_wait:
-#     :param step_change_version:
-#     :param change_version_step_size:
-#     :param reverse_paging:
-#     :return:
-#     """
-#     self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
-#
-#     # Build a list of pagination params to iterate during ingestion.
-#     if step_change_version:
-#         self.client.verbose_log(
-#             f"[Paged Get {self.type}] Pagination Method: Change Version Stepping{' with Reverse-Offset Pagination' if reverse_paging else ''}"
-#         )
-#
-#         paged_params_list = []
-#
-#         for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-#             total_count = await self._get_total_count(cv_window_params)
-#             cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
-#
-#             if reverse_paging:
-#                 cv_offset_params_list = list(cv_offset_params_list)[::-1]
-#
-#             paged_params_list.extend(cv_offset_params_list)
-#
-#     else:
-#         self.client.verbose_log(
-#             f"[Paged Get {self.type}] Pagination Method: Offset Pagination"
-#         )
-#
-#         total_count = self._get_total_count(self.params)
-#         paged_params_list = self.params.build_offset_window_params(page_size, total_count=total_count)
-#
-#     # Begin pagination-loop
-#     for paged_params in paged_params_list:
-#
-#         ### GET from the API and yield the resulting JSON payload
-#         self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
-#
-#         if retry_on_failure:
-#             res = self._get_response_with_exponential_backoff(
-#                 self.url, params=paged_params,
-#                 max_retries=max_retries, max_wait=max_wait
-#             )
-#         else:
-#             res = self._get_response(self.url, params=paged_params)
-#
-#         self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
-#         yield res.json()
+    async def iterate_paged_window_params(self,
+        url: str,
+        params: 'EdFiParams',
+        *,
+        page_size: int = 100,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True
+    ) -> Iterator['EdFiParams']:
+        """
+
+        :param url:
+        :param params:
+        :param page_size:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        if step_change_version:
+
+            for cv_window_params in params.build_change_version_window_params(change_version_step_size):
+                total_count = await self.get_total_count(url, cv_window_params)
+                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
+
+                if reverse_paging:
+                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
+
+                for offset_params in cv_offset_params_list:
+                    yield offset_params
+
+        else:
+            total_count = await self.get_total_count(url, params)
+            page_offset_params_list = params.build_offset_window_params(page_size, total_count=total_count)
+
+            for offset_params in page_offset_params_list:
+                yield offset_params
