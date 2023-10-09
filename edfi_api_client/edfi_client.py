@@ -1,4 +1,3 @@
-import logging
 import requests
 import time
 
@@ -11,6 +10,12 @@ from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.edfi_swagger import EdFiSwagger
 
+import logging
+logging.basicConfig(
+    level="INFO",
+    format='[%(asctime)s] %(levelname)-8s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
 
 class EdFiClient:
     """

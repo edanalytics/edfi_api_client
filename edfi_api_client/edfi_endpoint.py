@@ -12,12 +12,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
 
-import logging
-logging.basicConfig(
-    level="INFO",
-    format='[%(asctime)s] %(levelname)-8s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-)
 
 class EdFiEndpoint:
     """
