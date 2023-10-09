@@ -560,10 +560,9 @@ class EdFiComposite(EdFiEndpoint):
         :param max_wait:
         :return:
         """
-        if 'step_change_version' in kwargs or 'change_version_step_size' in kwargs or 'reverse_paging' in kwargs:
+        if kwargs.get('step_change_version'):
             raise KeyError(
-                "Change versions are not implemented in composites!\n"
-                "Remove `step_change_version`, `change_version_step_size`, and/or `reverse_paging` from arguments."
+                "Change versions are not implemented in composites! Remove `step_change_version` from arguments."
             )
 
         composite_pages = super().get_pages(
