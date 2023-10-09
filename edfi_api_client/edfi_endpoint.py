@@ -271,7 +271,7 @@ class EdFiEndpoint:
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         reverse_paging: bool = True,
-    ):
+    ) -> str:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
         Rows are written to a file as JSON lines.
@@ -297,6 +297,8 @@ class EdFiEndpoint:
         with open(path, 'wb') as fp:
             for page in paged_results:
                 fp.write(util.page_to_bytes(page))
+
+        return path
 
 
     ### Swagger-adjacent properties and helper methods
