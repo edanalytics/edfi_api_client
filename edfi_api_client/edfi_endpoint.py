@@ -85,6 +85,16 @@ class EdFiEndpoint:
 
         return res
 
+    def total_count(self):
+        """
+        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
+        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
+        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
+
+        :return:
+        """
+        return self._get_total_count(self.url, self.params)
+
     def get(self, limit: Optional[int] = None) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
@@ -100,40 +110,6 @@ class EdFiEndpoint:
             params['limit'] = limit
 
         return self._get_response(self.url, params=params).json()
-
-    def get_rows(self,
-        *,
-        page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
-        step_change_version: bool = False,
-        change_version_step_size: int = 50000,
-        reverse_paging: bool = True
-    ) -> Iterator[dict]:
-        """
-        This method returns all rows from an endpoint, applying pagination logic as necessary.
-        Rows are returned as a generator.
-
-        :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
-        :param step_change_version:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        paged_result_iter = self.get_pages(
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-        )
-
-        for paged_result in paged_result_iter:
-            yield from paged_result
 
     def get_pages(self,
         *,
@@ -204,15 +180,79 @@ class EdFiEndpoint:
             self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
-    def total_count(self):
-        """
-        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
-        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
-        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
+    def get_rows(self,
+        *,
+        page_size: int = 100,
 
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True
+    ) -> Iterator[dict]:
+        """
+        This method returns all rows from an endpoint, applying pagination logic as necessary.
+        Rows are returned as a generator.
+
+        :param page_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
         :return:
         """
-        return self._get_total_count(self.url, self.params)
+        paged_result_iter = self.get_pages(
+            page_size=page_size,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
+
+        for paged_result in paged_result_iter:
+            yield from paged_result
+
+    def to_json(self,
+        path: str,
+
+        *,
+        page_size: int = 100,
+
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True,
+    ):
+        """
+        This method completes a series of GET requests, paginating params as necessary based on endpoint.
+        Rows are written to a file as JSON lines.
+
+        :param path:
+        :param page_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+
+        paged_results = self.get_pages(
+            page_size=page_size,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
+
+        with open(path, 'wb') as fp:
+            for page in paged_results:
+                fp.write(util.page_to_bytes(page))
 
 
     ### Swagger-adjacent properties and helper methods

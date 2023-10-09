@@ -1,6 +1,7 @@
-import datetime
+import json
 import re
 
+from typing import List
 
 def camel_to_snake(name: str) -> str:
     """
@@ -14,7 +15,6 @@ def camel_to_snake(name: str) -> str:
     name = re.sub(r'[_ ]+', '_', name)
     return name.lower()
 
-
 def snake_to_camel(name: str) -> str:
     """
     Convert snake_case names to camelCase names.
@@ -25,6 +25,8 @@ def snake_to_camel(name: str) -> str:
     words = re.split(r"[_-]+", name)
     return words[0] + ''.join(word.title() for word in words[1:])
 
+def page_to_bytes(page: List[dict]) -> bytes:
+    return b''.join(map(lambda row: json.dumps(row).encode('utf-8') + b'\n', page))
 
 def url_join(*args) -> str:
     return '/'.join(
