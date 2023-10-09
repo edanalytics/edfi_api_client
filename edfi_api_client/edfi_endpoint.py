@@ -171,7 +171,7 @@ class EdFiEndpoint:
             paged_params_list = []
 
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self._get_total_count(cv_window_params)
+                total_count = self._get_total_count(self.url, cv_window_params)
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
 
                 if reverse_paging:
@@ -184,7 +184,7 @@ class EdFiEndpoint:
                 f"[Paged Get {self.type}] Pagination Method: Offset Pagination"
             )
 
-            total_count = self._get_total_count(self.params)
+            total_count = self._get_total_count(self.url, self.params)
             paged_params_list = self.params.build_offset_window_params(page_size, total_count=total_count)
 
         # Begin pagination-loop
@@ -212,7 +212,7 @@ class EdFiEndpoint:
 
         :return:
         """
-        return self._get_total_count(self.params)
+        return self._get_total_count(self.url, self.params)
 
 
     ### Swagger-adjacent properties and helper methods

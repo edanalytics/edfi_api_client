@@ -10,6 +10,12 @@ from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.edfi_swagger import EdFiSwagger
 
+import logging
+logging.basicConfig(
+    level="INFO",
+    format='[%(asctime)s] %(levelname)-8s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
 
 class EdFiClient:
     """
@@ -24,6 +30,8 @@ class EdFiClient:
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
     """
+    version_url_string: str = "data/v3"
+
     def __init__(self,
         base_url     : str,
         client_key   : Optional[str] = None,
