@@ -1,10 +1,11 @@
+import logging
 import requests
 import time
 
 from functools import wraps
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import HTTPError
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
@@ -24,6 +25,8 @@ class EdFiClient:
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
     """
+    version_url_string: str = "data/v3"
+
     def __new__(cls, *args, **kwargs):
         """
         The user should never need to reference an `EdFi2Client` directly.
@@ -38,7 +41,6 @@ class EdFiClient:
             return object.__new__(EdFi2Client)
         else:
             return object.__new__(EdFiClient)
-
 
     def __init__(self,
         base_url     : str,
@@ -67,7 +69,6 @@ class EdFiClient:
         self.instance_code = instance_code
 
         # Build endpoint URL pieces
-        self.version_url_string = self._get_version_url_string()
         self.instance_locator = self.get_instance_locator()
 
         # Swagger variables for populating resource metadata (retrieved lazily)
@@ -76,8 +77,6 @@ class EdFiClient:
             'descriptors': None,
             'composites' : None,
         }
-        self._resources   = None
-        self._descriptors = None
 
         # If ID and secret are passed, build a session.
         self.session = None
@@ -87,17 +86,31 @@ class EdFiClient:
         else:
             self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
 
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         (Un)Authenticated Ed-Fi(2/3) Client [{api_mode}]
         """
-        _session_string = "Authenticated" if self.session else "Unauthenticated"
-        _api_mode = util.snake_to_camel(self.api_mode)
+        session_string = "Authenticated" if self.session else "Unauthenticated"
+        api_mode = util.snake_to_camel(self.api_mode)
         if self.api_year:
-            _api_mode += f" {self.api_year}"
+            api_mode += f" {self.api_year}"
 
-        return f"<{_session_string} Ed-Fi{self.api_version} API Client [{_api_mode}]>"
+        return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
+
+    def is_edfi2(self) -> bool:
+        return False
+
+    def verbose_log(self, message: str, verbose: bool = False):
+        """
+        Unified method for logging class state during API pulls.
+        Set `self.verbose=True or verbose=True` to log.
+
+        :param message:
+        :param verbose:
+        :return:
+        """
+        if self.verbose or verbose:
+            logging.info(message)
 
 
     ### Methods for accessing the Base URL payload and Swagger
@@ -128,16 +141,13 @@ class EdFiClient:
         """
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
-
     def get_api_mode(self) -> str:
         """
         Retrieve api_mode from the metadata exposed at the API root.
-
         :return:
         """
         api_mode = self.get_info().get('apiMode')
         return util.camel_to_snake(api_mode)
-
 
     def get_ods_version(self) -> Optional[str]:
         """
@@ -145,7 +155,6 @@ class EdFiClient:
         :return:
         """
         return self.get_info().get('version')
-
 
     def get_data_model_version(self) -> Optional[str]:
         """
@@ -160,65 +169,6 @@ class EdFiClient:
         else:
             return None
 
-
-    ### Methods related to retrieving the Swagger or attributes retrieved therein
-    def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
-        """
-        OpenAPI Specification describes the entire Ed-Fi API surface in a
-        JSON payload.
-        Can be used to surface available endpoints.
-
-        :param component: Which component's swagger spec should be retrieved?
-        :return: Swagger specification definition, as a dictionary.
-        """
-        swagger_url = util.url_join(
-            self.base_url, 'metadata', self.version_url_string, component, 'swagger.json'
-        )
-
-        payload = requests.get(swagger_url, verify=self.verify_ssl).json()
-        swagger = EdFiSwagger(component, payload)
-
-        # Save the swagger in memory to save time on subsequent calls.
-        self.swaggers[component] = swagger
-        return swagger
-
-    def _set_swagger(self, component: str):
-        """
-        Populate the respective swagger object in `self.swaggers` if not already populated.
-
-        :param component:
-        :return:
-        """
-        if self.swaggers.get(component) is None:
-            self.verbose_log(
-                f"[Get {component.title()} Swagger] Retrieving Swagger into memory..."
-            )
-            self.get_swagger(component)
-
-    @property
-    def resources(self):
-        """
-
-        :return:
-        """
-        if self._resources is None:
-            self._set_swagger('resources')
-            self._resources = self.swaggers['resources'].endpoints
-        return self._resources
-
-    @property
-    def descriptors(self):
-        """
-
-        :return:
-        """
-        if self._descriptors is None:
-            self._set_swagger('descriptors')
-            self._descriptors = self.swaggers['descriptors'].endpoints
-        return self._descriptors
-
-
-    ### Helper methods for building elements of endpoint URLs for GETs and POSTs
     def get_instance_locator(self) -> Optional[str]:
         """
         Construct API URL components to resolve requests in a multi-ODS
@@ -250,28 +200,6 @@ class EdFiClient:
                 "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n"
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
-
-
-    def _get_version_url_string(self) -> str:
-        return "data/v3"
-
-
-    ### Methods for logging and versioning
-    def is_edfi2(self) -> bool:
-        return False
-
-
-    def verbose_log(self, message: str, verbose: bool = False):
-        """
-        Unified method for logging class state during API pulls.
-        Set `self.verbose=True or verbose=True` to log.
-
-        :param message:
-        :param verbose:
-        :return:
-        """
-        if self.verbose or verbose:
-            print(message)
 
 
     ### Methods for connecting to the ODS
@@ -405,11 +333,60 @@ class EdFiClient:
         )
 
 
+    ### Methods related to retrieving the Swagger or attributes retrieved therein
+    def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
+        """
+        OpenAPI Specification describes the entire Ed-Fi API surface in a
+        JSON payload.
+        Can be used to surface available endpoints.
+
+        :param component: Which component's swagger spec should be retrieved?
+        :return: Swagger specification definition, as a dictionary.
+        """
+        self.verbose_log(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
+
+        swagger_url = util.url_join(
+            self.base_url, 'metadata', self.version_url_string, component, 'swagger.json'
+        )
+
+        payload = requests.get(swagger_url, verify=self.verify_ssl).json()
+        swagger = EdFiSwagger(component, payload)
+
+        # Save the swagger in memory to save time on subsequent calls.
+        self.swaggers[component] = swagger
+        return swagger
+
+    @property
+    def resources(self) -> List[str]:
+        """
+        Return a list of resource endpoints, as defined in Swagger.
+        :return:
+        """
+        if self.swaggers['resources'] is None:
+            self.get_swagger('resources')
+        return self.swaggers['resources'].endpoints
+
+    @property
+    def descriptors(self) -> List[str]:
+        """
+        Return a list of descriptor endpoints, as defined in Swagger.
+        :return:
+        """
+        if self.swaggers['descriptors'] is None:
+            self.get_swagger('descriptors')
+        return self.swaggers['descriptors'].endpoints
+
+
 
 class EdFi2Client(EdFiClient):
     """
 
     """
+    version_url_string: str = "api/v2.0"
+
+    def is_edfi2(self) -> bool:
+        return True
+
     ### Methods for accessing the Base URL payload and Swagger
     def get_info(self) -> dict:
         raise NotImplementedError(
@@ -430,33 +407,6 @@ class EdFi2Client(EdFiClient):
         raise NotImplementedError(
             "Data model version cannot be inferred in Ed-Fi 2."
         )
-
-    def get_swagger(self, component: str = 'resources') -> dict:
-        raise NotImplementedError(
-            "Swagger specification not implemented in Ed-Fi 2."
-        )
-
-    @property
-    def resources(self):
-        raise NotImplementedError(
-            "Resources collected from Swagger specification that is not implemented in Ed-Fi 2."
-        )
-
-    @property
-    def descriptors(self):
-        raise NotImplementedError(
-            "Descriptors collected from Swagger specification that is not implemented in Ed-Fi 2."
-        )
-
-
-    ### Helper methods for building elements of endpoint URLs for GETs and POSTs
-    def _get_version_url_string(self) -> str:
-        return "api/v2.0"
-
-
-    ### Methods for logging and versioning
-    def is_edfi2(self) -> bool:
-        return True
 
 
     ### Methods for connecting to the ODS
@@ -519,4 +469,23 @@ class EdFi2Client(EdFiClient):
     def get_newest_change_version(self) -> int:
         raise NotImplementedError(
             "Change versions not implemented in Ed-Fi 2!"
+        )
+
+
+    ### Methods related to retrieving the Swagger or attributes retrieved therein
+    def get_swagger(self, component: str = 'resources') -> dict:
+        raise NotImplementedError(
+            "Swagger specification not implemented in Ed-Fi 2."
+        )
+
+    @property
+    def resources(self) -> List[str]:
+        raise NotImplementedError(
+            "Resources collected from Swagger specification that is not implemented in Ed-Fi 2."
+        )
+
+    @property
+    def descriptors(self) -> List[str]:
+        raise NotImplementedError(
+            "Descriptors collected from Swagger specification that is not implemented in Ed-Fi 2."
         )

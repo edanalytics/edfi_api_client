@@ -1,4 +1,3 @@
-import logging
 import requests
 import time
 
@@ -13,6 +12,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
 
+import logging
+logging.basicConfig(
+    level="INFO",
+    format='[%(asctime)s] %(levelname)-8s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
 
 class EdFiEndpoint:
     """
@@ -55,39 +60,21 @@ class EdFiEndpoint:
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
-        self.url = self.build_url()
+        self.url = self._build_endpoint_url()
         self.params = EdFiParams(params, **kwargs)
 
         # Swagger attributes are loaded lazily
-        self._description: Optional[str] = None
-        self._has_deletes: Optional[bool] = None
+        self.swagger = self.client.swaggers.get(self.swagger_type)
 
     def __repr__(self):
         """
         Endpoint (Deletes) (with {N} parameters) [{namespace}/{name}]
         """
-        _deletes_string = " Deletes" if self.get_deletes else ""
-        _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        _full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
+        deletes_string = " Deletes" if self.get_deletes else ""
+        params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
+        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
 
-        return f"<{self.type}{_deletes_string}{_params_string} [{_full_name}]>"
-
-
-    def build_url(self) -> str:
-        """
-        Build the name/descriptor URL to GET from the API.
-
-        :return:
-        """
-        # Deletes are an optional path addition.
-        deletes = 'deletes' if self.get_deletes else None
-
-        return util.url_join(
-            self.client.base_url,
-            self.client.version_url_string,
-            self.client.instance_locator,
-            self.namespace, self.name, deletes
-        )
+        return f"<{self.type}{deletes_string}{params_string} [{full_name}]>"
 
     def ping(self) -> requests.Response:
         """
@@ -113,10 +100,8 @@ class EdFiEndpoint:
 
         :return:
         """
-        self.client.verbose_log(
-            f"[Get {self.type}] Endpoint  : {self.url}\n"
-            f"[Get {self.type}] Parameters: {self.params}"
-        )
+        self.client.verbose_log(f"[Get {self.type}] Endpoint  : {self.url}")
+        self.client.verbose_log(f"[Get {self.type}] Parameters: {self.params}")
 
         params = self.params.copy()
 
@@ -195,7 +180,7 @@ class EdFiEndpoint:
                 f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination"
             )
             paged_params.init_page_by_change_version_step(change_version_step_size)
-            total_count = self._get_total_count(paged_params)
+            total_count = self._get_total_count(self.url, paged_params)
             paged_params.init_reverse_page_by_offset(total_count, page_size)
 
         elif step_change_version:
@@ -240,7 +225,7 @@ class EdFiEndpoint:
                     )
                     try:
                         paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
-                        total_count = self._get_total_count(paged_params)
+                        total_count = self._get_total_count(self.url, paged_params)
                         paged_params.init_reverse_page_by_offset(total_count, page_size)
                     except StopIteration:
                         self.client.verbose_log(
@@ -276,59 +261,40 @@ class EdFiEndpoint:
 
         :return:
         """
-        params = self.params.copy()
-        return self._get_total_count(params)
-
-    def _get_total_count(self, params: EdFiParams):
-        """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
-
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = True
-        _params['limit'] = 0
-
-        res = self._get_response(self.url, params=_params)
-        return int(res.headers.get('Total-Count'))
+        return self._get_total_count(self.url, self.params)
 
 
     ### Swagger-adjacent properties and helper methods
     @property
-    def description(self):
-        if self._description is None:
-            self._description = self._get_attributes_from_swagger()['description']
-        return self._description
+    def description(self) -> str:
+        if self.swagger is None:
+            self.swagger = self.client.get_swagger(self.swagger_type)
+        return self.swagger.descriptions.get(self.name)
 
     @property
-    def has_deletes(self):
-        if self._has_deletes is None:
-            self._has_deletes = self._get_attributes_from_swagger()['has_deletes']
-        return self._has_deletes
+    def has_deletes(self) -> bool:
+        if self.swagger is None:
+            self.swagger = self.client.get_swagger(self.swagger_type)
+        return (self.namespace, self.name) in self.swagger.deletes
 
 
-    def _get_attributes_from_swagger(self):
+    ### Internal helpers, GET response methods, and error-handling
+    def _build_endpoint_url(self) -> str:
         """
-        Retrieve endpoint-metadata from the Swagger document.
-
-        Populate the respective swagger object in `self.client` if not already populated.
+        Build the name/descriptor URL to GET from the API.
 
         :return:
         """
-        # Only GET the Swagger if not already populated in the client.
-        self.client._set_swagger(self.swagger_type)
-        swagger = self.client.swaggers[self.swagger_type]
+        # Deletes are an optional path addition.
+        deletes = 'deletes' if self.get_deletes else None
 
-        # Populate the attributes found in the swagger.
-        return {
-            'description': swagger.descriptions.get(self.name),
-            'has_deletes': (self.namespace, self.name) in swagger.deletes,
-        }
+        return util.url_join(
+            self.client.base_url,
+            self.client.version_url_string,
+            self.client.instance_locator,
+            self.namespace, self.name, deletes
+        )
 
-
-    ### Internal GET response methods and error-handling
     def reconnect_if_expired(func: Callable) -> Callable:
         """
         This decorator resets the connection with the API if expired.
@@ -340,12 +306,28 @@ class EdFiEndpoint:
         def wrapped(self, *args, **kwargs):
             # Refresh token if refresh_time has passed
             if self.client.session.refresh_time < int(time.time()):
-                self.client.verbose_log(
-                    "Session authentication is expired. Attempting reconnection..."
-                )
+                self.client.verbose_log("Session authentication is expired. Attempting reconnection...")
                 self.client.connect()
+
             return func(self, *args, **kwargs)
         return wrapped
+
+    @reconnect_if_expired
+    def _get_total_count(self, url: str, params: EdFiParams):
+        """
+        `total_count()` is accessible by the user and during reverse offset-pagination.
+        This internal helper method prevents code needing to be defined twice.
+
+        :param url:
+        :param params:
+        :return:
+        """
+        _params = params.copy()
+        _params['totalCount'] = True
+        _params['limit'] = 0
+
+        res = self._get_response(url, params=_params)
+        return int(res.headers.get('Total-Count'))
 
     @reconnect_if_expired
     def _get_response(self,
@@ -490,7 +472,7 @@ class EdFiComposite(EdFiEndpoint):
         params: Optional[dict] = None,
         **kwargs
     ):
-        # Assign composite-specific arguments that are used in `self.build_url()`.
+        # Assign composite-specific arguments that are used in `self._build_endpoint_url()`.
         self.composite: str = composite
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
@@ -502,39 +484,24 @@ class EdFiComposite(EdFiEndpoint):
         Enrollment Composite                     [{namespace}/{name}]
                              with {N} parameters                      (filtered on {filter_type})
         """
-        _composite = self.composite.title()
-        _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        _full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
-        _filter_string = f" (filtered on {self.filter_type})" if self.filter_type else ""
+        composite = self.composite.title()
+        params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
+        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
+        filter_string = f" (filtered on {self.filter_type})" if self.filter_type else ""
 
-        return f"<{_composite} Composite{_params_string} [{_full_name}]{_filter_string}>"
+        return f"<{composite} Composite{params_string} [{full_name}]{filter_string}>"
 
-    def build_url(self) -> str:
+    def total_count(self):
         """
-        Build the composite URL to GET from the API.
+        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
+        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
+        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
 
         :return:
         """
-        # If a filter is applied, the URL changes to match the filter type.
-        if self.filter_type is None and self.filter_id is None:
-            return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
-                self.namespace, self.composite, self.name.title()
-            )
-
-        elif self.filter_type is not None and self.filter_id is not None:
-            return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
-                self.namespace, self.composite,
-                self.filter_type, self.filter_id, self.name
-            )
-
-        else:
-            raise ValueError(
-                "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
-            )
+        raise NotImplementedError(
+            "Total counts have not yet been implemented in Ed-Fi composites!"
+        )
 
     def get_pages(self,
         *,
@@ -570,14 +537,29 @@ class EdFiComposite(EdFiEndpoint):
         )
         yield from composite_pages
 
-    def total_count(self):
+    def _build_endpoint_url(self) -> str:
         """
-        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
-        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
-        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
+        Build the composite URL to GET from the API.
 
         :return:
         """
-        raise NotImplementedError(
-            "Total counts have not yet been implemented in Ed-Fi composites!"
-        )
+        # If a filter is applied, the URL changes to match the filter type.
+        if self.filter_type is None and self.filter_id is None:
+            return util.url_join(
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite, self.name.title()
+            )
+
+        elif self.filter_type is not None and self.filter_id is not None:
+            return util.url_join(
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite,
+                self.filter_type, self.filter_id, self.name
+            )
+
+        else:
+            raise ValueError(
+                "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
+            )
