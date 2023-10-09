@@ -1,3 +1,4 @@
+import logging
 import requests
 import time
 
@@ -87,6 +88,16 @@ class EdFiEndpoint:
             res._content = b'{"message": "Ping was successful! ODS data has been intentionally scrubbed from this response."}'
 
         return res
+
+    def total_count(self):
+        """
+        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
+        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
+        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
+
+        :return:
+        """
+        return self._get_total_count(self.url, self.params)
 
     def get(self, limit: Optional[int] = None) -> List[dict]:
         """
@@ -247,16 +258,45 @@ class EdFiEndpoint:
                     self.client.verbose_log(f"@ Paginating offset...")
                     paged_params.page_by_offset()
 
-    def total_count(self):
-        """
-        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
-        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
-        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
+    def to_json(self,
+        path: str,
 
+        *,
+        page_size: int = 100,
+
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True,
+    ):
+        """
+        This method completes a series of GET requests, paginating params as necessary based on endpoint.
+        Rows are written to a file as JSON lines.
+
+        :param path:
+        :param page_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
         :return:
         """
-        return self._get_total_count(self.url, self.params)
+        self.client.verbose_log(f"Writing rows to disk: `{path}`")
 
+        paged_results = self.get_pages(
+            page_size=page_size,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
+
+        with open(path, 'wb') as fp:
+            for page in paged_results:
+                fp.write(util.page_to_bytes(page))
 
     ### Swagger-adjacent properties and helper methods
     @property
