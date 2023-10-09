@@ -1,15 +1,12 @@
+import functools
 import logging
 import json
 import requests
-import time
-
-from functools import wraps
-from requests.exceptions import HTTPError, RequestsWarning
-from typing import Callable, Iterator, List, Optional
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
 
+from typing import Callable, Iterator, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
@@ -56,18 +53,17 @@ class EdFiEndpoint:
         self.params = EdFiParams(params, **kwargs)
 
         # Swagger attributes are loaded lazily
-        self._description: Optional[str] = None
-        self._has_deletes: Optional[bool] = None
+        self.swagger = self.client.swaggers.get(self.swagger_type)
 
     def __repr__(self):
         """
         Endpoint (Deletes) (with {N} parameters) [{namespace}/{name}]
         """
-        _deletes_string = " Deletes" if self.get_deletes else ""
-        _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        _full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
+        deletes_string = " Deletes" if self.get_deletes else ""
+        params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
+        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
 
-        return f"<{self.type}{_deletes_string}{_params_string} [{_full_name}]>"
+        return f"<{self.type}{deletes_string}{params_string} [{full_name}]>"
 
 
     def build_url(self) -> str:
@@ -95,7 +91,7 @@ class EdFiEndpoint:
         params = self.params.copy()
         params['limit'] = 1
 
-        res = self._get_response(self.url, params=params)
+        res = self.client.session.get(self.url, params=params)
 
         # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
@@ -104,23 +100,33 @@ class EdFiEndpoint:
 
         return res
 
+    def total_count(self):
+        """
+        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
+        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
+        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
+
+        :return:
+        """
+        return self.client.session.get_total_count(self.url, self.params)
+
+
+    # Sync GET methods
     def get(self, limit: Optional[int] = None) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
         :return:
         """
-        self.client.verbose_log(
-            f"[Get {self.type}] Endpoint  : {self.url}\n"
-            f"[Get {self.type}] Parameters: {self.params}"
-        )
+        logging.debug(f"[Get {self.type}] Endpoint  : {self.url}")
+        logging.debug(f"[Get {self.type}] Parameters: {self.params}")
 
         params = self.params.copy()
 
         if limit is not None:
             params['limit'] = limit
 
-        return self._get_response(self.url, params=params).json()
+        return self.client.session.get(self.url, params=params).json()
 
     def to_json(self,
         path: str,
@@ -148,18 +154,12 @@ class EdFiEndpoint:
         :param reverse_paging:
         :return:
         """
-        paged_results = self.get_pages(
+        rows = self.get_rows(
             page_size=page_size,
             retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
         )
-
-        with open(path, 'wb') as fp:
-            for page in paged_results:
-                write_str = map(lambda row: json.dumps(row).encode('utf-8') + b'\n', page)
-                fp.write(b''.join(write_str))
-
-        return path
+        return self.client.session.rows_to_disk(path, rows)
 
     def get_rows(self,
         *,
@@ -220,18 +220,19 @@ class EdFiEndpoint:
         :param reverse_paging:
         :return:
         """
-        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.debug(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
         # Build a list of pagination params to iterate during ingestion.
         if step_change_version:
-            self.client.verbose_log(
-                f"[Paged Get {self.type}] Pagination Method: Change Version Stepping{' with Reverse-Offset Pagination' if reverse_paging else ''}"
-            )
+            if reverse_paging:
+                logging.debug(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+            else:
+                logging.debug(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
 
             paged_params_list = []
 
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self._get_total_count(cv_window_params)
+                total_count = self.client.session.get_total_count(self.url, cv_window_params)
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
 
                 if reverse_paging:
@@ -240,213 +241,45 @@ class EdFiEndpoint:
                 paged_params_list.extend(cv_offset_params_list)
 
         else:
-            self.client.verbose_log(
-                f"[Paged Get {self.type}] Pagination Method: Offset Pagination"
-            )
+            logging.debug(f"[Paged Get {self.type}] Pagination Method: Limit-Offset Stepping")
 
-            total_count = self._get_total_count(self.params)
+            total_count = self.client.session.get_total_count(self.url, self.params)
             paged_params_list = self.params.build_offset_window_params(page_size, total_count=total_count)
 
-        # Begin pagination-loop
-        for paged_params in paged_params_list:
-
-            ### GET from the API and yield the resulting JSON payload
-            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
-
-            if retry_on_failure:
-                res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
-                    max_retries=max_retries, max_wait=max_wait
-                )
-            else:
-                res = self._get_response(self.url, params=paged_params)
-
-            self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+        # Iterate the params and yield the response payloads.
+        responses = self.client.session.get_all(
+            self.url, paged_params_list,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+        )
+        for res in responses:
+            logging.debug(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
-    def total_count(self):
-        """
-        Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
-        This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
-        Non-pagination params (i.e., offset and limit) have no impact on the returned total.
-
-        :return:
-        """
-        return self._get_total_count(self.params)
-
-    def _get_total_count(self, params: EdFiParams):
-        """
-        `total_count()` is accessible by the user and during pagination.
-        This internal helper method prevents code needing to be defined twice.
-
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = True
-        _params['limit'] = 0
-
-        res = self._get_response(self.url, params=_params)
-        return int(res.headers.get('Total-Count'))
 
 
     ### Swagger-adjacent properties and helper methods
-    @property
-    def description(self):
-        if self._description is None:
-            self._description = self._get_attributes_from_swagger()['description']
-        return self._description
-
-    @property
-    def has_deletes(self):
-        if self._has_deletes is None:
-            self._has_deletes = self._get_attributes_from_swagger()['has_deletes']
-        return self._has_deletes
-
-
-    def _get_attributes_from_swagger(self):
-        """
-        Retrieve endpoint-metadata from the Swagger document.
-
-        Populate the respective swagger object in `self.client` if not already populated.
-
-        :return:
-        """
-        # Only GET the Swagger if not already populated in the client.
-        self.client._set_swagger(self.swagger_type)
-        swagger = self.client.swaggers[self.swagger_type]
-
-        # Populate the attributes found in the swagger.
-        return {
-            'description': swagger.descriptions.get(self.name),
-            'has_deletes': (self.namespace, self.name) in swagger.deletes,
-        }
-
-
-    ### Internal GET response methods and error-handling
-    def reconnect_if_expired(func: Callable) -> Callable:
+    def require_swagger(func: Callable) -> Callable:
         """
         This decorator resets the connection with the API if expired.
 
         :param func:
         :return:
         """
-        @wraps(func)
+        @functools.wraps(func)
         def wrapped(self, *args, **kwargs):
-            # Refresh token if refresh_time has passed
-            if self.client.session.refresh_time < int(time.time()):
-                self.client.verbose_log(
-                    "Session authentication is expired. Attempting reconnection..."
-                )
-                self.client.connect()
+            if self.swagger is None:
+                self.swagger = self.client.get_swagger(self.swagger_type)
             return func(self, *args, **kwargs)
+
         return wrapped
 
-    @reconnect_if_expired
-    def _get_response(self,
-        url: str,
-        params: Optional[EdFiParams] = None
-    ) -> requests.Response:
-        """
-        Complete a GET request against an endpoint URL.
+    @require_swagger
+    def description(self) -> str:
+        return self.swagger.descriptions.get(self.name)
 
-        :param url:
-        :param params:
-        :return:
-        """
-        response = self.client.session.get(url, params=params)
-        self.custom_raise_for_status(response)
-        return response
-
-
-    @reconnect_if_expired
-    def _get_response_with_exponential_backoff(self,
-        url: str,
-        params: Optional[EdFiParams] = None,
-
-        *,
-        max_retries: int = 5,
-        max_wait: int = 600,
-    ) -> requests.Response:
-        """
-        Complete a GET request against an endpoint URL.
-        In the case of failure, retry with exponential backoff until max_retries or max_wait has been exceeded.
-
-        :param url:
-        :param params:
-        :param max_retries:
-        :param max_wait:
-        :return:
-        """
-        # Attempt the GET until success or `max_retries` reached.
-        for n_tries in range(max_retries):
-
-            try:
-                return self._get_response(url, params=params)
-
-            except RequestsWarning:
-                # If an API call fails, it may be due to rate-limiting.
-                # Use exponential backoff to wait, then refresh and try again.
-                time.sleep(
-                    min((2 ** n_tries) * 2, max_wait)
-                )
-                logging.warning(f"Retry number: {n_tries}")
-
-        # This block is reached only if max_retries has been reached.
-        else:
-            self.client.verbose_log(message=(
-                f"[Get with Retry Failed] Endpoint  : {url}\n"
-                f"[Get with Retry Failed] Parameters: {params}"
-            ), verbose=True)
-
-            raise RuntimeError(
-                "API GET failed: max retries exceeded for URL."
-            )
-
-    @staticmethod
-    def custom_raise_for_status(response):
-        """
-        Custom HTTP exception logic and logging.
-        The built-in Response.raise_for_status() fails too broadly, even in cases where a connection-reset is enough.
-
-        :param response:
-        :return:
-        """
-        if 400 <= response.status_code < 600:
-            logging.warning(
-                f"API Error: {response.status_code} {response.reason}"
-            )
-            if response.status_code == 400:
-                raise HTTPError(
-                    "400: Bad request. Check your params. Is 'limit' set too high?"
-                )
-            elif response.status_code == 401:
-                raise RequestsWarning(
-                    "401: Unauthenticated for URL. The connection may need to be reset."
-                )
-            elif response.status_code == 403:
-                # Only raise an HTTPError where the resource is impossible to access.
-                raise HTTPError(
-                    "403: Resource not authorized.",
-                    response=response
-                )
-            elif response.status_code == 404:
-                # Only raise an HTTPError where the resource is impossible to access.
-                raise HTTPError(
-                    "404: Resource not found.",
-                    response=response
-                )
-            elif response.status_code == 500:
-                raise RequestsWarning(
-                    "500: Internal server error."
-                )
-            elif response.status_code == 504:
-                raise RequestsWarning(
-                    "504: Gateway time-out for URL. The connection may need to be reset."
-                )
-            else:
-                # Otherwise, use the default error messages defined in Response.
-                response.raise_for_status()
+    @require_swagger
+    def has_deletes(self) -> bool:
+        return (self.namespace, self.name) in self.swagger.deletes
 
 
 class EdFiResource(EdFiEndpoint):
@@ -489,7 +322,6 @@ class EdFiComposite(EdFiEndpoint):
         self.composite: str = composite
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
-
         super().__init__(client=client, name=name, namespace=namespace, params=params)
 
     def __repr__(self):
@@ -497,12 +329,12 @@ class EdFiComposite(EdFiEndpoint):
         Enrollment Composite                     [{namespace}/{name}]
                              with {N} parameters                      (filtered on {filter_type})
         """
-        _composite = self.composite.title()
-        _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        _full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
-        _filter_string = f" (filtered on {self.filter_type})" if self.filter_type else ""
+        composite_name = self.composite.title()
+        params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
+        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
+        filter_string = f" (filtered on {self.filter_type})" if self.filter_type else ""
 
-        return f"<{_composite} Composite{_params_string} [{_full_name}]{_filter_string}>"
+        return f"<{composite_name} Composite{params_string} [{full_name}]{filter_string}>"
 
     def build_url(self) -> str:
         """
@@ -557,8 +389,8 @@ class EdFiComposite(EdFiEndpoint):
                 "Remove `step_change_version`, `change_version_step_size`, and/or `reverse_paging` from arguments."
             )
 
-        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
-        self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+        logging.debug(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.debug(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Reset pagination parameters
         paged_params = self.params.copy()
@@ -569,29 +401,25 @@ class EdFiComposite(EdFiEndpoint):
         while True:
 
             ### GET from the API and yield the resulting JSON payload
-            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            logging.debug(f"[Paged Get {self.type}] Parameters: {paged_params}")
 
-            if retry_on_failure:
-                res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
-                    max_retries=max_retries, max_wait=max_wait
-                )
-            else:
-                res = self._get_response(self.url, params=paged_params)
+            res = self.client.session.get(
+                self.url, params=paged_params,
+                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+            )
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
-                self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+                logging.debug(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
                 yield res.json()
 
-                self.client.verbose_log(f"@ Paginating offset...")
+                logging.debug(f"@ Paginating offset...")
                 paged_params['offset'] += page_size
 
             # If no rows are returned, end pagination.
             else:
-                self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
+                logging.debug(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
                 break
-
 
     def total_count(self):
         """
