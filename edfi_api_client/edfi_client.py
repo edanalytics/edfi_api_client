@@ -369,3 +369,11 @@ class EdFiClient:
         if self.swaggers['descriptors'] is None:
             self.get_swagger('descriptors')
         return self.swaggers['descriptors'].endpoints
+
+
+    ### Asynchronous context helpers
+    def __aenter__(self):
+        return self
+
+    def __aexit__(self, *exc):
+        return self.async_session.close()
