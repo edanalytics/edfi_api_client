@@ -214,7 +214,7 @@ class EdFiEndpoint:
         for paged_result in paged_result_iter:
             yield from paged_result
 
-    def to_json(self,
+    def get_to_json(self,
         path: str,
 
         *,
