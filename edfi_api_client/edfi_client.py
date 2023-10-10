@@ -1,3 +1,4 @@
+import aiohttp
 import requests
 import time
 
@@ -211,7 +212,7 @@ class EdFiClient:
         access_token = access_response.json().get('access_token')
         req_header = {'Authorization': 'Bearer {}'.format(access_token)}
 
-        # Create a session and add headers to it.
+        # Create a synchronous and asynchronous session and add headers to both.
         self.session = requests.Session()
         self.session.headers.update(req_header)
 

@@ -1,14 +1,18 @@
+import asyncio
+import aiohttp
+import aiofiles
 import logging
 import requests
 import time
 
 from functools import wraps
 from requests.exceptions import HTTPError, RequestsWarning
-from typing import Callable, Iterator, List, Optional
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
 
+from typing import AsyncIterator, Awaitable
+from typing import Callable, Iterator, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
@@ -67,6 +71,7 @@ class EdFiEndpoint:
 
         return f"<{self.type}{deletes_string}{params_string} [{full_name}]>"
 
+    # Generic API methods
     def ping(self) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
@@ -76,7 +81,7 @@ class EdFiEndpoint:
         params = self.params.copy()
         params['limit'] = 1
 
-        res = self._get_response(self.url, params=params)
+        res = self._get_response(self.client.session, self.url, params=params)
 
         # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
@@ -93,7 +98,7 @@ class EdFiEndpoint:
 
         :return:
         """
-        return self._get_total_count(self.url, self.params)
+        return self._get_total_count(self.client.session, self.url, self.params)
 
     def get(self, limit: Optional[int] = None) -> List[dict]:
         """
@@ -109,8 +114,9 @@ class EdFiEndpoint:
         if limit is not None:
             params['limit'] = limit
 
-        return self._get_response(self.url, params=params).json()
+        return self._get_response(self.client.session, self.url, params=params).json()
 
+    # Synchronous GET methods
     def get_pages(self,
         *,
         page_size: int = 100,
@@ -138,30 +144,19 @@ class EdFiEndpoint:
         """
         self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
-        # Build a list of pagination params to iterate during ingestion.
-        if step_change_version:
-            self.client.verbose_log(
-                f"[Paged Get {self.type}] Pagination Method: Change Version Stepping{' with Reverse-Offset Pagination' if reverse_paging else ''}"
-            )
-
-            paged_params_list = []
-
-            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self._get_total_count(self.url, cv_window_params)
-                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
-
-                if reverse_paging:
-                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
-
-                paged_params_list.extend(cv_offset_params_list)
-
+        if step_change_version and reverse_paging:
+            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+        elif step_change_version:
+            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
         else:
-            self.client.verbose_log(
-                f"[Paged Get {self.type}] Pagination Method: Offset Pagination"
-            )
+            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
-            total_count = self._get_total_count(self.url, self.params)
-            paged_params_list = self.params.build_offset_window_params(page_size, total_count=total_count)
+        # Build a list of pagination params to iterate during ingestion.
+        paged_params_list = self._build_pagination_window_params(
+            page_size=page_size,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            reverse_paging=reverse_paging
+        )
 
         # Begin pagination-loop
         for paged_params in paged_params_list:
@@ -171,11 +166,11 @@ class EdFiEndpoint:
 
             if retry_on_failure:
                 res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
+                    self.client.session, self.url, params=paged_params,
                     max_retries=max_retries, max_wait=max_wait
                 )
             else:
-                res = self._get_response(self.url, params=paged_params)
+                res = self._get_response(self.client.session, self.url, params=paged_params)
 
             self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
@@ -257,6 +252,108 @@ class EdFiEndpoint:
         return path
 
 
+    ### Asynchronous GET methods
+    async def async_get_pages(self,
+        *,
+        page_size: int = 100,
+
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True,
+    ) -> AsyncIterator[List[dict]]:
+        """
+        This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
+        Rows are returned in pages as a coroutine.
+
+        :param page_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        self.client.verbose_log(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
+
+        if step_change_version and reverse_paging:
+            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+        elif step_change_version:
+            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping")
+        else:
+            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
+
+        # Build a list of pagination params to iterate during ingestion.
+        paged_params_list = self._async_build_pagination_window_params(
+            page_size=page_size,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            reverse_paging=reverse_paging
+        )
+
+        # Begin pagination-loop
+        async for paged_params in paged_params_list:
+
+            ### GET from the API and yield the resulting JSON payload
+            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
+
+            if retry_on_failure:
+                res = self._get_response_with_exponential_backoff(
+                    self.client.session, self.url, params=paged_params,
+                    max_retries=max_retries, max_wait=max_wait
+                )
+            else:
+                res = self._get_response(self.client.session, self.url, params=paged_params)
+
+            self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+            yield res.json()
+
+    async def async_get_to_json(self,
+        path: str,
+
+        *,
+        page_size: int = 100,
+
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True,
+    ) -> str:
+        """
+        This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
+        Rows are written to a file as JSON lines.
+
+        :param path:
+        :param page_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+
+        paged_results = self.async_get_pages(
+            page_size=page_size,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
+
+        async with aiofiles.open(path, 'wb') as fp:
+            async for page in paged_results:
+                await fp.write(util.page_to_bytes(page))
+
+        return path
+
+
     ### Swagger-adjacent properties and helper methods
     @property
     def description(self) -> str:
@@ -288,6 +385,34 @@ class EdFiEndpoint:
             self.namespace, self.name, deletes
         )
 
+    def _build_pagination_window_params(self,
+        *,
+        page_size: int,
+        step_change_version: bool,
+        change_version_step_size: int,
+        reverse_paging: bool
+    ) -> Iterator[EdFiParams]:
+        """
+
+        :param page_size:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        if step_change_version:
+            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
+                total_count = self._get_total_count(self.client.session, self.url, cv_window_params)
+                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
+
+                if reverse_paging:
+                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
+
+                yield from cv_offset_params_list
+        else:
+            total_count = self._get_total_count(self.client.session, self.url, self.params)
+            yield from self.params.build_offset_window_params(page_size, total_count=total_count)
+
     def reconnect_if_expired(func: Callable) -> Callable:
         """
         This decorator resets the connection with the API if expired.
@@ -306,11 +431,12 @@ class EdFiEndpoint:
         return wrapped
 
     @reconnect_if_expired
-    def _get_total_count(self, url: str, params: EdFiParams):
+    def _get_total_count(self, session: requests.Session, url: str, params: EdFiParams):
         """
         `total_count()` is accessible by the user and during reverse offset-pagination.
         This internal helper method prevents code needing to be defined twice.
 
+        :param session:
         :param url:
         :param params:
         :return:
@@ -319,28 +445,31 @@ class EdFiEndpoint:
         _params['totalCount'] = True
         _params['limit'] = 0
 
-        res = self._get_response(url, params=_params)
+        res = self._get_response(session, url, params=_params)
         return int(res.headers.get('Total-Count'))
 
     @reconnect_if_expired
     def _get_response(self,
+        session: requests.Session,
         url: str,
         params: Optional[EdFiParams] = None
     ) -> requests.Response:
         """
         Complete a GET request against an endpoint URL.
 
+        :param session:
         :param url:
         :param params:
         :return:
         """
-        response = self.client.session.get(url, params=params)
+        response = self.client.session.get(session, url, params=params)
         self.custom_raise_for_status(response)
         return response
 
 
     @reconnect_if_expired
     def _get_response_with_exponential_backoff(self,
+        session: requests.Session,
         url: str,
         params: Optional[EdFiParams] = None,
 
@@ -352,6 +481,7 @@ class EdFiEndpoint:
         Complete a GET request against an endpoint URL.
         In the case of failure, retry with exponential backoff until max_retries or max_wait has been exceeded.
 
+        :param session:
         :param url:
         :param params:
         :param max_retries:
@@ -362,7 +492,7 @@ class EdFiEndpoint:
         for n_tries in range(max_retries):
 
             try:
-                return self._get_response(url, params=params)
+                return self._get_response(session, url, params=params)
 
             except RequestsWarning:
                 # If an API call fails, it may be due to rate-limiting.
@@ -374,14 +504,9 @@ class EdFiEndpoint:
 
         # This block is reached only if max_retries has been reached.
         else:
-            self.client.verbose_log(message=(
-                f"[Get with Retry Failed] Endpoint  : {url}\n"
-                f"[Get with Retry Failed] Parameters: {params}"
-            ), verbose=True)
-
-            raise RuntimeError(
-                "API GET failed: max retries exceeded for URL."
-            )
+            logging.warning(f"[Get with Retry Failed] Endpoint  : {url}")
+            logging.warning(f"[Get with Retry Failed] Parameters: {params}")
+            raise RuntimeError("API GET failed: max retries exceeded for URL.")
 
     @staticmethod
     def custom_raise_for_status(response):
@@ -427,6 +552,116 @@ class EdFiEndpoint:
             else:
                 # Otherwise, use the default error messages defined in Response.
                 response.raise_for_status()
+
+
+    ### Asynchronous internal helper methods
+    async def _async_build_pagination_window_params(self,
+        *,
+        page_size: int,
+        step_change_version: bool,
+        change_version_step_size: int,
+        reverse_paging: bool
+    ) -> AsyncIterator[EdFiParams]:
+        """
+
+        :param page_size:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        if step_change_version:
+            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
+                total_count = await self._async_get_total_count(self.client.session, self.url, cv_window_params)
+                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
+
+                if reverse_paging:
+                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
+
+                for param in cv_offset_params_list:
+                    yield param
+        else:
+            total_count = await self._async_get_total_count(self.client.session, self.url, self.params)
+            for param in self.params.build_offset_window_params(page_size, total_count=total_count):
+                yield param
+
+    @reconnect_if_expired
+    async def _async_get_total_count(self, session: aiohttp.ClientSession, url: str, params: EdFiParams):
+        """
+        `total_count()` is accessible by the user and during reverse offset-pagination.
+        This internal helper method prevents code needing to be defined twice.
+
+        :param session:
+        :param url:
+        :param params:
+        :return:
+        """
+        _params = params.copy()
+        _params['totalCount'] = True
+        _params['limit'] = 0
+
+        res = await self._async_get_response(session, url, params=_params)
+        return int(res.headers.get('Total-Count'))
+
+    @reconnect_if_expired
+    async def _async_get_response(self,
+        session: aiohttp.ClientSession,
+        url: str,
+        params: Optional[EdFiParams] = None
+    ) -> aiohttp.ClientResponse:
+        """
+        Complete a GET request against an endpoint URL.
+
+        :param session:
+        :param url:
+        :param params:
+        :return:
+        """
+        async with session.get(url, params=params) as response:
+            _ = await response.text()
+            self.custom_raise_for_status(response)
+            return response
+
+    @reconnect_if_expired
+    async def _async_get_response_with_exponential_backoff(self,
+        session: aiohttp.ClientSession,
+        url: str,
+        params: Optional[EdFiParams] = None,
+
+        *,
+        max_retries: int = 5,
+        max_wait: int = 600,
+    ) -> aiohttp.ClientResponse:
+        """
+        Complete a GET request against an endpoint URL.
+        In the case of failure, retry with exponential backoff until max_retries or max_wait has been exceeded.
+
+        :param session:
+        :param url:
+        :param params:
+        :param max_retries:
+        :param max_wait:
+        :return:
+        """
+        # Attempt the GET until success or `max_retries` reached.
+        for n_tries in range(max_retries):
+
+            try:
+                return await self._async_get_response(session, url, params=params)
+
+            except RequestsWarning:
+                # If an API call fails, it may be due to rate-limiting.
+                # Use exponential backoff to wait, then refresh and try again.
+                await asyncio.sleep(
+                    min((2 ** n_tries) * 2, max_wait)
+                )
+                logging.warning(f"Retry number: {n_tries}")
+
+        # This block is reached only if max_retries has been reached.
+        else:
+            logging.warning(f"[Get with Retry Failed] Endpoint  : {url}")
+            logging.warning(f"[Get with Retry Failed] Parameters: {params}")
+            raise RuntimeError("API GET failed: max retries exceeded for URL.")
 
 
 class EdFiResource(EdFiEndpoint):
@@ -537,11 +772,11 @@ class EdFiComposite(EdFiEndpoint):
 
             if retry_on_failure:
                 res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
+                    self.client.session, self.url, params=paged_params,
                     max_retries=max_retries, max_wait=max_wait
                 )
             else:
-                res = self._get_response(self.url, params=paged_params)
+                res = self._get_response(self.client.session, self.url, params=paged_params)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
