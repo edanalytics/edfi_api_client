@@ -70,7 +70,11 @@ class EdFiClient:
         }
 
         # If ID and secret are passed, build a session.
-        self.session = None
+        self.authenticated_at: int = None
+        self.refresh_at: int = None
+
+        self.session = requests.Session()
+        self.async_session = aiohttp.ClientSession()
 
         if self.client_key and self.client_secret:
             self.connect()
@@ -212,14 +216,15 @@ class EdFiClient:
         access_token = access_response.json().get('access_token')
         req_header = {'Authorization': 'Bearer {}'.format(access_token)}
 
-        # Create a synchronous and asynchronous session and add headers to both.
-        self.session = requests.Session()
+        # Add headers to both synchronous and asynchronous sessions.
         self.session.headers.update(req_header)
+        self.async_session.headers.update(req_header)
 
-        # Add new attributes to track when connection was established and when to refresh the access token.
-        self.session.timestamp_unix = int(time.time())
-        self.session.refresh_time = int(self.session.timestamp_unix + access_response.json().get('expires_in') - 120)
-        self.session.verify = self.verify_ssl
+        self.session.verify = self.verify_ssl  # Only synchronous session uses `verify` attribute.
+
+        # Track when connection was established and when to refresh the access token.
+        self.authenticated_at = int(time.time())
+        self.refresh_at = int(self.authenticated_at + access_response.json().get('expires_in') - 120)
 
         self.verbose_log("Connection to ODS successful!")
         return self.session
@@ -233,7 +238,7 @@ class EdFiClient:
         """
         @wraps(func)
         def wrapped(self, *args, **kwargs):
-            if self.session is None:
+            if self.authenticated_at is None:
                 raise ValueError(
                     "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
                 )
