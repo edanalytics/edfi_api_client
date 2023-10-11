@@ -1,8 +1,6 @@
 from collections import defaultdict
 from typing import List
 
-from edfi_api_client.util import camel_to_snake
-
 
 class EdFiSwagger:
     """

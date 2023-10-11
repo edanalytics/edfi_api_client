@@ -4,12 +4,12 @@ import requests
 
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
-from edfi_api_client.edfi_params import EdFiParams
+from edfi_api_client.params import EdFiParams
 
 from typing import Iterator, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from edfi_api_client.edfi_client import EdFiClient
+    from edfi_api_client.client import EdFiClient
 
 
 class EdFiEndpoint(AsyncEndpointMixin):

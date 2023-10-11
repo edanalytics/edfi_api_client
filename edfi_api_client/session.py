@@ -1,4 +1,3 @@
-import functools
 import logging
 import time
 
@@ -9,10 +8,10 @@ from requests.exceptions import RequestsWarning
 
 from edfi_api_client import util
 
-from typing import Callable, Optional
+from typing import Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from edfi_api_client.edfi_params import EdFiParams
+    from edfi_api_client.params import EdFiParams
 
 
 class EdFiSession:

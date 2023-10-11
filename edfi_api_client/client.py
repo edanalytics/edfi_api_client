@@ -1,13 +1,12 @@
-import aiohttp
 import functools
 import requests
 from requests.exceptions import HTTPError
 
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEdFiSession
-from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
-from edfi_api_client.edfi_session import EdFiSession
-from edfi_api_client.edfi_swagger import EdFiSwagger
+from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
+from edfi_api_client.session import EdFiSession
+from edfi_api_client.swagger import EdFiSwagger
 
 from typing import Callable, List, Optional
 
