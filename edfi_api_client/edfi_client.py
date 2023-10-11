@@ -1,14 +1,10 @@
-import aiohttp
 import requests
-import time
-
-from functools import wraps
-from requests.auth import HTTPBasicAuth
 from requests.exceptions import HTTPError
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
+from edfi_api_client.edfi_session import EdFiSession, AsyncEdFiSession
 from edfi_api_client.edfi_swagger import EdFiSwagger
 
 import logging
@@ -72,12 +68,11 @@ class EdFiClient:
         # If ID and secret are passed, build a session.
         self.authenticated_at: int = None
         self.refresh_at: int = None
-
-        self.session = requests.Session()
-        self.async_session = aiohttp.ClientSession()
+        self.session: requests.Session = None
 
         if self.client_key and self.client_secret:
-            self.connect()
+            self.session = EdFiSession(self.base_url, self.client_key, self.client_secret)
+            self.session.connect()  # Connect synchronous session immediately
         else:
             self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
 
@@ -92,7 +87,14 @@ class EdFiClient:
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
 
-    def is_edfi2(self) -> bool:
+    async def set_async_session(self):
+        if not self.client_key and self.client_secret:
+            self.verbose_log("Client key and secret not provided. Async connection with ODS will not be attempted.")
+            exit(1)
+        return AsyncEdFiSession(self.base_url, self.client_key, self.client_secret)
+
+    @staticmethod
+    def is_edfi2() -> bool:
         return False
 
     def verbose_log(self, message: str, verbose: bool = False):
@@ -195,60 +197,7 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
-
-    ### Methods for connecting to the ODS
-    def connect(self) -> requests.Session:
-        """
-        Create a session with authorization headers.
-
-        :return:
-        """
-        token_path = 'oauth/token'
-
-        access_response = requests.post(
-            util.url_join(self.base_url, token_path),
-            auth=HTTPBasicAuth(self.client_key, self.client_secret),
-            data={'grant_type': 'client_credentials'},
-            verify=self.verify_ssl
-        )
-        access_response.raise_for_status()
-
-        access_token = access_response.json().get('access_token')
-        req_header = {'Authorization': 'Bearer {}'.format(access_token)}
-
-        # Add headers to both synchronous and asynchronous sessions.
-        self.session.headers.update(req_header)
-        self.session.verify = self.verify_ssl  # Only synchronous session uses `verify` attribute.
-
-        # Track when connection was established and when to refresh the access token.
-        self.authenticated_at = int(time.time())
-        self.refresh_at = int(self.authenticated_at + access_response.json().get('expires_in') - 120)
-
-        self.verbose_log("Connection to ODS successful!")
-        return self.session
-
-    async def async_connect(self):
-        return aiohttp.ClientSession(headers=self.session.headers)
-
-    def require_session(func: Callable) -> Callable:
-        """
-        This decorator verifies a session is established before calling the associated class method.
-
-        :param func:
-        :return:
-        """
-        @wraps(func)
-        def wrapped(self, *args, **kwargs):
-            if self.authenticated_at is None:
-                raise ValueError(
-                    "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
-                )
-            return func(self, *args, **kwargs)
-        return wrapped
-
-
     ### Methods for accessing ODS endpoints
-    @require_session
     def get_newest_change_version(self) -> int:
         """
         Return the newest change version marked in the ODS (Ed-Fi3 only).
@@ -259,7 +208,7 @@ class EdFiClient:
             self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions'
         )
 
-        res = self.session.get(change_query_path)
+        res = self.session.get_response(change_query_path)
         if not res.ok:
             http_error_msg = (
                 f"Change version check failed with status `{res.status_code}`: {res.reason}"
@@ -270,7 +219,6 @@ class EdFiClient:
         lower_json = {key.lower(): value for key, value in res.json().items()}
         return lower_json['newestchangeversion']
 
-    @require_session
     def resource(self,
         name: str,
 
@@ -287,7 +235,6 @@ class EdFiClient:
             params=params, **kwargs
         )
 
-    @require_session
     def descriptor(self,
         name: str,
 
@@ -307,7 +254,6 @@ class EdFiClient:
             params=params, **kwargs
         )
 
-    @require_session
     def composite(self,
         name: str,
 

@@ -1,21 +1,17 @@
 import asyncio
-import aiohttp
 import aiofiles
 import logging
 import requests
-import time
-
-from functools import wraps
-from requests.exceptions import HTTPError, RequestsWarning
 
 from edfi_api_client.edfi_params import EdFiParams
 from edfi_api_client import util
 
 from typing import AsyncIterator
-from typing import Callable, Iterator, List, Optional
+from typing import Iterator, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
+    from edfi_api_client.edfi_session import AsyncEdFiSession
 
 
 class EdFiEndpoint:
@@ -55,7 +51,6 @@ class EdFiEndpoint:
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
-        self.url = self._build_endpoint_url()
         self.params = EdFiParams(params, **kwargs)
 
         # Swagger attributes are loaded lazily
@@ -71,6 +66,23 @@ class EdFiEndpoint:
 
         return f"<{self.type}{deletes_string}{params_string} [{full_name}]>"
 
+    @property
+    def url(self) -> str:
+        """
+        Build the name/descriptor URL to GET from the API.
+
+        :return:
+        """
+        # Deletes are an optional path addition.
+        deletes = 'deletes' if self.get_deletes else None
+
+        return util.url_join(
+            self.client.base_url,
+            self.client.version_url_string,
+            self.client.instance_locator,
+            self.namespace, self.name, deletes
+        )
+
     # Generic API methods
     def ping(self) -> requests.Response:
         """
@@ -81,7 +93,7 @@ class EdFiEndpoint:
         params = self.params.copy()
         params['limit'] = 1
 
-        res = self._get_response(self.url, params=params)
+        res = self.client.session.get_response(self.url, params=params)
 
         # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
@@ -98,7 +110,7 @@ class EdFiEndpoint:
 
         :return:
         """
-        return self._get_total_count(self.url, self.params)
+        return self.client.session.get_total_count(self.url, self.params)
 
     def get(self, limit: Optional[int] = None) -> List[dict]:
         """
@@ -114,7 +126,20 @@ class EdFiEndpoint:
         if limit is not None:
             params['limit'] = limit
 
-        return self._get_response(self.url, params=params).json()
+        return self.client.session.get_response(self.url, params=params).json()
+
+    ### Swagger-adjacent properties and helper methods
+    @property
+    def description(self) -> str:
+        if self.swagger is None:
+            self.swagger = self.client.get_swagger(self.swagger_type)
+        return self.swagger.descriptions.get(self.name)
+
+    @property
+    def has_deletes(self) -> bool:
+        if self.swagger is None:
+            self.swagger = self.client.get_swagger(self.swagger_type)
+        return (self.namespace, self.name) in self.swagger.deletes
 
     # Synchronous GET methods
     def get_pages(self,
@@ -164,13 +189,10 @@ class EdFiEndpoint:
             ### GET from the API and yield the resulting JSON payload
             self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
 
-            if retry_on_failure:
-                res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
-                    max_retries=max_retries, max_wait=max_wait
-                )
-            else:
-                res = self._get_response(self.url, params=paged_params)
+            res = self.client.session.get_response(
+                self.url, params=paged_params,
+                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+            )
 
             self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
@@ -288,7 +310,7 @@ class EdFiEndpoint:
             self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Create asynchronous session to feed to all response operations.
-        async with await self.client.async_connect() as session:
+        async with await self.client.set_async_session() as session:
 
             # Build a list of pagination params to iterate during ingestion.
             paged_params_list = self._async_build_pagination_window_params(
@@ -304,18 +326,13 @@ class EdFiEndpoint:
                 ### GET from the API and yield the resulting JSON payload
                 self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {paged_params}")
 
-                if retry_on_failure:
-                    res = await self._async_get_response_with_exponential_backoff(
-                        session=session, url=self.url, params=paged_params,
-                        max_retries=max_retries, max_wait=max_wait
-                    )
-                else:
-                    res = await self._async_get_response(session=session, url=self.url, params=paged_params)
+                res = self.client.session.get_response(
+                    self.url, params=paged_params,
+                    retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+                )
 
-                page = await res.json()
-
-                self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(page)} rows.")
-                yield page
+                self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+                yield res.json()
 
     def async_get_to_json(self,
         path: str,
@@ -362,38 +379,6 @@ class EdFiEndpoint:
         return path
 
 
-    ### Swagger-adjacent properties and helper methods
-    @property
-    def description(self) -> str:
-        if self.swagger is None:
-            self.swagger = self.client.get_swagger(self.swagger_type)
-        return self.swagger.descriptions.get(self.name)
-
-    @property
-    def has_deletes(self) -> bool:
-        if self.swagger is None:
-            self.swagger = self.client.get_swagger(self.swagger_type)
-        return (self.namespace, self.name) in self.swagger.deletes
-
-
-    ### Synchronicity-agnostic internal helpers
-    def _build_endpoint_url(self) -> str:
-        """
-        Build the name/descriptor URL to GET from the API.
-
-        :return:
-        """
-        # Deletes are an optional path addition.
-        deletes = 'deletes' if self.get_deletes else None
-
-        return util.url_join(
-            self.client.base_url,
-            self.client.version_url_string,
-            self.client.instance_locator,
-            self.namespace, self.name, deletes
-        )
-
-
     ## Synchronous internal helpers
     def _build_pagination_window_params(self,
         *,
@@ -412,7 +397,7 @@ class EdFiEndpoint:
         """
         if step_change_version:
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self._get_total_count(self.url, cv_window_params)
+                total_count = self.client.session.get_total_count(self.url, cv_window_params)
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
 
                 if reverse_paging:
@@ -420,157 +405,17 @@ class EdFiEndpoint:
 
                 yield from cv_offset_params_list
         else:
-            total_count = self._get_total_count(self.url, self.params)
+            total_count = self.client.session.get_total_count(self.url, self.params)
             yield from self.params.build_offset_window_params(page_size, total_count=total_count)
 
-    def reconnect_if_expired(func: Callable) -> Callable:
-        """
-        This decorator resets the connection with the API if expired.
-
-        :param func:
-        :return:
-        """
-        @wraps(func)
-        def wrapped(self, *args, **kwargs):
-            # Refresh token if refresh_time has passed
-            if self.client.refresh_at < int(time.time()):
-                self.client.verbose_log("Session authentication is expired. Attempting reconnection...")
-                self.client.connect()
-
-            return func(self, *args, **kwargs)
-        return wrapped
-
-    @reconnect_if_expired
-    def _get_total_count(self, url: str, params: EdFiParams):
-        """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = True
-        _params['limit'] = 0
-
-        res = self._get_response(url, params=_params)
-        return int(res.headers.get('Total-Count'))
-
-    @reconnect_if_expired
-    def _get_response(self,
-        url: str,
-        params: Optional[EdFiParams] = None
-    ) -> requests.Response:
-        """
-        Complete a GET request against an endpoint URL.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        response = self.client.session.get(url, params=params)
-        self.custom_raise_for_status(response)
-        return response
-
-
-    @reconnect_if_expired
-    def _get_response_with_exponential_backoff(self,
-        url: str,
-        params: Optional[EdFiParams] = None,
-
-        *,
-        max_retries: int = 5,
-        max_wait: int = 600,
-    ) -> requests.Response:
-        """
-        Complete a GET request against an endpoint URL.
-        In the case of failure, retry with exponential backoff until max_retries or max_wait has been exceeded.
-
-        :param url:
-        :param params:
-        :param max_retries:
-        :param max_wait:
-        :return:
-        """
-        # Attempt the GET until success or `max_retries` reached.
-        for n_tries in range(max_retries):
-
-            try:
-                return self._get_response(url, params=params)
-
-            except RequestsWarning:
-                # If an API call fails, it may be due to rate-limiting.
-                # Use exponential backoff to wait, then refresh and try again.
-                time.sleep(
-                    min((2 ** n_tries) * 2, max_wait)
-                )
-                logging.warning(f"Retry number: {n_tries}")
-
-        # This block is reached only if max_retries has been reached.
-        else:
-            logging.warning(f"[Get with Retry Failed] Endpoint  : {url}")
-            logging.warning(f"[Get with Retry Failed] Parameters: {params}")
-            raise RuntimeError("API GET failed: max retries exceeded for URL.")
-
-    @staticmethod
-    def custom_raise_for_status(response):
-        """
-        Custom HTTP exception logic and logging.
-        The built-in Response.raise_for_status() fails too broadly, even in cases where a connection-reset is enough.
-
-        :param response:
-        :return:
-        """
-        # requests.Response.status_code vs aiohttp.ClientResponse.status
-        status_code = response.status_code if hasattr(response, 'status_code') else response.status
-
-        if 400 <= status_code < 600:
-            logging.warning(
-                f"API Error: {status_code} {response.reason}"
-            )
-            if status_code == 400:
-                raise HTTPError(
-                    "400: Bad request. Check your params. Is 'limit' set too high?"
-                )
-            elif status_code == 401:
-                raise RequestsWarning(
-                    "401: Unauthenticated for URL. The connection may need to be reset."
-                )
-            elif status_code == 403:
-                # Only raise an HTTPError where the resource is impossible to access.
-                raise HTTPError(
-                    "403: Resource not authorized.",
-                    response=response
-                )
-            elif status_code == 404:
-                # Only raise an HTTPError where the resource is impossible to access.
-                raise HTTPError(
-                    "404: Resource not found.",
-                    response=response
-                )
-            elif status_code == 500:
-                raise RequestsWarning(
-                    "500: Internal server error."
-                )
-            elif status_code == 504:
-                raise RequestsWarning(
-                    "504: Gateway time-out for URL. The connection may need to be reset."
-                )
-            else:
-                # Otherwise, use the default error messages defined in Response.
-                response.raise_for_status()
-
-
-    ### Asynchronous internal helper methods
     async def _async_build_pagination_window_params(self,
-        session: aiohttp.ClientSession,
+        session: 'AsyncEdFiSession',
         *,
         page_size: int,
         step_change_version: bool,
         change_version_step_size: int,
         reverse_paging: bool
-    ) -> AsyncIterator[EdFiParams]:
+    ) -> AsyncIterator['EdFiParams']:
         """
 
         :param session:
@@ -582,7 +427,7 @@ class EdFiEndpoint:
         """
         if step_change_version:
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = await self._async_get_total_count(session, self.url, cv_window_params)
+                total_count = await session.get_total_count(self.url, cv_window_params)
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
 
                 if reverse_paging:
@@ -591,88 +436,9 @@ class EdFiEndpoint:
                 for param in cv_offset_params_list:
                     yield param
         else:
-            total_count = await self._async_get_total_count(self.client.session, self.url, self.params)
+            total_count = await session.get_total_count(self.url, self.params)
             for param in self.params.build_offset_window_params(page_size, total_count=total_count):
                 yield param
-
-    @reconnect_if_expired
-    async def _async_get_total_count(self, session: aiohttp.ClientSession, url: str, params: EdFiParams) -> int:
-        """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
-
-        :param session:
-        :param url:
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = "true"
-        _params['limit'] = 0
-
-        res = await self._async_get_response(session, url, params=_params)
-        return int(res.headers.get('Total-Count'))
-
-    @reconnect_if_expired
-    async def _async_get_response(self,
-        session: aiohttp.ClientSession,
-        url: str,
-        params: Optional[EdFiParams] = None
-    ) -> aiohttp.ClientResponse:
-        """
-        Complete a GET request against an endpoint URL.
-
-        :param session:
-        :param url:
-        :param params:
-        :return:
-        """
-        async with session.get(url, params=params, verify_ssl=self.client.verify_ssl) as response:
-            _ = await response.json()
-            self.custom_raise_for_status(response)
-            return response
-
-    @reconnect_if_expired
-    async def _async_get_response_with_exponential_backoff(self,
-        session: aiohttp.ClientSession,
-        url: str,
-        params: Optional[EdFiParams] = None,
-
-        *,
-        max_retries: int = 5,
-        max_wait: int = 600,
-    ) -> aiohttp.ClientResponse:
-        """
-        Complete a GET request against an endpoint URL.
-        In the case of failure, retry with exponential backoff until max_retries or max_wait has been exceeded.
-
-        :param session:
-        :param url:
-        :param params:
-        :param max_retries:
-        :param max_wait:
-        :return:
-        """
-        # Attempt the GET until success or `max_retries` reached.
-        for n_tries in range(max_retries):
-
-            try:
-                return await self._async_get_response(session, url, params=params)
-
-            except RequestsWarning:
-                # If an API call fails, it may be due to rate-limiting.
-                # Use exponential backoff to wait, then refresh and try again.
-                await asyncio.sleep(
-                    min((2 ** n_tries) * 2, max_wait)
-                )
-                logging.warning(f"Retry number: {n_tries}")
-
-        # This block is reached only if max_retries has been reached.
-        else:
-            logging.warning(f"[Get with Retry Failed] Endpoint  : {url}")
-            logging.warning(f"[Get with Retry Failed] Parameters: {params}")
-            raise RuntimeError("API GET failed: max retries exceeded for URL.")
-
 
 class EdFiResource(EdFiEndpoint):
     """
@@ -729,6 +495,32 @@ class EdFiComposite(EdFiEndpoint):
 
         return f"<{composite} Composite{params_string} [{full_name}]{filter_string}>"
 
+    @property
+    def url(self) -> str:
+        """
+        Build the composite URL to GET from the API.
+
+        :return:
+        """
+        # If a filter is applied, the URL changes to match the filter type.
+        if self.filter_type is None and self.filter_id is None:
+            return util.url_join(
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite, self.name.title()
+            )
+        elif self.filter_type is not None and self.filter_id is not None:
+            return util.url_join(
+                self.client.base_url, 'composites/v1',
+                self.client.instance_locator,
+                self.namespace, self.composite,
+                self.filter_type, self.filter_id, self.name
+            )
+        else:
+            raise ValueError(
+                "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
+            )
+
     def total_count(self):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
@@ -780,13 +572,10 @@ class EdFiComposite(EdFiEndpoint):
             ### GET from the API and yield the resulting JSON payload
             self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
 
-            if retry_on_failure:
-                res = self._get_response_with_exponential_backoff(
-                    self.url, params=paged_params,
-                    max_retries=max_retries, max_wait=max_wait
-                )
-            else:
-                res = self._get_response(self.url, params=paged_params)
+            res = self.client.session.get_response(
+                self.url, params=paged_params,
+                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+            )
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
@@ -800,31 +589,3 @@ class EdFiComposite(EdFiEndpoint):
             else:
                 self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
                 break
-
-
-    def _build_endpoint_url(self) -> str:
-        """
-        Build the composite URL to GET from the API.
-
-        :return:
-        """
-        # If a filter is applied, the URL changes to match the filter type.
-        if self.filter_type is None and self.filter_id is None:
-            return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
-                self.namespace, self.composite, self.name.title()
-            )
-
-        elif self.filter_type is not None and self.filter_id is not None:
-            return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
-                self.namespace, self.composite,
-                self.filter_type, self.filter_id, self.name
-            )
-
-        else:
-            raise ValueError(
-                "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
-            )
