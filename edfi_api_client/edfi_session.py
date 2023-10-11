@@ -1,9 +1,7 @@
-import asyncio
 import functools
 import logging
 import time
 
-import aiohttp
 import requests
 from requests import HTTPError
 from requests.auth import HTTPBasicAuth
@@ -81,24 +79,13 @@ class EdFiSession:
 
         return auth_response
 
+    def refresh_if_expired(self):
+        if self.refresh_at < int(time.time()):
+            logging.info("Session authentication is expired. Attempting reconnection...")
+            self.connect()
+
 
     ### Elementary GET Methods
-    def reconnect_if_expired(func: Callable) -> Callable:
-        """
-        This decorator resets the connection with the API if expired.
-
-        :param func:
-        :return:
-        """
-        @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
-            if self.refresh_at < int(time.time()):
-                logging.debug("Session authentication is expired. Attempting reconnection...")
-                self.client.connect()
-            return func(self, *args, **kwargs)
-        return wrapped
-
-    @reconnect_if_expired
     def get_response(self,
         url: str,
         params: Optional['EdFiParams'] = None,
@@ -118,6 +105,8 @@ class EdFiSession:
         :param max_wait:
         :return:
         """
+        self.refresh_if_expired()
+
         if retry_on_failure:
             return self.get_response_with_exponential_backoff(url, params, max_retries=max_retries, max_wait=max_wait, **kwargs)
 
@@ -125,7 +114,6 @@ class EdFiSession:
         self.custom_raise_for_status(response)
         return response
 
-    @reconnect_if_expired
     def get_response_with_exponential_backoff(self,
         url: str,
         params: 'EdFiParams',
@@ -165,7 +153,6 @@ class EdFiSession:
             logging.warning(f"[Get with Retry Failed] Parameters: {params}")
             raise RuntimeError("API GET failed: max retries exceeded for URL.")
 
-    @reconnect_if_expired
     def get_total_count(self, url: str, params: 'EdFiParams', **kwargs):
         """
         `total_count()` is accessible by the user and during reverse offset-pagination.
@@ -229,119 +216,3 @@ class EdFiSession:
             else:
                 # Otherwise, use the default error messages defined in Response.
                 response.raise_for_status()
-
-
-class AsyncEdFiSession(EdFiSession):
-    """
-
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.session: aiohttp.ClientSession = None
-
-    async def __aenter__(self):
-        await self.connect()
-        return self
-
-    async def __aexit__(self, *exc):
-        return await self.session.close()
-
-    async def connect(self) -> aiohttp.ClientSession:
-        if self.session is None:
-            self.session = aiohttp.ClientSession()
-
-        # Updates time attributes to match response
-        auth_info = self.get_auth_response().json()
-        access_token = auth_info['access_token']
-
-        self.session.headers.update({
-            'Authorization': 'Bearer {}'.format(access_token),
-        })
-        logging.info("Async connection to ODS successful!")
-        return self.session
-
-
-    ### Elementary GET Methods
-    @EdFiSession.reconnect_if_expired
-    async def get_response(self,
-        url: str,
-        params: 'EdFiParams',
-        *,
-        retry_on_failure: bool = False,
-        max_retries: bool = 5,
-        max_wait: int = 600,
-        **kwargs
-    ) -> aiohttp.ClientResponse:
-        """
-        Complete a GET request against an endpoint URL.
-
-        :param url:
-        :param params:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
-        :return:
-        """
-        if retry_on_failure:
-            return await self.get_response_with_exponential_backoff(url, params, max_retries=max_retries, max_wait=max_wait, **kwargs)
-
-        async with self.session.get(url, params=params, verify_ssl=self.verify_ssl) as response:
-            _ = await response.json()
-            self.custom_raise_for_status(response)
-            return response
-
-    @EdFiSession.reconnect_if_expired
-    async def get_response_with_exponential_backoff(self,
-        url: str,
-        params: 'EdFiParams',
-        *,
-        max_retries: int = 5,
-        max_wait: int = 600,
-        **kwargs
-    ) -> aiohttp.ClientResponse:
-        """
-        Complete a GET request against an endpoint URL.
-        In the case of failure, retry with exponential backoff until max_retries or max_wait has been exceeded.
-
-        :param url:
-        :param params:
-        :param max_retries:
-        :param max_wait:
-        :return:
-        """
-        # Attempt the GET until success or `max_retries` reached.
-        for n_tries in range(max_retries):
-
-            try:
-                return await self.get_response(url, params, **kwargs)
-
-            except RequestsWarning:
-                # If an API call fails, it may be due to rate-limiting.
-                # Use exponential backoff to wait, then refresh and try again.
-                await asyncio.sleep(
-                    min((2 ** n_tries) * 2, max_wait)
-                )
-                logging.warning(f"Retry number: {n_tries}")
-
-        # This block is reached only if max_retries has been reached.
-        else:
-            logging.warning(f"[Get with Retry Failed] Endpoint  : {url}")
-            logging.warning(f"[Get with Retry Failed] Parameters: {params}")
-            raise RuntimeError("API GET failed: max retries exceeded for URL.")
-
-    @EdFiSession.reconnect_if_expired
-    async def get_total_count(self, url: str, params: 'EdFiParams', **kwargs) -> int:
-        """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = "true"
-        _params['limit'] = 0
-
-        res = await self.get_response(url, _params, **kwargs)
-        return int(res.headers.get('Total-Count'))

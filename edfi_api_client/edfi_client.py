@@ -1,12 +1,16 @@
+import aiohttp
 import functools
 import requests
 from requests.exceptions import HTTPError
-from typing import Callable, List, Optional
 
 from edfi_api_client import util
+from edfi_api_client.async_mixin import AsyncEdFiSession
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
-from edfi_api_client.edfi_session import EdFiSession, AsyncEdFiSession
+from edfi_api_client.edfi_session import EdFiSession
 from edfi_api_client.edfi_swagger import EdFiSwagger
+
+from typing import Callable, List, Optional
+
 
 import logging
 logging.basicConfig(
@@ -44,12 +48,12 @@ class EdFiClient:
         verify_ssl   : bool = True,
         verbose      : bool = False,
     ):
-        self.verify_ssl = verify_ssl
         self.verbose = verbose
 
         self.base_url = base_url
         self.client_key = client_key
         self.client_secret = client_secret
+        self.verify_ssl = verify_ssl
 
         self.api_version = int(api_version)
         self.api_mode = api_mode or self.get_api_mode()
@@ -69,10 +73,10 @@ class EdFiClient:
         # If ID and secret are passed, build a session.
         self.authenticated_at: int = None
         self.refresh_at: int = None
-        self.session: requests.Session = None
+        self.session: EdFiSession = EdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+        self.async_session: AsyncEdFiSession = AsyncEdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
 
         if self.client_key and self.client_secret:
-            self.session = EdFiSession(self.base_url, self.client_key, self.client_secret)
             self.session.connect()  # Connect synchronous session immediately
         else:
             self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
@@ -87,12 +91,6 @@ class EdFiClient:
             api_mode += f" {self.api_year}"
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
-
-    async def set_async_session(self):
-        if not self.client_key and self.client_secret:
-            self.verbose_log("Client key and secret not provided. Async connection with ODS will not be attempted.")
-            exit(1)
-        return AsyncEdFiSession(self.base_url, self.client_key, self.client_secret)
 
     @staticmethod
     def is_edfi2() -> bool:
