@@ -1,6 +1,7 @@
+import functools
 import requests
 from requests.exceptions import HTTPError
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
@@ -198,6 +199,24 @@ class EdFiClient:
             )
 
     ### Methods for accessing ODS endpoints
+    def require_session(func: Callable) -> Callable:
+        """
+        This decorator verifies a session is established before calling the associated class method.
+
+        :param func:
+        :return:
+        """
+
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+            if self.session is None:
+                raise ValueError(
+                    "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
+                )
+            return func(self, *args, **kwargs)
+        return wrapped
+
+    @require_session
     def get_newest_change_version(self) -> int:
         """
         Return the newest change version marked in the ODS (Ed-Fi3 only).
@@ -219,6 +238,7 @@ class EdFiClient:
         lower_json = {key.lower(): value for key, value in res.json().items()}
         return lower_json['newestchangeversion']
 
+    @require_session
     def resource(self,
         name: str,
 
@@ -235,6 +255,7 @@ class EdFiClient:
             params=params, **kwargs
         )
 
+    @require_session
     def descriptor(self,
         name: str,
 
@@ -254,6 +275,7 @@ class EdFiClient:
             params=params, **kwargs
         )
 
+    @require_session
     def composite(self,
         name: str,
 

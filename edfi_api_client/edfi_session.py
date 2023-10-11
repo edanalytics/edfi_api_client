@@ -83,30 +83,22 @@ class EdFiSession:
 
 
     ### Elementary GET Methods
-    def check_session(func: Callable) -> Callable:
+    def reconnect_if_expired(func: Callable) -> Callable:
         """
-        This decorator checks that a connection to the ODS has been made.
-        If the connection is expired, the connection is reset.
+        This decorator resets the connection with the API if expired.
 
         :param func:
         :return:
         """
         @functools.wraps(func)
         def wrapped(self, *args, **kwargs):
-
-            if self.authenticated_at is None:
-                raise ValueError(
-                    "A connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
-                )
-
             if self.refresh_at < int(time.time()):
-                self.client.verbose_log("Session authentication is expired. Reconnecting...")
-                self.connect()
-
+                logging.debug("Session authentication is expired. Attempting reconnection...")
+                self.client.connect()
             return func(self, *args, **kwargs)
         return wrapped
 
-    @check_session
+    @reconnect_if_expired
     def get_response(self,
         url: str,
         params: Optional['EdFiParams'] = None,
@@ -133,7 +125,7 @@ class EdFiSession:
         self.custom_raise_for_status(response)
         return response
 
-    @check_session
+    @reconnect_if_expired
     def get_response_with_exponential_backoff(self,
         url: str,
         params: 'EdFiParams',
@@ -173,7 +165,7 @@ class EdFiSession:
             logging.warning(f"[Get with Retry Failed] Parameters: {params}")
             raise RuntimeError("API GET failed: max retries exceeded for URL.")
 
-    @check_session
+    @reconnect_if_expired
     def get_total_count(self, url: str, params: 'EdFiParams', **kwargs):
         """
         `total_count()` is accessible by the user and during reverse offset-pagination.
@@ -270,7 +262,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### Elementary GET Methods
-    @EdFiSession.check_session
+    @EdFiSession.reconnect_if_expired
     async def get_response(self,
         url: str,
         params: 'EdFiParams',
@@ -298,7 +290,7 @@ class AsyncEdFiSession(EdFiSession):
             self.custom_raise_for_status(response)
             return response
 
-    @EdFiSession.check_session
+    @EdFiSession.reconnect_if_expired
     async def get_response_with_exponential_backoff(self,
         url: str,
         params: 'EdFiParams',
@@ -337,7 +329,7 @@ class AsyncEdFiSession(EdFiSession):
             logging.warning(f"[Get with Retry Failed] Parameters: {params}")
             raise RuntimeError("API GET failed: max retries exceeded for URL.")
 
-    @EdFiSession.check_session
+    @EdFiSession.reconnect_if_expired
     async def get_total_count(self, url: str, params: 'EdFiParams', **kwargs) -> int:
         """
         `total_count()` is accessible by the user and during reverse offset-pagination.
