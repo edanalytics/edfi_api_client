@@ -55,7 +55,7 @@ class AsyncEdFiSession(EdFiSession):
         params: Optional['EdFiParams'] = None,
         *,
         retry_on_failure: bool = False,
-        max_retries: bool = 5,
+        max_retries: int = 5,
         max_wait: int = 600,
         **kwargs
     ) -> aiohttp.ClientResponse:
@@ -192,13 +192,15 @@ class AsyncEndpointMixin:
             async for paged_params in paged_params_list:
                 self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {paged_params}")
 
-                res = self.client.session.get_response(
+                res = await session.get_response(
                     self.url, params=paged_params,
                     retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
                 )
 
-                self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(res.json())} rows.")
-                yield res.json()
+                page = await res.json()
+
+                self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(page)} rows.")
+                yield page
 
     async def async_get_paged_window_params(self,
         session: 'AsyncEdFiSession',
