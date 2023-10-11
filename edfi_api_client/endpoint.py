@@ -143,82 +143,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### GET-all methods
-    def get_rows(self,
-        *,
-        page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
-        step_change_version: bool = False,
-        change_version_step_size: int = 50000,
-        reverse_paging: bool = True
-    ) -> Iterator[dict]:
-        """
-        This method returns all rows from an endpoint, applying pagination logic as necessary.
-        Rows are returned as a generator.
-
-        :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
-        :param step_change_version:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        paged_result_iter = self.get_pages(
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-        )
-
-        for paged_result in paged_result_iter:
-            yield from paged_result
-
-    def get_to_json(self,
-        path: str,
-
-        *,
-        page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
-        step_change_version: bool = False,
-        change_version_step_size: int = 50000,
-        reverse_paging: bool = True,
-    ) -> str:
-        """
-        This method completes a series of GET requests, paginating params as necessary based on endpoint.
-        Rows are written to a file as JSON lines.
-
-        :param path:
-        :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
-        :param step_change_version:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        self.client.verbose_log(f"Writing rows to disk: `{path}`")
-
-        paged_results = self.get_pages(
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-        )
-
-        with open(path, 'wb') as fp:
-            for page in paged_results:
-                fp.write(util.page_to_bytes(page))
-
-        return path
-
     def get_pages(self,
         *,
         page_size: int = 100,
@@ -299,6 +223,82 @@ class EdFiEndpoint(AsyncEndpointMixin):
         else:
             total_count = self.client.session.get_total_count(self.url, self.params)
             yield from self.params.build_offset_window_params(page_size, total_count=total_count)
+
+    def get_rows(self,
+        *,
+        page_size: int = 100,
+
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True
+    ) -> Iterator[dict]:
+        """
+        This method returns all rows from an endpoint, applying pagination logic as necessary.
+        Rows are returned as a generator.
+
+        :param page_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        paged_result_iter = self.get_pages(
+            page_size=page_size,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
+
+        for paged_result in paged_result_iter:
+            yield from paged_result
+
+    def get_to_json(self,
+        path: str,
+
+        *,
+        page_size: int = 100,
+
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        reverse_paging: bool = True,
+    ) -> str:
+        """
+        This method completes a series of GET requests, paginating params as necessary based on endpoint.
+        Rows are written to a file as JSON lines.
+
+        :param path:
+        :param page_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+
+        paged_results = self.get_pages(
+            page_size=page_size,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
+
+        with open(path, 'wb') as fp:
+            for page in paged_results:
+                fp.write(util.page_to_bytes(page))
+
+        return path
 
 
 class EdFiResource(EdFiEndpoint):
