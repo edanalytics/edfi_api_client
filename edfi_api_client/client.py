@@ -70,8 +70,6 @@ class EdFiClient:
         }
 
         # If ID and secret are passed, build a session.
-        self.authenticated_at: int = None
-        self.refresh_at: int = None
         self.session: EdFiSession = EdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
         self.async_session: AsyncEdFiSession = AsyncEdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
 

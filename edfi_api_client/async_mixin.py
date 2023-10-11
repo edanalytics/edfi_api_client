@@ -178,7 +178,6 @@ class AsyncEndpointMixin:
             self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Create asynchronous session to feed to all response operations.
-
         async with await self.client.async_session.connect() as session:
 
             # Build a list of pagination params to iterate during ingestion.
