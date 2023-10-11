@@ -288,7 +288,7 @@ class EdFiEndpoint:
             self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Create asynchronous session to feed to all response operations.
-        async with self.client.async_session as session:
+        async with await self.client.async_connect() as session:
 
             # Build a list of pagination params to iterate during ingestion.
             paged_params_list = self._async_build_pagination_window_params(
@@ -317,7 +317,7 @@ class EdFiEndpoint:
                 self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(page)} rows.")
                 yield page
 
-    async def async_get_to_json(self,
+    def async_get_to_json(self,
         path: str,
 
         *,
@@ -345,18 +345,20 @@ class EdFiEndpoint:
         :param reverse_paging:
         :return:
         """
-        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+        async def main():
+            self.client.verbose_log(f"Writing rows to disk: `{path}`")
 
-        paged_results = self.async_get_pages(
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-        )
+            paged_results = self.async_get_pages(
+                page_size=page_size,
+                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+                step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+            )
 
-        async with aiofiles.open(path, 'wb') as fp:
-            async for page in paged_results:
-                await fp.write(util.page_to_bytes(page))
+            async with aiofiles.open(path, 'wb') as fp:
+                async for page in paged_results:
+                    await fp.write(util.page_to_bytes(page))
 
+        asyncio.run(main())
         return path
 
 
@@ -625,7 +627,7 @@ class EdFiEndpoint:
         :param params:
         :return:
         """
-        async with session.get(url, params=params) as response:
+        async with session.get(url, params=params, verify_ssl=self.client.verify_ssl) as response:
             _ = await response.json()
             self.custom_raise_for_status(response)
             return response

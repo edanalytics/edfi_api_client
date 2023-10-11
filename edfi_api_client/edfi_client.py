@@ -218,8 +218,6 @@ class EdFiClient:
 
         # Add headers to both synchronous and asynchronous sessions.
         self.session.headers.update(req_header)
-        self.async_session.headers.update(req_header)
-
         self.session.verify = self.verify_ssl  # Only synchronous session uses `verify` attribute.
 
         # Track when connection was established and when to refresh the access token.
@@ -228,6 +226,9 @@ class EdFiClient:
 
         self.verbose_log("Connection to ODS successful!")
         return self.session
+
+    async def async_connect(self):
+        return aiohttp.ClientSession(headers=self.session.headers)
 
     def require_session(func: Callable) -> Callable:
         """
@@ -369,11 +370,3 @@ class EdFiClient:
         if self.swaggers['descriptors'] is None:
             self.get_swagger('descriptors')
         return self.swaggers['descriptors'].endpoints
-
-
-    ### Asynchronous context helpers
-    def __aenter__(self):
-        return self
-
-    def __aexit__(self, *exc):
-        return self.async_session.close()
