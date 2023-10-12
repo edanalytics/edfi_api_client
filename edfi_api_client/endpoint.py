@@ -195,34 +195,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
             self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
-    def get_paged_window_params(self,
-        *,
-        page_size: int,
-        step_change_version: bool,
-        change_version_step_size: int,
-        reverse_paging: bool
-    ) -> Iterator[EdFiParams]:
-        """
-
-        :param page_size:
-        :param step_change_version:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        if step_change_version:
-            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self.client.session.get_total_count(self.url, cv_window_params)
-                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
-
-                if reverse_paging:
-                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
-
-                yield from cv_offset_params_list
-        else:
-            total_count = self.client.session.get_total_count(self.url, self.params)
-            yield from self.params.build_offset_window_params(page_size, total_count=total_count)
-
     def get_rows(self,
         *,
         page_size: int = 100,
@@ -298,6 +270,34 @@ class EdFiEndpoint(AsyncEndpointMixin):
                 fp.write(util.page_to_bytes(page))
 
         return path
+
+    def get_paged_window_params(self,
+        *,
+        page_size: int,
+        step_change_version: bool,
+        change_version_step_size: int,
+        reverse_paging: bool
+    ) -> Iterator[EdFiParams]:
+        """
+
+        :param page_size:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        if step_change_version:
+            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
+                total_count = self.client.session.get_total_count(self.url, cv_window_params)
+                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
+
+                if reverse_paging:
+                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
+
+                yield from cv_offset_params_list
+        else:
+            total_count = self.client.session.get_total_count(self.url, self.params)
+            yield from self.params.build_offset_window_params(page_size, total_count=total_count)
 
 
 class EdFiResource(EdFiEndpoint):

@@ -166,6 +166,7 @@ class AsyncEndpointMixin:
 
         return wrapped
 
+    ### GET-all methods
     async def async_get_pages(self,
         *,
         session: 'AsyncEdFiSession',
@@ -223,38 +224,6 @@ class AsyncEndpointMixin:
 
             self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(page)} rows.")
             yield page
-
-    async def async_get_paged_window_params(self,
-        *,
-        session: 'AsyncEdFiSession',
-        page_size: int,
-        step_change_version: bool,
-        change_version_step_size: int,
-        reverse_paging: bool
-    ) -> AsyncIterator['EdFiParams']:
-        """
-
-        :param session:
-        :param page_size:
-        :param step_change_version:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        if step_change_version:
-            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = await session.get_total_count(self.url, cv_window_params)
-                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
-
-                if reverse_paging:
-                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
-
-                for param in cv_offset_params_list:
-                    yield param
-        else:
-            total_count = await session.get_total_count(self.url, self.params)
-            for param in self.params.build_offset_window_params(page_size, total_count=total_count):
-                yield param
 
     async def async_get_rows(self,
         *,
@@ -339,3 +308,35 @@ class AsyncEndpointMixin:
                 await fp.write(util.page_to_bytes(page))
 
         return path
+
+    async def async_get_paged_window_params(self,
+        *,
+        session: 'AsyncEdFiSession',
+        page_size: int,
+        step_change_version: bool,
+        change_version_step_size: int,
+        reverse_paging: bool
+    ) -> AsyncIterator['EdFiParams']:
+        """
+
+        :param session:
+        :param page_size:
+        :param step_change_version:
+        :param change_version_step_size:
+        :param reverse_paging:
+        :return:
+        """
+        if step_change_version:
+            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
+                total_count = await session.get_total_count(self.url, cv_window_params)
+                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
+
+                if reverse_paging:
+                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
+
+                for param in cv_offset_params_list:
+                    yield param
+        else:
+            total_count = await session.get_total_count(self.url, self.params)
+            for param in self.params.build_offset_window_params(page_size, total_count=total_count):
+                yield param
