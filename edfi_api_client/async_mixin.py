@@ -1,6 +1,7 @@
 import aiofiles
 import aiohttp
 import asyncio
+import functools
 import logging
 
 from requests.exceptions import RequestsWarning
@@ -8,7 +9,7 @@ from requests.exceptions import RequestsWarning
 from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
 
-from typing import AsyncIterator, List, Optional
+from typing import AsyncIterator, Callable, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client import EdFiClient
@@ -143,8 +144,31 @@ class AsyncEndpointMixin:
     url: str
     params: 'EdFiParams'
 
+    def run_async_session(func: Callable) -> Callable:
+        """
+        This decorator establishes an async session before calling the associated class method, if not defined.
+        If a session is established at this time, complete a full asyncio run.
+
+        :param func:
+        :return:
+        """
+        @functools.wraps(func)
+        def wrapped(self, *args, session: Optional['AsyncEdFiSession'] = None, **kwargs):
+            if session:
+                return func(self, *args, session=session, **kwargs)
+
+            # Otherwise, build the connection and complete a full asyncio run.
+            async def main():
+                async with await self.client.async_session.connect() as session:
+                    return await func(self, *args, session=session, **kwargs)
+
+            return asyncio.run(main())
+
+        return wrapped
+
     async def async_get_pages(self,
         *,
+        session: 'AsyncEdFiSession',
         page_size: int = 100,
 
         retry_on_failure: bool = False,
@@ -159,6 +183,7 @@ class AsyncEndpointMixin:
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are returned in pages as a coroutine.
 
+        :param session:
         :param page_size:
         :param retry_on_failure:
         :param max_retries:
@@ -177,34 +202,31 @@ class AsyncEndpointMixin:
         else:
             self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
-        # Create asynchronous session to feed to all response operations.
-        async with await self.client.async_session.connect() as session:
+        # Build a list of pagination params to iterate during ingestion.
+        paged_params_list = self.async_get_paged_window_params(
+            session=session,
+            page_size=page_size,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            reverse_paging=reverse_paging
+        )
 
-            # Build a list of pagination params to iterate during ingestion.
-            paged_params_list = self.async_get_paged_window_params(
-                session=session,
-                page_size=page_size,
-                step_change_version=step_change_version, change_version_step_size=change_version_step_size,
-                reverse_paging=reverse_paging
+        # Begin pagination-loop
+        async for paged_params in paged_params_list:
+            self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {paged_params}")
+
+            res = await session.get_response(
+                self.url, params=paged_params,
+                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
             )
 
-            # Begin pagination-loop
-            async for paged_params in paged_params_list:
-                self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {paged_params}")
+            page = await res.json()
 
-                res = await session.get_response(
-                    self.url, params=paged_params,
-                    retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
-                )
-
-                page = await res.json()
-
-                self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(page)} rows.")
-                yield page
+            self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(page)} rows.")
+            yield page
 
     async def async_get_paged_window_params(self,
-        session: 'AsyncEdFiSession',
         *,
+        session: 'AsyncEdFiSession',
         page_size: int,
         step_change_version: bool,
         change_version_step_size: int,
@@ -236,6 +258,7 @@ class AsyncEndpointMixin:
 
     async def async_get_rows(self,
         *,
+        session: 'AsyncEdFiSession',
         page_size: int = 100,
 
         retry_on_failure: bool = False,
@@ -250,6 +273,7 @@ class AsyncEndpointMixin:
         This method returns all rows from an endpoint, applying pagination logic as necessary.
         Rows are returned as a generator.
 
+        :param session:
         :param page_size:
         :param retry_on_failure:
         :param max_retries:
@@ -260,6 +284,7 @@ class AsyncEndpointMixin:
         :return:
         """
         paged_result_iter = self.async_get_pages(
+            session=session,
             page_size=page_size,
             retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
@@ -269,10 +294,12 @@ class AsyncEndpointMixin:
             for row in paged_result:
                 yield row
 
-    def async_get_to_json(self,
+    @run_async_session
+    async def async_get_to_json(self,
         path: str,
 
         *,
+        session: 'AsyncEdFiSession',
         page_size: int = 100,
 
         retry_on_failure: bool = False,
@@ -287,6 +314,7 @@ class AsyncEndpointMixin:
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are written to a file as JSON lines.
 
+        :param session:
         :param path:
         :param page_size:
         :param retry_on_failure:
@@ -297,18 +325,17 @@ class AsyncEndpointMixin:
         :param reverse_paging:
         :return:
         """
-        async def main():
-            self.client.verbose_log(f"Writing rows to disk: `{path}`")
+        self.client.verbose_log(f"Writing rows to disk: `{path}`")
 
-            paged_results = self.async_get_pages(
-                page_size=page_size,
-                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-                step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-            )
+        paged_results = self.async_get_pages(
+            session=session,
+            page_size=page_size,
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+        )
 
-            async with aiofiles.open(path, 'wb') as fp:
-                async for page in paged_results:
-                    await fp.write(util.page_to_bytes(page))
+        async with aiofiles.open(path, 'wb') as fp:
+            async for page in paged_results:
+                await fp.write(util.page_to_bytes(page))
 
-        asyncio.run(main())
         return path
