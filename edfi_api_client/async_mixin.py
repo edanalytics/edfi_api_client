@@ -76,8 +76,8 @@ class AsyncEdFiSession(EdFiSession):
             return await self.get_response_with_exponential_backoff(url, params, max_retries=max_retries, max_wait=max_wait, **kwargs)
 
         async with self.session.get(url, params=params, verify_ssl=self.verify_ssl) as response:
-            _ = await response.json()
             self.custom_raise_for_status(response)
+            _ = await response.text()
             return response
 
     async def get_response_with_exponential_backoff(self,
@@ -225,43 +225,43 @@ class AsyncEndpointMixin:
             self.client.verbose_log(f"[Async Paged Get {self.type}] Retrieved {len(page)} rows.")
             yield page
 
-    async def async_get_rows(self,
-        *,
-        session: 'AsyncEdFiSession',
-        page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
-        step_change_version: bool = False,
-        change_version_step_size: int = 50000,
-        reverse_paging: bool = True
-    ) -> AsyncIterator[dict]:
-        """
-        This method returns all rows from an endpoint, applying pagination logic as necessary.
-        Rows are returned as a generator.
-
-        :param session:
-        :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
-        :param step_change_version:
-        :param change_version_step_size:
-        :param reverse_paging:
-        :return:
-        """
-        paged_result_iter = self.async_get_pages(
-            session=session,
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
-        )
-
-        async for paged_result in paged_result_iter:
-            for row in paged_result:
-                yield row
+    # async def async_get_rows(self,
+    #     *,
+    #     session: 'AsyncEdFiSession',
+    #     page_size: int = 100,
+    #
+    #     retry_on_failure: bool = False,
+    #     max_retries: int = 5,
+    #     max_wait: int = 500,
+    #
+    #     step_change_version: bool = False,
+    #     change_version_step_size: int = 50000,
+    #     reverse_paging: bool = True
+    # ) -> AsyncIterator[dict]:
+    #     """
+    #     This method returns all rows from an endpoint, applying pagination logic as necessary.
+    #     Rows are returned as a generator.
+    #
+    #     :param session:
+    #     :param page_size:
+    #     :param retry_on_failure:
+    #     :param max_retries:
+    #     :param max_wait:
+    #     :param step_change_version:
+    #     :param change_version_step_size:
+    #     :param reverse_paging:
+    #     :return:
+    #     """
+    #     paged_result_iter = self.async_get_pages(
+    #         session=session,
+    #         page_size=page_size,
+    #         retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+    #         step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+    #     )
+    #
+    #     async for paged_result in paged_result_iter:
+    #         for row in paged_result:
+    #             yield row
 
     @run_async_session
     async def async_get_to_json(self,
