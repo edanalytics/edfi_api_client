@@ -85,20 +85,27 @@ class EdFiParams(dict):
 
         return final_params
 
-    def build_offset_window_params(self, page_size: int, total_count: int) -> Iterator['EdFiParams']:
+    def build_offset_window_params(self, page_size: int, total_count: int, reverse: bool = False) -> List['EdFiParams']:
         """
         Iterate offset-stepping by `page_size` until `total_count` is reached.
 
         :param page_size:
         :param total_count:
+        :param reverse:
         :return:
         """
+        params_list = []
+
         for offset in range(0, total_count, page_size):
             offset_params = self.copy()
             offset_params["limit"] = page_size
             offset_params["offset"] = offset
+            params_list.append(offset_params)
 
-            yield offset_params
+        if reverse:
+            return params_list[::-1]
+        else:
+            return params_list
 
     def build_change_version_window_params(self, change_version_step_size: int) -> Iterator['EdFiParams']:
         """

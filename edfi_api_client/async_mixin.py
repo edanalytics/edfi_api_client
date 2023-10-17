@@ -329,12 +329,7 @@ class AsyncEndpointMixin:
         if step_change_version:
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
                 total_count = await session.get_total_count(self.url, cv_window_params)
-                cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count)
-
-                if reverse_paging:
-                    cv_offset_params_list = list(cv_offset_params_list)[::-1]
-
-                for param in cv_offset_params_list:
+                for param in cv_window_params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging):
                     yield param
         else:
             total_count = await session.get_total_count(self.url, self.params)
