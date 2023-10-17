@@ -2,6 +2,7 @@ import aiofiles
 import aiohttp
 import asyncio
 import functools
+import itertools
 import logging
 
 from requests.exceptions import RequestsWarning
@@ -215,14 +216,14 @@ class AsyncEndpointMixin:
             self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
-        paged_params_list = self.async_get_paged_window_params(
+        paged_params_list = await self.async_get_paged_window_params(
             session=session,
             page_size=page_size,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             reverse_paging=reverse_paging
         )
 
-        async for paged_param in paged_params_list:
+        for paged_param in paged_params_list:
             yield verbose_get_page(paged_param)
 
     @run_async_session
@@ -284,7 +285,7 @@ class AsyncEndpointMixin:
         step_change_version: bool,
         change_version_step_size: int,
         reverse_paging: bool
-    ) -> AsyncGenerator['EdFiParams', None]:
+    ) -> Awaitable[List['EdFiParams']]:
         """
 
         :param session:
@@ -294,15 +295,18 @@ class AsyncEndpointMixin:
         :param reverse_paging:
         :return:
         """
+        async def build_total_count_windows(params):
+            total_count = await session.get_total_count(self.url, params)
+            return params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
+
+
         if step_change_version:
-            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = await session.get_total_count(self.url, cv_window_params)
-                for param in cv_window_params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging):
-                    yield param
+            top_level_params = self.params.build_change_version_window_params(change_version_step_size)
         else:
-            total_count = await session.get_total_count(self.url, self.params)
-            for param in self.params.build_offset_window_params(page_size, total_count=total_count):
-                yield param
+            top_level_params = [self.params]
+
+        nested_params = await self.gather_with_concurrency(session.pool_size, *map(build_total_count_windows, top_level_params))
+        return list(itertools.chain.from_iterable(nested_params))
 
 
     ### Async Utilities
