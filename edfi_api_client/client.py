@@ -69,12 +69,18 @@ class EdFiClient:
             'composites' : None,
         }
 
-        # If ID and secret are passed, build a session.
-        self.session: EdFiSession = EdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
-        self.async_session: AsyncEdFiSession = AsyncEdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+        # If ID and secret are passed, prepare synchronous and asynchronous sessions.
+        self.session: EdFiSession = None
+        self.async_session: AsyncEdFiSession = None
 
         if self.client_key and self.client_secret:
-            self.session.connect()  # Connect synchronous session immediately
+            # Synchronous client connects immediately on init.
+            self.session = EdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+            self.session.connect()
+
+            # Asynchronous client connects only when called in an async method.
+            self.async_session = AsyncEdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+
         else:
             self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
 
