@@ -29,6 +29,7 @@ class AsyncEdFiSession(EdFiSession):
             logging.warning("Client key and secret not provided. Async connection with ODS will not be attempted.")
             exit(1)
 
+        self.auth_headers = {}
         self.session: aiohttp.ClientSession = None
 
     async def __aenter__(self):
@@ -37,15 +38,15 @@ class AsyncEdFiSession(EdFiSession):
     async def __aexit__(self, *exc):
         return await self.session.close()
 
-    async def connect(self) -> 'AsyncEdFiSession':
+    async def connect(self, **kwargs) -> 'AsyncEdFiSession':
         if self.session is None:
-            self.session = aiohttp.ClientSession()
+            self.session = aiohttp.ClientSession(raise_for_status=True, **kwargs)
 
         # Updates time attributes to match response
         auth_info = self.get_auth_response().json()
         access_token = auth_info['access_token']
 
-        self.session.headers.update({
+        self.auth_headers.update({
             'Authorization': 'Bearer {}'.format(access_token),
         })
         logging.info("Async connection to ODS successful!")
@@ -64,6 +65,8 @@ class AsyncEdFiSession(EdFiSession):
     ) -> aiohttp.ClientResponse:
         """
         Complete a GET request against an endpoint URL.
+        TODO: Process not cancelled upon error.
+        TODO: Reauthentication unsuccessful.
 
         :param url:
         :param params:
@@ -77,7 +80,10 @@ class AsyncEdFiSession(EdFiSession):
         if retry_on_failure:
             return await self.get_response_with_exponential_backoff(url, params, max_retries=max_retries, max_wait=max_wait, **kwargs)
 
-        async with self.session.get(url, params=params, verify_ssl=self.verify_ssl) as response:
+        async with self.session.get(
+            url, headers=self.auth_headers, params=params,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
             self.custom_raise_for_status(response)
             text = await response.text()
             return response
@@ -155,7 +161,11 @@ class AsyncEndpointMixin:
         :return:
         """
         @functools.wraps(func)
-        def wrapped(self, *args, session: Optional['AsyncEdFiSession'] = None, **kwargs):
+        def wrapped(self,
+            *args,
+            session: Optional['AsyncEdFiSession'] = None,
+            **kwargs
+        ):
             if session:
                 return func(self, *args, session=session, **kwargs)
 
@@ -181,7 +191,7 @@ class AsyncEndpointMixin:
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         reverse_paging: bool = True,
-    ) -> AsyncGenerator[Awaitable[List[dict]], None]:
+    ) -> AsyncGenerator[List[dict], None]:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are returned in pages as a coroutine.
