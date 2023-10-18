@@ -44,7 +44,6 @@ class AsyncEdFiSession(EdFiSession):
         max_wait: int = 500,
         **kwargs
     ) -> 'AsyncEdFiSession':
-        # Initialize a session if not yet initialized.
         if self.session is None:
             self.session = aiohttp.ClientSession(
                 connector = aiohttp.connector.TCPConnector(limit=self.pool_size),
@@ -160,6 +159,7 @@ class AsyncEndpointMixin:
             return asyncio.run(main())
 
         return wrapped
+
 
     ### GET-all methods
     async def async_get_pages(self,
