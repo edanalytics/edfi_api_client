@@ -46,9 +46,9 @@ class AsyncEdFiSession(EdFiSession):
         auth_info = self.get_auth_response().json()
         access_token = auth_info['access_token']
 
-        self.auth_headers.update({
-            'Authorization': 'Bearer {}'.format(access_token),
-        })
+        # Update time attributes and auth headers with latest authentication information.
+        self.authenticate()
+
         logging.info("Async connection to ODS successful!")
         return self
 

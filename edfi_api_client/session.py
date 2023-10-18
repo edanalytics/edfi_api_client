@@ -34,6 +34,7 @@ class EdFiSession:
         # Attributes refresh on connect
         self.authenticated_at: int = None
         self.refresh_at: int = None
+        self.auth_headers: dict = {}
         self.session: requests.Session = None
 
 
@@ -44,20 +45,16 @@ class EdFiSession:
 
         :return:
         """
-        # Updates time attributes to match response
-        auth_info = self.get_auth_response().json()
-        access_token = auth_info.get('access_token')
-
         self.session = requests.Session()
         self.session.verify = self.verify_ssl  # Only synchronous session uses `verify` attribute.
-        self.session.headers.update({
-            'Authorization': 'Bearer {}'.format(access_token),
-        })
+
+        # Update time attributes and auth headers with latest authentication information.
+        self.authenticate()
 
         logging.info("Connection to ODS successful!")
         return self.session
 
-    def get_auth_response(self) -> requests.Response:
+    def authenticate(self) -> requests.Response:
         """
 
         :return:
@@ -73,15 +70,21 @@ class EdFiSession:
         auth_response.raise_for_status()
 
         # Track when connection was established and when to refresh the access token.
+        auth_payload = auth_response.json()
+
         self.authenticated_at = int(time.time())
-        self.refresh_at = int(self.authenticated_at + auth_response.json().get('expires_in') - 120)
+        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
+
+        self.auth_headers.update({
+            'Authorization': f"Bearer {auth_payload.get('access_token')}",
+        })
 
         return auth_response
 
     def refresh_if_expired(self):
         if self.refresh_at < int(time.time()):
             logging.info("Session authentication is expired. Attempting reconnection...")
-            self.connect()
+            self.authenticate()
 
 
     ### Elementary GET Methods
@@ -109,7 +112,7 @@ class EdFiSession:
         if retry_on_failure:
             return self.get_response_with_exponential_backoff(url, params, max_retries=max_retries, max_wait=max_wait, **kwargs)
 
-        response = self.session.get(url, params=params, verify=self.verify_ssl)
+        response = self.session.get(url, headers=self.auth_headers, params=params, verify=self.verify_ssl)
         self.custom_raise_for_status(response)
         return response
 
