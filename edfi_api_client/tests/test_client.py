@@ -1,12 +1,14 @@
 import easecret
+import pytest
 
 from edfi_api_client import EdFiClient
 
 
 ###
-master_secret = "edfi_scde_2024"
+master_secret = "edfi_scde_2023"
 
-def test_client(secret: str = master_secret):
+
+def test_unauthenticated_client(secret: str = master_secret):
     """
 
     :param secret:
@@ -14,9 +16,6 @@ def test_client(secret: str = master_secret):
     """
     credentials = easecret.get_secret(secret)
     base_url = credentials.get('base_url')
-
-
-    ##### Unauthorized Client
     edfi = EdFiClient(base_url)
 
     ### Info Payload
@@ -29,13 +28,33 @@ def test_client(secret: str = master_secret):
     _ = edfi.get_swagger(component='descriptors')
     _ = edfi.get_swagger(component='composites')
 
+    ### Authenticated methods
+    with pytest.raises(ValueError):
+        _ = edfi.get_newest_change_version()
 
-    ##### Authorized Client
+    with pytest.raises(ValueError):
+        _ = edfi.resource('students', minChangeVersion=0, maxChangeVersion=100000)
+
+    with pytest.raises(ValueError):
+        _ = edfi.descriptor('language_use_descriptors')
+
+    with pytest.raises(ValueError):
+        _ = edfi.composite('students')
+
+
+def test_authenticated_client(secret: str = master_secret):
+    """
+
+    :param secret:
+    :return:
+    """
+    credentials = easecret.get_secret(secret)
     edfi = EdFiClient(**credentials)
+
     _ = edfi.get_newest_change_version()
 
     ### Resource
-    resource = edfi.resource('students', minChangeVersion=0, maxChangeVersion=100000)
+    resource = edfi.resource('students', minChangeVersion=0, maxChangeVersion=500000)
     assert resource.ping().ok
 
     _ = resource.description
@@ -46,7 +65,7 @@ def test_client(secret: str = master_secret):
     assert len(list(resource_rows)) == resource_count
 
     ### Descriptor
-    descriptor = edfi.resource('language_use_descriptors')
+    descriptor = edfi.descriptor('language_use_descriptors')
     assert descriptor.ping().ok
     _ = descriptor.description
     _ = descriptor.has_deletes
@@ -69,4 +88,3 @@ def test_client(secret: str = master_secret):
             break
         composite_rows.append(row)
     assert len(list(composite_rows)) == composite_count
-
