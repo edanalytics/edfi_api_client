@@ -9,8 +9,17 @@ from edfi_api_client import EdFiClient
 master_secret = "edfi_scde_2023"
 
 
-### Helper for async time testing.
 def time_it(func, *args, **kwargs):
+    """
+    Helper for retrieving runtime of a function.
+    Return runtime (in seconds), followed by function return.
+
+    ```
+    runtime, return_value = time_it(function, arguments)
+    ```
+
+    :return:
+    """
     start = time.time()
     return_val = func(*args, **kwargs)
     end = time.time()
