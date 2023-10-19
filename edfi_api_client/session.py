@@ -50,8 +50,6 @@ class EdFiSession:
 
         # Update time attributes and auth headers with latest authentication information.
         self.authenticate()
-
-        logging.info("Connection to ODS successful!")
         return self.session
 
     def authenticate(self) -> requests.Response:

@@ -77,6 +77,7 @@ class EdFiClient:
             # Synchronous client connects immediately on init.
             self.session = EdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
             self.session.connect()
+            self.verbose_log("Connection to ODS successful!")
 
             # Asynchronous client connects only when called in an async method.
             self.async_session = AsyncEdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
