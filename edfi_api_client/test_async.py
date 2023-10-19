@@ -27,14 +27,26 @@ def test_async(secret: str = master_secret):
     credentials = easecret.get_secret(secret)
     edfi = EdFiClient(**credentials, verbose=False)
 
-    max_change_versions = [
-          491831,  #  20000 rows
-          945701,  #  40000 rows
-         1596723,  #  80000 rows
-         2928422,  # 160000 rows
-         4649473,  # 320000 rows
-        11579986,  # 640000 rows
-    ]
+    # Map resources to exact change versions to extract N * 1000 rows.
+    # Source: `edfi_scde_2023`
+    max_change_versions = {
+        "students": {
+            20 : 491831,
+            40 : 945701,
+            80 : 1596723,
+            160: 2928422,
+            320: 4649473,
+            640: 11579986,
+        },
+        "studentSectionAttendanceEvents": {
+            20 : 70738320,
+            40 : 70825225,
+            80 : 70926490,
+            160: 71174025,
+            320: 72151990,
+            640: 73499849,
+        },
+    }
     pool_sizes = (4, 8, 16, 32,)
 
     scratch_dir = "./.scratch"
@@ -49,24 +61,26 @@ def test_async(secret: str = master_secret):
         change_version_step_size=10000,
     )
 
-    for max_change_version in max_change_versions:
-        students = edfi.resource('students', minChangeVersion=0, max_change_version=max_change_version)
-        students_count = students.total_count()
+    for resource, cv_row_counts in max_change_versions.items():
+        for k_row_count, max_change_version in cv_row_counts.items():
 
-        for pool_size in pool_sizes:
-            print(f"Num rows: {students_count // 10000}0K; pool size: {pool_size}")
+            endpoint = edfi.resource(resource, minChangeVersion=0, max_change_version=max_change_version)
+            endpoint_count = endpoint.total_count()
 
-            async_kwargs.update(pool_size=pool_size)
+            for pool_size in pool_sizes:
+                print(f"Resource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
 
-            # Reset the output to ensure data has been written each run.
-            if os.path.exists(output_path):
-                os.remove(output_path)
+                async_kwargs.update(pool_size=pool_size)
 
-            runtime, _ = time_it(students.async_get_to_json, **async_kwargs)
+                # Reset the output to ensure data has been written each run.
+                if os.path.exists(output_path):
+                    os.remove(output_path)
 
-            # Get row count of written file.
-            async_count = sum(1 for _ in open(output_path))
-            if async_count != students_count:
-                print("    Number of rows did not match!")
+                runtime, _ = time_it(endpoint.async_get_to_json, **async_kwargs)
 
-            print(f"    Runtime: {runtime} seconds")
+                # Get row count of written file.
+                async_count = sum(1 for _ in open(output_path))
+                if async_count != endpoint_count:
+                    print("    Number of extracted rows did not match!")
+
+                print(f"    Runtime: {runtime} seconds")
