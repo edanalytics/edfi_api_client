@@ -1,6 +1,5 @@
 import easecret
-import os
-import time
+import pytest
 
 from edfi_api_client import EdFiClient
 
@@ -8,7 +7,8 @@ from edfi_api_client import EdFiClient
 ###
 master_secret = "edfi_scde_2024"
 
-def test_client(secret: str = master_secret):
+
+def test_unauthenticated_client(secret: str = master_secret):
     """
 
     :param secret:
@@ -16,9 +16,6 @@ def test_client(secret: str = master_secret):
     """
     credentials = easecret.get_secret(secret)
     base_url = credentials.get('base_url')
-
-
-    ##### Unauthorized Client
     edfi = EdFiClient(base_url)
 
     ### Info Payload
@@ -31,9 +28,29 @@ def test_client(secret: str = master_secret):
     _ = edfi.get_swagger(component='descriptors')
     _ = edfi.get_swagger(component='composites')
 
+    ### Authenticated methods
+    with pytest.raises(ValueError):
+        _ = edfi.get_newest_change_version()
 
-    ##### Authorized Client
+    with pytest.raises(ValueError):
+        _ = edfi.resource('students', minChangeVersion=0, maxChangeVersion=100000)
+
+    with pytest.raises(ValueError):
+        _ = edfi.descriptor('language_use_descriptors')
+
+    with pytest.raises(ValueError):
+        _ = edfi.composite('students')
+
+
+def test_authenticated_client(secret: str = master_secret):
+    """
+
+    :param secret:
+    :return:
+    """
+    credentials = easecret.get_secret(secret)
     edfi = EdFiClient(**credentials)
+
     _ = edfi.get_newest_change_version()
 
     ### Resource
@@ -48,7 +65,7 @@ def test_client(secret: str = master_secret):
     assert len(list(resource_rows)) == resource_count
 
     ### Descriptor
-    descriptor = edfi.resource('language_use_descriptors')
+    descriptor = edfi.descriptor('language_use_descriptors')
     assert descriptor.ping().ok
     _ = descriptor.description
     _ = descriptor.has_deletes
@@ -71,66 +88,3 @@ def test_client(secret: str = master_secret):
             break
         composite_rows.append(row)
     assert len(list(composite_rows)) == composite_count
-
-
-### Helper for async time testing.
-def time_it(func, *args, **kwargs):
-    start = time.time()
-    return_val = func(*args, **kwargs)
-    end = time.time()
-
-    runtime = round(end - start, 2)
-    return runtime, return_val
-
-def test_async(secret: str = master_secret):
-    """
-
-    :param secret:
-    :return:
-    """
-    credentials = easecret.get_secret(secret)
-    edfi = EdFiClient(**credentials, verbose=False)
-
-    max_change_versions = [
-          171000,  #  20078 rows
-          370000,  #  40035 rows
-          552500,  #  80007 rows
-         2363000,  # 165282 rows
-         6600000,  # 324281 rows
-        25000000,  # 644500 rows
-    ]
-    pool_sizes = (4, 8, 16, 32,)
-
-    scratch_dir = "./.scratch"
-    os.makedirs(scratch_dir, exist_ok=True)
-
-    output_path = os.path.join(scratch_dir, 'students_async.jsonl')
-    async_kwargs = dict(
-        path=output_path,
-        retry_on_failure=True,
-        page_size=500,
-        step_change_version=True,
-        change_version_step_size=10000,
-    )
-
-    for max_change_version in max_change_versions:
-        students = edfi.resource('students', minChangeVersion=0, max_change_version=max_change_version)
-        students_count = students.total_count()
-
-        for pool_size in pool_sizes:
-            print(f"Num rows: {students_count // 10000}0K; pool size: {pool_size}")
-
-            async_kwargs.update(pool_size=pool_size)
-
-            # Reset the output to ensure data has been written each run.
-            if os.path.exists(output_path):
-                os.remove(output_path)
-
-            runtime, _ = time_it(students.async_get_to_json, **async_kwargs)
-
-            # Get row count of written file.
-            async_count = sum(1 for _ in open(output_path))
-            if async_count != students_count:
-                print("    Number of rows did not match!")
-
-            print(f"    Runtime: {runtime} seconds")
