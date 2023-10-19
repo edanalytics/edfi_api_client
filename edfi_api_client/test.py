@@ -5,7 +5,7 @@ from edfi_api_client import EdFiClient
 
 
 ###
-master_secret = "edfi_scde_2024"
+master_secret = "edfi_scde_2023"
 
 
 def test_unauthenticated_client(secret: str = master_secret):
@@ -54,7 +54,7 @@ def test_authenticated_client(secret: str = master_secret):
     _ = edfi.get_newest_change_version()
 
     ### Resource
-    resource = edfi.resource('students', minChangeVersion=0, maxChangeVersion=100000)
+    resource = edfi.resource('students', minChangeVersion=0, maxChangeVersion=500000)
     assert resource.ping().ok
 
     _ = resource.description

@@ -6,7 +6,7 @@ from edfi_api_client import EdFiClient
 
 
 ###
-master_secret = "edfi_scde_2024"
+master_secret = "edfi_scde_2023"
 
 
 ### Helper for async time testing.
@@ -28,12 +28,12 @@ def test_async(secret: str = master_secret):
     edfi = EdFiClient(**credentials, verbose=False)
 
     max_change_versions = [
-          171000,  #  20078 rows
-          370000,  #  40035 rows
-          552500,  #  80007 rows
-         2363000,  # 165282 rows
-        #  6600000,  # 324281 rows
-        # 25000000,  # 644500 rows
+          491831,  #  20000 rows
+          945701,  #  40000 rows
+         1596723,  #  80000 rows
+         2928422,  # 160000 rows
+         4649473,  # 320000 rows
+        11579986,  # 640000 rows
     ]
     pool_sizes = (4, 8, 16, 32,)
 
