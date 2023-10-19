@@ -22,15 +22,15 @@ class AsyncEdFiSession(EdFiSession):
     """
     retry_status_codes: Set[int] = {401, 500, 504}
 
-    def __init__(self, *args, pool_size: int = 8, **kwargs):
-        super().__init__(*args, pool_size=pool_size, **kwargs)
-        self.pool_size = pool_size
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.session: aiohttp.ClientSession = None
+        self.pool_size = None
 
         if not (self.client_key and self.client_secret):
             logging.warning("Client key and secret not provided. Async connection with ODS will not be attempted.")
             exit(1)
 
-        self.session: aiohttp.ClientSession = None
 
     async def __aenter__(self):
         return self
@@ -39,35 +39,35 @@ class AsyncEdFiSession(EdFiSession):
         return await self.session.close()
 
     async def connect(self,
+        pool_size: int = 8,
         retry_on_failure: bool = False,
         max_retries: int = 5,
         max_wait: int = 500,
         **kwargs
     ) -> 'AsyncEdFiSession':
-        if self.session is None:
-            self.session = aiohttp.ClientSession(
-                connector = aiohttp.connector.TCPConnector(limit=self.pool_size),
-                timeout=aiohttp.ClientTimeout(sock_connect=max_wait),
-                raise_for_status=True,
-                **kwargs
+        self.pool_size = pool_size
+
+        self.session = aiohttp.ClientSession(
+            connector = aiohttp.connector.TCPConnector(limit=self.pool_size),
+            timeout=aiohttp.ClientTimeout(sock_connect=max_wait),
+            raise_for_status=True,
+            **kwargs
+        )
+
+        if retry_on_failure:
+            retry_options = aiohttp_retry.ExponentialRetry(
+                attempts=max_retries,
+                max_timeout=max_wait,
+                statuses=self.retry_status_codes
             )
 
-            if retry_on_failure:
-                retry_options = aiohttp_retry.ExponentialRetry(
-                    attempts=max_retries,
-                    max_timeout=max_wait,
-                    statuses=self.retry_status_codes
-                )
-
-                self.session = aiohttp_retry.RetryClient(
-                    client_session=self.session,
-                    retry_options=retry_options
-                )
+            self.session = aiohttp_retry.RetryClient(
+                client_session=self.session,
+                retry_options=retry_options
+            )
 
         # Update time attributes and auth headers with latest authentication information.
         self.authenticate()
-
-        logging.info("Async connection to ODS successful!")
         return self
 
 
@@ -139,17 +139,15 @@ class AsyncEndpointMixin:
         def wrapped(self,
             *args,
             session: Optional['AsyncEdFiSession'] = None,
+            pool_size: int = 8,
             retry_on_failure: bool = False,
             max_retries: int = 5,
             max_wait: int = 500,
             **kwargs
         ):
-            if session:
-                return func(self, *args, session=session, **kwargs)
-
-            # Otherwise, build the connection and complete a full asyncio run.
             async def main():
                 async with await self.client.async_session.connect(
+                    pool_size=pool_size,
                     retry_on_failure=retry_on_failure,
                     max_retries=max_retries,
                     max_wait=max_wait
