@@ -2,6 +2,8 @@ import logging
 import os
 import requests
 
+from collections import defaultdict
+
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
@@ -305,7 +307,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         retry_on_failure: bool = False,
         max_retries: int = 5,
         max_wait: int = 500,
-    ) -> Dict[int, str]:
+    ) -> Dict[str, List[int]]:
         """
         This method tries to post all rows from an iterator.
 
@@ -315,22 +317,23 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param max_wait:
         :return:
         """
-        error_log = {}
+        error_log = defaultdict[list]
         response = None
 
         for idx, row in enumerate(rows):
 
             try:
+                response = None  # Ensure previous responses are reset before logging.
                 response = self.client.session.post_response(
                     self.url, data=row,
                     retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
                 )
 
-            except:
+            except Exception as error:
                 if response:
-                    error_log[idx] = f"{response.status_code} {response.text()}"
+                    error_log[f"{response.status_code} {response.text}"].append(idx)
                 else:
-                    error_log[idx] = None
+                    error_log[str(error)].append(idx)
 
         return error_log
 
@@ -340,7 +343,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         retry_on_failure: bool = False,
         max_retries: int = 5,
         max_wait: int = 500,
-    ) -> Dict[int, str]:
+    ) -> Dict[str, List[int]]:
         """
 
         :param path:
