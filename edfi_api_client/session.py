@@ -162,6 +162,29 @@ class EdFiSession:
         res = self.get_response(url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
+
+    ### POST methods
+    @with_exponential_backoff
+    def post_response(self,
+        url: str,
+        data: dict,
+        **kwargs
+    ) -> requests.Response:
+        """
+        Complete a POST request against an endpoint URL.
+
+        :param url:
+        :param data:
+        :return:
+        """
+        self.refresh_if_expired()
+
+        response = self.session.post(url, headers=self.auth_headers, data=data, verify=self.verify_ssl, **kwargs)
+        self.custom_raise_for_status(response)
+        return response
+
+
+    ### Error response methods
     @staticmethod
     def custom_raise_for_status(response):
         """
