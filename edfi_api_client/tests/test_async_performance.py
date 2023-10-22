@@ -55,22 +55,31 @@ def test_async(secret: str = master_secret):
             320: 72151990,
             640: 73499849,
         },
+        "studentAssessments": {
+            20 : 209803098,
+            40 : 209823098,
+            80 : 209863098,
+            160: 209943098,
+            320: 210103098,
+            640: 210423102,
+        },
     }
     pool_sizes = (4, 8, 16, 32,)
 
     scratch_dir = "./.scratch"
     os.makedirs(scratch_dir, exist_ok=True)
 
-    output_path = os.path.join(scratch_dir, 'students_async.jsonl')
     async_kwargs = dict(
-        path=output_path,
         retry_on_failure=True,
         page_size=500,
         step_change_version=True,
-        change_version_step_size=10000,
+        change_version_step_size=100000,
     )
 
     for resource, cv_row_counts in max_change_versions.items():
+        output_path = os.path.join(scratch_dir, f"{resource}_async.jsonl")
+        async_kwargs.update(path=output_path)
+
         for k_row_count, max_change_version in cv_row_counts.items():
 
             endpoint = edfi.resource(resource, minChangeVersion=0, max_change_version=max_change_version)
