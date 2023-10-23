@@ -165,11 +165,7 @@ class EdFiSession:
 
     ### POST methods
     @with_exponential_backoff
-    def post_response(self,
-        url: str,
-        data: dict,
-        **kwargs
-    ) -> requests.Response:
+    def post_response(self, url: str, data: dict, **kwargs) -> requests.Response:
         """
         Complete a POST request against an endpoint URL.
 

@@ -5,11 +5,14 @@ import asyncio
 import functools
 import itertools
 import logging
+import os
+
+from collections import defaultdict
 
 from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
 
-from typing import Awaitable, AsyncGenerator, Callable, List, Optional, Set
+from typing import Awaitable, AsyncGenerator, Callable, Dict, Iterator, List, Optional, Set
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client import EdFiClient
@@ -75,10 +78,6 @@ class AsyncEdFiSession(EdFiSession):
     async def get_response(self,
         url: str,
         params: Optional['EdFiParams'] = None,
-        *,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 600,
         **kwargs
     ) -> aiohttp.ClientResponse:
         """
@@ -118,6 +117,27 @@ class AsyncEdFiSession(EdFiSession):
         return int(res.headers.get('Total-Count'))
 
 
+    ### POST methods
+    def post_response(self, url: str, data: dict, **kwargs) -> aiohttp.ClientResponse:
+        """
+        Complete a POST request against an endpoint URL.
+
+        :param url:
+        :param data:
+        :param kwargs:
+        :return:
+        """
+        self.refresh_if_expired()
+
+        async with self.session.post(
+            url, headers=self.auth_headers, data=data,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            self.custom_raise_for_status(response)
+            text = await response.text()
+            return response
+
+
 class AsyncEndpointMixin:
     """
 
@@ -138,7 +158,6 @@ class AsyncEndpointMixin:
         @functools.wraps(func)
         def wrapped(self,
             *args,
-            session: Optional['AsyncEdFiSession'] = None,
             pool_size: int = 8,
             retry_on_failure: bool = False,
             max_retries: int = 5,
@@ -165,13 +184,10 @@ class AsyncEndpointMixin:
         session: 'AsyncEdFiSession',
         page_size: int = 100,
 
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         reverse_paging: bool = True,
+        **kwargs
     ) -> AsyncGenerator[List[dict], None]:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
@@ -179,9 +195,6 @@ class AsyncEndpointMixin:
 
         :param session:
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :param step_change_version:
         :param change_version_step_size:
         :param reverse_paging:
@@ -190,10 +203,7 @@ class AsyncEndpointMixin:
         async def verbose_get_page(param: 'EdFiParams'):
             self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {param}")
 
-            res = await session.get_response(
-                self.url, params=param,
-                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
-            )
+            res = await session.get_response(self.url, params=param, **kwargs)
             return await res.json()
 
         self.client.verbose_log(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
@@ -224,13 +234,16 @@ class AsyncEndpointMixin:
         session: 'AsyncEdFiSession',
         page_size: int = 100,
 
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         reverse_paging: bool = True,
+
+        # Async connect() arguments (passed to run_async_session decorator)
+        pool_size: int = 8,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+        **kwargs
     ) -> str:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
@@ -239,12 +252,13 @@ class AsyncEndpointMixin:
         :param session:
         :param path:
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :param step_change_version:
         :param change_version_step_size:
         :param reverse_paging:
+        :param pool_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
         :return:
         """
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
@@ -254,9 +268,9 @@ class AsyncEndpointMixin:
 
         paged_results = self.async_get_pages(
             session=session,
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+            page_size=page_size, reverse_paging=reverse_paging,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            **kwargs
         )
 
         async with aiofiles.open(path, 'wb') as fp:
@@ -295,6 +309,72 @@ class AsyncEndpointMixin:
 
         nested_params = await self.gather_with_concurrency(session.pool_size, *map(build_total_count_windows, top_level_params))
         return list(itertools.chain.from_iterable(nested_params))
+
+
+    ### POST methods
+    def async_post_rows(self, rows: Iterator[dict], *, session: 'AsyncEdFiSession', **kwargs) -> Dict[str, List[int]]:
+        """
+        This method tries to asynchronously post all rows from an iterator.
+
+        :param rows:
+        :param session:
+        :return:
+        """
+        self.client.verbose_log(f"[Async Paged Post {self.type}] Endpoint  : {self.url}")
+        error_log = defaultdict[list]
+
+        async def post_and_log(idx: int, row: dict):
+            response = None
+
+            try:
+                response = session.post_response(self.url, data=row, **kwargs)
+                res_text = await response.text()
+
+            except Exception as error:
+                if response:
+                    error_log[f"{response.status} {res_text}"].append(idx)
+                else:
+                    error_log[str(error)].append(idx)
+
+        self.gather_with_concurrency(
+            session.pool_size,
+            *(post_and_log(idx, row) for idx, row in enumerate(rows))
+         )
+
+        return error_log
+
+    @run_async_session
+    def async_post_from_json(self,
+        path: str,
+        *,
+        session: 'AsyncEdFiSession',
+
+        # Async connect() arguments (passed to run_async_session decorator)
+        pool_size: int = 8,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+    ) -> Dict[str, List[int]]:
+        """
+
+        :param path:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :param pool_size:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :return:
+        """
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"JSON file not found: {path}")
+
+        # TODO: Does this actually work?
+        with open(path, 'rb') as fp:
+            error_log = self.async_post_rows(rows=fp, session=session)
+
+        return error_log
 
 
     ### Async Utilities
