@@ -72,23 +72,12 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### Elementary GET Methods
-    async def get_response(self,
-        url: str,
-        params: Optional['EdFiParams'] = None,
-        *,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 600,
-        **kwargs
-    ) -> aiohttp.ClientResponse:
+    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete a GET request against an endpoint URL.
 
         :param url:
         :param params:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :return:
         """
         self.refresh_if_expired()
@@ -138,7 +127,6 @@ class AsyncEndpointMixin:
         @functools.wraps(func)
         def wrapped(self,
             *args,
-            session: Optional['AsyncEdFiSession'] = None,
             pool_size: int = 8,
             retry_on_failure: bool = False,
             max_retries: int = 5,
@@ -165,13 +153,10 @@ class AsyncEndpointMixin:
         session: 'AsyncEdFiSession',
         page_size: int = 100,
 
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         reverse_paging: bool = True,
+        **kwargs
     ) -> AsyncGenerator[List[dict], None]:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
@@ -179,9 +164,6 @@ class AsyncEndpointMixin:
 
         :param session:
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :param step_change_version:
         :param change_version_step_size:
         :param reverse_paging:
@@ -190,10 +172,7 @@ class AsyncEndpointMixin:
         async def verbose_get_page(param: 'EdFiParams'):
             self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {param}")
 
-            res = await session.get_response(
-                self.url, params=param,
-                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
-            )
+            res = await session.get_response(self.url, params=param)
             return await res.json()
 
         self.client.verbose_log(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
@@ -224,13 +203,16 @@ class AsyncEndpointMixin:
         session: 'AsyncEdFiSession',
         page_size: int = 100,
 
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         reverse_paging: bool = True,
+
+        # Arguments passed to @run_async_session
+        pool_size: int = 8,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+        **kwargs
     ) -> str:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
@@ -239,9 +221,6 @@ class AsyncEndpointMixin:
         :param session:
         :param path:
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :param step_change_version:
         :param change_version_step_size:
         :param reverse_paging:
@@ -254,9 +233,8 @@ class AsyncEndpointMixin:
 
         paged_results = self.async_get_pages(
             session=session,
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+            page_size=page_size, reverse_paging=reverse_paging,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size
         )
 
         async with aiofiles.open(path, 'wb') as fp:
