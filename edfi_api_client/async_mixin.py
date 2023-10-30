@@ -84,8 +84,8 @@ class AsyncEdFiSession(EdFiSession):
             url, headers=self.auth_headers, params=params,
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
-            text = await response.text()
             self.custom_raise_for_status(response)
+            text = await response.text()
             return response
 
     async def get_total_count(self, url: str, params: 'EdFiParams', **kwargs) -> int:
@@ -104,7 +104,6 @@ class AsyncEdFiSession(EdFiSession):
         res = await self.get_response(url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
-
     def custom_raise_for_status(self, response):
         """
         Override EdFiSession.custom_raise_for_status() to accept aiohttp.ClientResponse.status attribute.
@@ -113,7 +112,7 @@ class AsyncEdFiSession(EdFiSession):
         :return:
         """
         response.status_code = response.status
-        return super().custom_raise_for_status(response)
+        super().custom_raise_for_status(response)
 
 
 class AsyncEndpointMixin:
@@ -268,12 +267,13 @@ class AsyncEndpointMixin:
 
     ### Async Utilities
     @staticmethod
-    async def gather_with_concurrency(n, *tasks) -> list:
+    async def gather_with_concurrency(n, *tasks, return_exceptions: bool = False) -> list:
         """
         Waits for an entire task queue to finish processing
 
         :param n:
         :param tasks:
+        :param return_exceptions:
         :return:
         """
         semaphore = asyncio.Semaphore(n)
@@ -284,4 +284,4 @@ class AsyncEndpointMixin:
                     task = asyncio.create_task(task)
                 return await task
 
-        return await asyncio.gather(*(sem_task(task) for task in tasks), return_exceptions=True)
+        return await asyncio.gather(*(sem_task(task) for task in tasks), return_exceptions=return_exceptions)
