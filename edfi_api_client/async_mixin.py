@@ -47,9 +47,8 @@ class AsyncEdFiSession(EdFiSession):
         self.pool_size = pool_size
 
         self.session = aiohttp.ClientSession(
-            connector = aiohttp.connector.TCPConnector(limit=self.pool_size),
+            connector=aiohttp.connector.TCPConnector(limit=self.pool_size),
             timeout=aiohttp.ClientTimeout(sock_connect=max_wait),
-            raise_for_status=True,
         )
 
         if retry_on_failure:
@@ -166,7 +165,6 @@ class AsyncEndpointMixin:
         """
         async def verbose_get_page(param: 'EdFiParams'):
             self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {param}")
-
             res = await session.get_response(self.url, params=param)
             return await res.json()
 
