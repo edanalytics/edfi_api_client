@@ -55,7 +55,8 @@ class AsyncEdFiSession(EdFiSession):
             retry_options = aiohttp_retry.ExponentialRetry(
                 attempts=max_retries,
                 max_timeout=max_wait,
-                statuses=self.retry_status_codes
+                statuses=self.retry_status_codes,
+                start_timeout=2.0,  # Match the manual logic in EdFiSession.
             )
 
             self.session = aiohttp_retry.RetryClient(
