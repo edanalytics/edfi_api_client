@@ -16,8 +16,6 @@ def test_async_post(secret: str = master_secret):
     """
     credentials = easecret.get_secret(secret)
     edfi = EdFiClient(**credentials, verbose=False)
-    print(edfi.client_key)
-    print(edfi.session.auth_headers)
 
     scratch_dir = "./.scratch"
     os.makedirs(scratch_dir, exist_ok=True)
@@ -29,10 +27,10 @@ def test_async_post(secret: str = master_secret):
     )
 
     resources = (
-        # 'students',
-        # 'studentSectionAssociations',
+        'students',
+        'studentSectionAssociations',
         'studentAssessments',
-        # 'studentSectionAttendanceEvents',
+        'studentSectionAttendanceEvents',
     )
 
     for resource in resources:
@@ -41,17 +39,13 @@ def test_async_post(secret: str = master_secret):
 
         endpoint = edfi.resource(resource)
         print(f"{resource}: {endpoint.total_count()}")
-        print(endpoint.url)
 
-        # if os.path.exists(output_path):
-        #     os.remove(output_path)
-        #
-        # # Get N rows to re-insert back into Ed-Fi
-        # endpoint.async_get_to_json(**async_get_kwargs)
-        # print(f"    Rows written to {output_path}")
+        # Get N rows to re-insert back into Ed-Fi
+        endpoint.async_get_to_json(**async_get_kwargs)
+        print(f"    Rows written to {output_path}")
 
         # Insert those rows back into the ODS.
-        error_log = endpoint.post_from_json(output_path)#, pool_size=8)
+        error_log = endpoint.async_post_from_json(output_path, pool_size=8)
         print(error_log)
 
 
