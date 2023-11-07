@@ -12,7 +12,7 @@ from collections import defaultdict
 from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
 
-from typing import Awaitable, AsyncGenerator, Callable, Dict, Iterator, List, Optional, Set
+from typing import Awaitable, AsyncGenerator, Callable, Dict, Iterator, List, Optional, Set, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client import EdFiClient
@@ -107,6 +107,37 @@ class AsyncEdFiSession(EdFiSession):
         res = await self.get_response(url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
+
+    ### POST methods
+    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> aiohttp.ClientResponse:
+        """
+        Complete an asynchronous POST request against an endpoint URL.
+
+        Note: Responses are returned regardless of status.
+
+        :param url:
+        :param data:
+        :param kwargs:
+        :return:
+        """
+        self.refresh_if_expired()
+
+        post_headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            **self.auth_headers
+        }
+        data = util.clean_post_row(data)
+
+        async with self.session.post(
+            url, headers=post_headers, data=data,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            text = await response.text()
+            return response
+
+
+    ### Error response methods
     def custom_raise_for_status(self, response):
         """
         Override EdFiSession.custom_raise_for_status() to accept aiohttp.ClientResponse.status attribute.
@@ -116,27 +147,6 @@ class AsyncEdFiSession(EdFiSession):
         """
         response.status_code = response.status
         super().custom_raise_for_status(response)
-
-
-    ### POST methods
-    async def post_response(self, url: str, data: dict, **kwargs) -> aiohttp.ClientResponse:
-        """
-        Complete a POST request against an endpoint URL.
-
-        :param url:
-        :param data:
-        :param kwargs:
-        :return:
-        """
-        self.refresh_if_expired()
-
-        async with self.session.post(
-            url, headers=self.auth_headers, data=data,
-            verify_ssl=self.verify_ssl, raise_for_status=False
-        ) as response:
-            self.custom_raise_for_status(response)
-            text = await response.text()
-            return response
 
 
 class AsyncEndpointMixin:
@@ -289,7 +299,7 @@ class AsyncEndpointMixin:
 
 
     ### POST methods
-    def async_post_rows(self, rows: Iterator[dict], *, session: 'AsyncEdFiSession', **kwargs) -> Dict[str, List[int]]:
+    async def async_post_rows(self, rows: Iterator[dict], *, session: 'AsyncEdFiSession', **kwargs) -> Dict[str, List[int]]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
@@ -297,61 +307,49 @@ class AsyncEndpointMixin:
         :param session:
         :return:
         """
-        self.client.verbose_log(f"[Async Paged Post {self.type}] Endpoint  : {self.url}")
-        error_log = defaultdict[list]
+        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
+        output_log = defaultdict(list)
 
         async def post_and_log(idx: int, row: dict):
-            response = None
-
             try:
-                response = session.post_response(self.url, data=row, **kwargs)
-                res_text = await response.text()
+                response = await session.post_response(self.url, data=row, **kwargs)
+                res_json = await response.json()
+                output_log[f"{response.status} {res_json.get('message')}"].append(idx)
 
             except Exception as error:
-                if response:
-                    error_log[f"{response.status} {res_text}"].append(idx)
-                else:
-                    error_log[str(error)].append(idx)
+                output_log[str(error)].append(idx)
 
-        self.gather_with_concurrency(
+        await self.gather_with_concurrency(
             session.pool_size,
             *(post_and_log(idx, row) for idx, row in enumerate(rows))
          )
 
-        return error_log
+        # Sort row numbers for easier debugging
+        return {key: sorted(val) for key, val in output_log.items()}
 
     @run_async_session
-    def async_post_from_json(self,
+    async def async_post_from_json(self,
         path: str,
         *,
         session: 'AsyncEdFiSession',
-
-        # Async connect() arguments (passed to run_async_session decorator)
-        pool_size: int = 8,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
+        **kwargs
     ) -> Dict[str, List[int]]:
         """
 
         :param path:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
-        :param pool_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
+        :param session:
         :return:
         """
+        def stream_rows(path: str):
+            with open(path, 'rb') as fp:
+                yield from fp
+
+        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
 
-        # TODO: Does this actually work?
-        with open(path, 'rb') as fp:
-            error_log = self.async_post_rows(rows=fp, session=session)
-
-        return error_log
+        return await self.async_post_rows(rows=stream_rows(path), session=session)
 
 
     ### Async Utilities
