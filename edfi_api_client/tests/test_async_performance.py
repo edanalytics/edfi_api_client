@@ -86,7 +86,7 @@ def test_async(secret: str = master_secret):
             endpoint_count = endpoint.total_count()
 
             for pool_size in pool_sizes:
-                print(f"Resource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
+                print(f"\nResource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
 
                 async_kwargs.update(pool_size=pool_size)
 
@@ -99,6 +99,10 @@ def test_async(secret: str = master_secret):
                 # Get row count of written file.
                 async_count = sum(1 for _ in open(output_path))
                 if async_count != endpoint_count:
-                    print("    Number of extracted rows did not match!")
+                    print( "    Number of extracted rows did not match:")
+                    print(f"    Expected: {endpoint_count} ; Pulled: {async_count}")
 
                 print(f"    Runtime: {runtime} seconds")
+
+if __name__ == '__main__':
+    test_async()
