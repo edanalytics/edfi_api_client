@@ -1,7 +1,7 @@
 import json
 import re
 
-from typing import List
+from typing import List, Union
 
 def camel_to_snake(name: str) -> str:
     """
@@ -27,6 +27,21 @@ def snake_to_camel(name: str) -> str:
 
 def page_to_bytes(page: List[dict]) -> bytes:
     return b''.join(map(lambda row: json.dumps(row).encode('utf-8') + b'\n', page))
+
+def clean_post_row(row: Union[str, dict]) -> str:
+    """
+    Remove 'id' from a string or dictionary payload and force to a string.
+    TODO: Can this be made more efficient?
+    :return:
+    """
+    if isinstance(row, (bytes, str)):
+        row = json.loads(row)
+
+    # "Resource identifiers cannot be assigned by the client."
+    if 'id' in row:
+        del row['id']
+
+    return json.dumps(row)
 
 def url_join(*args) -> str:
     return '/'.join(

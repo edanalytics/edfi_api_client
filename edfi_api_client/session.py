@@ -9,7 +9,7 @@ from requests.exceptions import RequestsWarning
 
 from edfi_api_client import util
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
@@ -165,9 +165,11 @@ class EdFiSession:
 
     ### POST methods
     @with_exponential_backoff
-    def post_response(self, url: str, data: dict, **kwargs) -> requests.Response:
+    def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
         """
         Complete a POST request against an endpoint URL.
+
+        Note: Responses are returned regardless of status.
 
         :param url:
         :param data:
@@ -175,9 +177,13 @@ class EdFiSession:
         """
         self.refresh_if_expired()
 
-        response = self.session.post(url, headers=self.auth_headers, data=data, verify=self.verify_ssl, **kwargs)
-        self.custom_raise_for_status(response)
-        return response
+        post_headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            **self.auth_headers
+        }
+        data = util.clean_post_row(data)
+        return self.session.post(url, headers=post_headers, data=data, verify=self.verify_ssl, **kwargs)
 
 
     ### Error response methods

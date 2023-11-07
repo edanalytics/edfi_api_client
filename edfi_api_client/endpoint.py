@@ -317,25 +317,22 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param max_wait:
         :return:
         """
-        error_log = defaultdict[list]
-        response = None
+        self.client.verbose_log(f"[Post {self.type}] Endpoint  : {self.url}")
+        output_log = defaultdict(list)
 
         for idx, row in enumerate(rows):
 
             try:
-                response = None  # Ensure previous responses are reset before logging.
                 response = self.client.session.post_response(
                     self.url, data=row,
                     retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
                 )
+                output_log[f"{response.status_code} {response.json().get('message')}"].append(idx)
 
             except Exception as error:
-                if response:
-                    error_log[f"{response.status_code} {response.text}"].append(idx)
-                else:
-                    error_log[str(error)].append(idx)
+                output_log[str(error)].append(idx)
 
-        return error_log
+        return output_log
 
     def post_from_json(self,
         path: str,
@@ -352,14 +349,13 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param max_wait:
         :return:
         """
+        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
 
-        # TODO: Does this actually work?
         with open(path, 'rb') as fp:
-            error_log = self.post_rows(fp, retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait)
-
-        return error_log
+            return self.post_rows(fp, retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait)
 
 
 class EdFiResource(EdFiEndpoint):
