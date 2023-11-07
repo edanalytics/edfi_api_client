@@ -34,7 +34,6 @@ class AsyncEdFiSession(EdFiSession):
             logging.warning("Client key and secret not provided. Async connection with ODS will not be attempted.")
             exit(1)
 
-
     async def __aenter__(self):
         return self
 
@@ -51,17 +50,16 @@ class AsyncEdFiSession(EdFiSession):
         self.pool_size = pool_size
 
         self.session = aiohttp.ClientSession(
-            connector = aiohttp.connector.TCPConnector(limit=self.pool_size),
+            connector=aiohttp.connector.TCPConnector(limit=self.pool_size),
             timeout=aiohttp.ClientTimeout(sock_connect=max_wait),
-            raise_for_status=True,
-            **kwargs
         )
 
         if retry_on_failure:
             retry_options = aiohttp_retry.ExponentialRetry(
                 attempts=max_retries,
                 max_timeout=max_wait,
-                statuses=self.retry_status_codes
+                statuses=self.retry_status_codes,
+                start_timeout=2.0,  # Match the manual logic in EdFiSession.
             )
 
             self.session = aiohttp_retry.RetryClient(
@@ -75,19 +73,12 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### Elementary GET Methods
-    async def get_response(self,
-        url: str,
-        params: Optional['EdFiParams'] = None,
-        **kwargs
-    ) -> aiohttp.ClientResponse:
+    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete a GET request against an endpoint URL.
 
         :param url:
         :param params:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :return:
         """
         self.refresh_if_expired()
@@ -116,9 +107,19 @@ class AsyncEdFiSession(EdFiSession):
         res = await self.get_response(url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
+    def custom_raise_for_status(self, response):
+        """
+        Override EdFiSession.custom_raise_for_status() to accept aiohttp.ClientResponse.status attribute.
+
+        :param response:
+        :return:
+        """
+        response.status_code = response.status
+        super().custom_raise_for_status(response)
+
 
     ### POST methods
-    def post_response(self, url: str, data: dict, **kwargs) -> aiohttp.ClientResponse:
+    async def post_response(self, url: str, data: dict, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete a POST request against an endpoint URL.
 
@@ -156,21 +157,9 @@ class AsyncEndpointMixin:
         :return:
         """
         @functools.wraps(func)
-        def wrapped(self,
-            *args,
-            pool_size: int = 8,
-            retry_on_failure: bool = False,
-            max_retries: int = 5,
-            max_wait: int = 500,
-            **kwargs
-        ):
+        def wrapped(self, *args, **kwargs):
             async def main():
-                async with await self.client.async_session.connect(
-                    pool_size=pool_size,
-                    retry_on_failure=retry_on_failure,
-                    max_retries=max_retries,
-                    max_wait=max_wait
-                ) as session:
+                async with await self.client.async_session.connect(**kwargs) as session:
                     return await func(self, *args, session=session, **kwargs)
 
             return asyncio.run(main())
@@ -182,12 +171,11 @@ class AsyncEndpointMixin:
     async def async_get_pages(self,
         *,
         session: 'AsyncEdFiSession',
-        page_size: int = 100,
 
+        page_size: int = 100,
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
-        reverse_paging: bool = True,
-        **kwargs
+        reverse_paging: bool = True
     ) -> AsyncGenerator[List[dict], None]:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
@@ -202,8 +190,7 @@ class AsyncEndpointMixin:
         """
         async def verbose_get_page(param: 'EdFiParams'):
             self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {param}")
-
-            res = await session.get_response(self.url, params=param, **kwargs)
+            res = await session.get_response(self.url, params=param)
             return await res.json()
 
         self.client.verbose_log(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
@@ -232,17 +219,11 @@ class AsyncEndpointMixin:
 
         *,
         session: 'AsyncEdFiSession',
-        page_size: int = 100,
 
+        page_size: int = 100,
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         reverse_paging: bool = True,
-
-        # Async connect() arguments (passed to run_async_session decorator)
-        pool_size: int = 8,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
         **kwargs
     ) -> str:
         """
@@ -255,10 +236,6 @@ class AsyncEndpointMixin:
         :param step_change_version:
         :param change_version_step_size:
         :param reverse_paging:
-        :param pool_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :return:
         """
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
@@ -269,8 +246,7 @@ class AsyncEndpointMixin:
         paged_results = self.async_get_pages(
             session=session,
             page_size=page_size, reverse_paging=reverse_paging,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
-            **kwargs
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size
         )
 
         async with aiofiles.open(path, 'wb') as fp:
@@ -284,6 +260,7 @@ class AsyncEndpointMixin:
     async def async_get_paged_window_params(self,
         *,
         session: 'AsyncEdFiSession',
+
         page_size: int,
         step_change_version: bool,
         change_version_step_size: int,
@@ -379,12 +356,13 @@ class AsyncEndpointMixin:
 
     ### Async Utilities
     @staticmethod
-    async def gather_with_concurrency(n, *tasks) -> list:
+    async def gather_with_concurrency(n, *tasks, return_exceptions: bool = False) -> list:
         """
         Waits for an entire task queue to finish processing
 
         :param n:
         :param tasks:
+        :param return_exceptions:
         :return:
         """
         semaphore = asyncio.Semaphore(n)
@@ -395,4 +373,4 @@ class AsyncEndpointMixin:
                     task = asyncio.create_task(task)
                 return await task
 
-        return await asyncio.gather(*(sem_task(task) for task in tasks), return_exceptions=True)
+        return await asyncio.gather(*(sem_task(task) for task in tasks), return_exceptions=return_exceptions)

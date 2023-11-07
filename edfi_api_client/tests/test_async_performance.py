@@ -61,23 +61,24 @@ def test_async(secret: str = master_secret):
     scratch_dir = "./.scratch"
     os.makedirs(scratch_dir, exist_ok=True)
 
-    output_path = os.path.join(scratch_dir, 'students_async.jsonl')
     async_kwargs = dict(
-        path=output_path,
         retry_on_failure=True,
         page_size=500,
         step_change_version=True,
-        change_version_step_size=10000,
+        change_version_step_size=100000,
     )
 
     for resource, cv_row_counts in max_change_versions.items():
+        output_path = os.path.join(scratch_dir, f"{resource}_async.jsonl")
+        async_kwargs.update(path=output_path)
+
         for k_row_count, max_change_version in cv_row_counts.items():
 
             endpoint = edfi.resource(resource, minChangeVersion=0, max_change_version=max_change_version)
             endpoint_count = endpoint.total_count()
 
             for pool_size in pool_sizes:
-                print(f"Resource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
+                print(f"\nResource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
 
                 async_kwargs.update(pool_size=pool_size)
 
@@ -90,6 +91,10 @@ def test_async(secret: str = master_secret):
                 # Get row count of written file.
                 async_count = sum(1 for _ in open(output_path))
                 if async_count != endpoint_count:
-                    print("    Number of extracted rows did not match!")
+                    print( "    Number of extracted rows did not match:")
+                    print(f"    Expected: {endpoint_count} ; Pulled: {async_count}")
 
                 print(f"    Runtime: {runtime} seconds")
+
+if __name__ == '__main__':
+    test_async()

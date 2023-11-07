@@ -190,38 +190,35 @@ class EdFiSession:
         :param response:
         :return:
         """
-        # requests.Response.status_code vs aiohttp.ClientResponse.status
-        status_code = response.status_code if hasattr(response, 'status_code') else response.status
-
-        if 400 <= status_code < 600:
+        if 400 <= response.status_code < 600:
             logging.warning(
-                f"API Error: {status_code} {response.reason}"
+                f"API Error: {response.status_code} {response.reason}"
             )
-            if status_code == 400:
+            if response.status_code == 400:
                 raise HTTPError(
                     "400: Bad request. Check your params. Is 'limit' set too high?"
                 )
-            elif status_code == 401:
+            elif response.status_code == 401:
                 raise RequestsWarning(
                     "401: Unauthenticated for URL. The connection may need to be reset."
                 )
-            elif status_code == 403:
+            elif response.status_code == 403:
                 # Only raise an HTTPError where the resource is impossible to access.
                 raise HTTPError(
                     "403: Resource not authorized.",
                     response=response
                 )
-            elif status_code == 404:
+            elif response.status_code == 404:
                 # Only raise an HTTPError where the resource is impossible to access.
                 raise HTTPError(
                     "404: Resource not found.",
                     response=response
                 )
-            elif status_code == 500:
+            elif response.status_code == 500:
                 raise RequestsWarning(
                     "500: Internal server error."
                 )
-            elif status_code == 504:
+            elif response.status_code == 504:
                 raise RequestsWarning(
                     "504: Gateway time-out for URL. The connection may need to be reset."
                 )
