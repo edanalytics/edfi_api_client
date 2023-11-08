@@ -202,6 +202,10 @@ class EdFiSession:
                     "404: Resource not found.",
                     response=response
                 )
+            elif response.status_code == 429:
+                raise RequestsWarning(
+                    "429: Too many requests. The ODS is overwhelmed."
+                )
             elif response.status_code == 500:
                 raise RequestsWarning(
                     "500: Internal server error."
