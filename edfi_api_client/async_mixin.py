@@ -299,11 +299,20 @@ class AsyncEndpointMixin:
 
 
     ### POST methods
-    async def async_post_rows(self, rows: Iterator[dict], *, session: 'AsyncEdFiSession', **kwargs) -> Dict[str, List[int]]:
+    async def async_post_rows(self,
+        rows: Iterator[dict],
+        *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
+        session: 'AsyncEdFiSession',
+        **kwargs
+    ) -> Dict[str, List[int]]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
         :param rows:
+        :param include:
+        :param exclude:
         :param session:
         :return:
         """
@@ -311,6 +320,11 @@ class AsyncEndpointMixin:
         output_log = defaultdict(list)
 
         async def post_and_log(idx: int, row: dict):
+            if include and idx not in include:
+                return
+            elif exclude and idx in exclude:
+                return
+
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
 
@@ -335,12 +349,16 @@ class AsyncEndpointMixin:
     async def async_post_from_json(self,
         path: str,
         *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
         session: 'AsyncEdFiSession',
         **kwargs
     ) -> Dict[str, List[int]]:
         """
 
         :param path:
+        :param include:
+        :param exclude:
         :param session:
         :return:
         """
@@ -353,7 +371,11 @@ class AsyncEndpointMixin:
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
 
-        return await self.async_post_rows(rows=stream_rows(path), session=session)
+        return await self.async_post_rows(
+            rows=stream_rows(path),
+            include=include, exclude=exclude,
+            session=session
+        )
 
 
     ### Async Utilities

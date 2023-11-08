@@ -304,6 +304,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def post_rows(self,
         rows: Iterator[dict],
         *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
         retry_on_failure: bool = False,
         max_retries: int = 5,
         max_wait: int = 500,
@@ -312,6 +314,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         This method tries to post all rows from an iterator.
 
         :param rows:
+        :param include:
+        :param exclude:
         :param retry_on_failure:
         :param max_retries:
         :param max_wait:
@@ -321,6 +325,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
         output_log = defaultdict(list)
 
         for idx, row in enumerate(rows):
+
+            if include and idx not in include:
+                continue
+            elif exclude and idx in exclude:
+                continue
 
             try:
                 response = self.client.session.post_response(
@@ -341,6 +350,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def post_from_json(self,
         path: str,
         *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
         retry_on_failure: bool = False,
         max_retries: int = 5,
         max_wait: int = 500,
@@ -348,6 +359,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
 
         :param path:
+        :param include:
+        :param exclude:
         :param retry_on_failure:
         :param max_retries:
         :param max_wait:
@@ -359,7 +372,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
             raise FileNotFoundError(f"JSON file not found: {path}")
 
         with open(path, 'rb') as fp:
-            return self.post_rows(fp, retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait)
+            return self.post_rows(
+                fp, include=include, exclude=exclude,
+                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+            )
 
 
 class EdFiResource(EdFiEndpoint):
