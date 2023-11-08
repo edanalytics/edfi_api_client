@@ -313,8 +313,12 @@ class AsyncEndpointMixin:
         async def post_and_log(idx: int, row: dict):
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
-                res_json = await response.json()
-                output_log[f"{response.status} {res_json.get('message')}"].append(idx)
+
+                if response.ok:
+                    output_log[f"{response.status}"].append(idx)
+                else:
+                    res_json = await response.json()
+                    output_log[f"{response.status} {res_json.get('message')}"].append(idx)
 
             except Exception as error:
                 output_log[str(error)].append(idx)

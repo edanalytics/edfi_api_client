@@ -327,12 +327,16 @@ class EdFiEndpoint(AsyncEndpointMixin):
                     self.url, data=row,
                     retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
                 )
-                output_log[f"{response.status_code} {response.json().get('message')}"].append(idx)
+
+                if response.ok:
+                    output_log[f"{response.status_code}"].append(idx)
+                else:
+                    output_log[f"{response.status_code} {response.json().get('message')}"].append(idx)
 
             except Exception as error:
                 output_log[str(error)].append(idx)
 
-        return output_log
+        return dict(output_log)
 
     def post_from_json(self,
         path: str,
