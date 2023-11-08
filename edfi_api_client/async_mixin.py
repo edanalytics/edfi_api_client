@@ -44,7 +44,7 @@ class AsyncEdFiSession(EdFiSession):
         pool_size: int = 8,
         retry_on_failure: bool = False,
         max_retries: int = 5,
-        max_wait: int = 500,
+        max_wait: int = 1200,
         **kwargs
     ) -> 'AsyncEdFiSession':
         self.pool_size = pool_size
@@ -57,9 +57,10 @@ class AsyncEdFiSession(EdFiSession):
         if retry_on_failure:
             retry_options = aiohttp_retry.ExponentialRetry(
                 attempts=max_retries,
+                start_timeout=4.0,  # Note: this logic differs from that of EdFiSession.
                 max_timeout=max_wait,
+                factor=4.0,
                 statuses=self.retry_status_codes,
-                start_timeout=2.0,  # Match the manual logic in EdFiSession.
             )
 
             self.session = aiohttp_retry.RetryClient(
