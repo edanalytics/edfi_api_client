@@ -38,8 +38,8 @@ def clean_post_row(row: Union[str, dict]) -> str:
         row = json.loads(row)
 
     # "Resource identifiers cannot be assigned by the client."
-    if 'id' in row:
-        del row['id']
+    # "Value for the auto-assigned identifier property 'DescriptorId' cannot be assigned by the client"
+    row = {col: val for col, val in row.items() if not (col == 'id' or col.endswith("DescriptorId"))}
 
     return json.dumps(row)
 
