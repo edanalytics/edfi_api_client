@@ -1,7 +1,6 @@
 import logging
-import math
 
-from typing import List, Optional
+from typing import Iterator, List, Optional
 
 from edfi_api_client import util
 
@@ -22,14 +21,8 @@ class EdFiParams(dict):
         self.min_change_version = self.get('minChangeVersion')
         self.max_change_version = self.get('maxChangeVersion')
 
-        # These parameters are only used during pagination. They must be explicitly initialized.
-        self.page_size = None
-        self.change_version_step_size = None
-
-
     def copy(self) -> 'EdFiParams':
         return EdFiParams( super().copy() )
-
 
     @classmethod
     def sanitize_params(cls,
@@ -92,101 +85,44 @@ class EdFiParams(dict):
 
         return final_params
 
-
-
-    ### Methods for preparing params for pagination and completing pagination
-    def init_page_by_offset(self, page_size: int):
+    def build_offset_window_params(self, page_size: int, total_count: int, reverse: bool = False) -> List['EdFiParams']:
         """
+        Iterate offset-stepping by `page_size` until `total_count` is reached.
 
         :param page_size:
+        :param total_count:
+        :param reverse:
         :return:
         """
-        self.page_size = page_size
+        params_list = []
 
-        if 'limit' in self or 'offset' in self:
-            logging.warning("The previously-defined limit and offset will be reset for paging.")
+        for offset in range(0, total_count, page_size):
+            offset_params = self.copy()
+            offset_params["limit"] = page_size
+            offset_params["offset"] = offset
+            params_list.append(offset_params)
 
-        self['limit'] = self.page_size
-        self['offset'] = 0
+        if reverse:
+            return params_list[::-1]
+        else:
+            return params_list
 
-
-    def init_page_by_change_version_step(self, change_version_step_size: int):
+    def build_change_version_window_params(self, change_version_step_size: int) -> Iterator['EdFiParams']:
         """
+        Iterate change-version-stepping by `change_version_step_size` until `max_change_version` is reached.
 
         :param change_version_step_size:
         :return:
         """
-        self.change_version_step_size = change_version_step_size
-
         if self.min_change_version is None or self.max_change_version is None:
-            raise ValueError("! Cannot paginate change version steps without specifying min and max change versions!")
-
-        # Reset maxChangeVersion in parameters to narrow the ingestion window to the step size.
-        self['maxChangeVersion'] = min(
-            self.max_change_version,
-            self.min_change_version + self.change_version_step_size
-        )
-
-
-    def page_by_offset(self):
-        """
-
-        :return:
-        """
-        if self.page_size is None:
-            raise ValueError("To paginate by offset, you must first prepare the class using `init_page_by_offset()`!")
-
-        self['offset'] += self.page_size
-
-
-    def page_by_change_version_step(self):
-        """
-
-        :return:
-        """
-        if self.change_version_step_size is None:
-            raise ValueError("To paginate by offset, you must first prepare the class using `init_page_by_change_version_step()`!")
-
-        # Increment min and max change version only if still within the max change version window.
-        new_min_change_version = self['maxChangeVersion'] + 1
-        if new_min_change_version > self.max_change_version:
-            raise StopIteration
-
-        else:
-            self['minChangeVersion'] = new_min_change_version
-            self['maxChangeVersion'] = min(
-                self['maxChangeVersion'] + self.change_version_step_size,
-                self.max_change_version
-            )
-
-            # Reset the offset counter for the next window of change versions.
-            self['offset'] = 0
-
-
-    def init_reverse_page_by_offset(self, total_count: int, page_size: int):
-        """
-
-        :param total_count:
-        :param page_size:
-        :return:
-        """
-        self.page_size = page_size
-
-        self['limit'] = self.page_size
-        self['offset'] = math.floor(total_count / self.page_size) * self.page_size
-
-
-    def reverse_page_by_offset(self):
-        """
-
-        :return:
-        """
-        if self.page_size is None:
             raise ValueError(
-                "To reverse-paginate by offset, you must first prepare the class using `init_reverse_page_by_offset()`!"
+                "! Cannot paginate change version steps without specifying min and max change versions!"
             )
 
-        self['offset'] -= self.page_size
+        change_version_step_windows = range(self.min_change_version, self.max_change_version, change_version_step_size)
+        for idx, cv_window_start in enumerate(change_version_step_windows):
+            cv_params = self.copy()
+            cv_params['minChangeVersion'] = cv_window_start + bool(idx)  # Add one to prevent overlaps
+            cv_params['maxChangeVersion'] = min(self.max_change_version, cv_window_start + change_version_step_size)
 
-        if self['offset'] < 0:
-            raise StopIteration
+            yield cv_params

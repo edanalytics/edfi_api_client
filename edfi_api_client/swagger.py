@@ -1,8 +1,6 @@
 from collections import defaultdict
 from typing import List
 
-from edfi_api_client.util import camel_to_snake
-
 
 class EdFiSwagger:
     """
@@ -39,13 +37,11 @@ class EdFiSwagger:
         # Extract surrogate keys from `definitions`
         self.reference_skeys: dict = self.get_reference_skeys(exclude=['link',])
 
-
     def __repr__(self):
         """
         Ed-Fi {self.type} OpenAPI Swagger Specification
         """
         return f"<Ed-Fi {self.type.title()} OpenAPI Swagger Specification>"
-
 
     def _get_namespaced_endpoints_and_deletes(self):
         """
@@ -73,7 +69,6 @@ class EdFiSwagger:
 
         return resource_deletes
 
-
     def get_descriptions(self):
         """
         Descriptions for all EdFi endpoints are found under `tags` as [name, description] JSON objects.
@@ -86,7 +81,6 @@ class EdFiSwagger:
             tag['name']: tag['description']
             for tag in self.json['tags']
         }
-
 
     def get_reference_skeys(self, exclude: List[str]):
         """
