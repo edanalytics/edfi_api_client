@@ -1,5 +1,35 @@
 from collections import defaultdict
-from typing import List
+from typing import Dict, List, Optional
+
+from edfi_api_client import util
+
+
+class EdFiEndpointMetadata:
+    def __init__(self, namespace: str, endpoint: str):
+        self.namespace: str = namespace
+        self.endpoint : str = endpoint
+
+        self.description: Optional[str] = None
+        self.has_deletes: bool = False
+        self.required_fields: List[str] = []
+        self.fields: List[str] = []
+
+    def __repr__(self):
+        return "<EdFiEndpointMetadata: {}; {} fields ({} required)>" \
+                .format(self.tuple, len(self.fields), len(self.required_fields))
+
+    @property
+    def tuple(self):
+        return self.namespace, self.endpoint
+
+    @property
+    def definition_id(self) -> str:
+        """
+        Ed-Fi definitions use "edFi_students" convention, instead of standard "ed-fi/students".
+        """
+        ns = util.snake_to_camel(self.namespace)
+        ep = util.plural_to_singular(self.endpoint)
+        return f"{ns}_{ep}"
 
 
 class EdFiSwagger:
@@ -7,7 +37,6 @@ class EdFiSwagger:
     """
     def __init__(self, component: str, swagger_payload: dict):
         """
-        TODO: Can `component` be extracted from the swagger?
 
         :param component: Type of swagger payload passed (i.e., 'resources' or 'descriptors')
         :param swagger_payload:
@@ -26,16 +55,16 @@ class EdFiSwagger:
                 .get('tokenUrl')
         )
 
-        # Extract namespaces and endpoints, and whether there is a deletes endpoint from `paths`
-        _endpoint_deletes = self._get_namespaced_endpoints_and_deletes()
-        self.endpoints: list = list(_endpoint_deletes.keys())
-        self.deletes  : list = list(filter(_endpoint_deletes.get, _endpoint_deletes))  # Filter where values are True
-
         # Extract resource descriptions from `tags`
         self.descriptions: dict = self.get_descriptions()
 
         # Extract surrogate keys from `definitions`
         self.reference_skeys: dict = self.get_reference_skeys(exclude=['link',])
+
+        # Extract namespaces and endpoints, and whether there is a deletes endpoint from `paths`
+        self.endpoints_meta: List[EdFiEndpointMetadata] = self.get_endpoints_meta()
+        self.endpoints: List[(str, str)] = [meta.tuple for meta in self.endpoints_meta]
+        self.deletes: List[(str, str)] = [meta.tuple for meta in self.endpoints_meta if meta.has_deletes]
 
     def __repr__(self):
         """
@@ -43,9 +72,9 @@ class EdFiSwagger:
         """
         return f"<Ed-Fi {self.type.title()} OpenAPI Swagger Specification>"
 
-    def _get_namespaced_endpoints_and_deletes(self):
+    def get_endpoints_meta(self):
         """
-        Internal function to parse values in `paths`.
+        Internal function to parse values in `paths` and retrieve a list of metadata.
 
         Extract each Ed-Fi namespace and resource, and whether it has an optional deletes tag.
             (namespace: str, resource: str) -> has_deletes: bool
@@ -58,23 +87,37 @@ class EdFiSwagger:
 
         :return:
         """
-        resource_deletes = defaultdict(bool)
+        # Build out a collection of endpoints and their delete statuses by path.
+        deletes: Dict[(str, str), bool] = defaultdict(bool)
 
         for path in self.json.get('paths', {}).keys():
             namespace = path.split('/')[1]
-            resource  = path.split('/')[2]
-            has_deletes = ('/deletes' in path)
+            endpoint  = path.split('/')[2]
 
-            resource_deletes[ (namespace, resource) ] |= has_deletes
+            deletes[(namespace, endpoint)] |= ('/deletes' in path)
 
-        return resource_deletes
+        # Re-iterate the found endpoints and deletes to build metadata.
+        endpoints_meta: List[EdFiEndpointMetadata] = []
+
+        for (namespace, endpoint), has_deletes in deletes.items():
+            meta = EdFiEndpointMetadata(namespace, endpoint)
+            meta.has_deletes = has_deletes
+            meta.description = self.descriptions.get(meta.endpoint)
+
+            definition_attrs = self.json.get('definitions').get(meta.definition_id)
+            if definition_attrs:
+                meta.required_fields = definition_attrs.get('required')
+                meta.fields = list(definition_attrs.get('properties', {}).keys()) or None
+
+            endpoints_meta.append(meta)
+
+        return endpoints_meta
 
     def get_descriptions(self):
         """
         Descriptions for all EdFi endpoints are found under `tags` as [name, description] JSON objects.
         Their extraction is optional for YAML templates, but they look nice.
 
-        :param swagger: Swagger JSON object
         :return:
         """
         return {
