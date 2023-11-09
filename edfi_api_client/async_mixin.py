@@ -9,7 +9,7 @@ import logging
 from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
 
-from typing import Awaitable, AsyncGenerator, Callable, List, Optional, Set
+from typing import Awaitable, AsyncGenerator, Callable, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client import EdFiClient
@@ -20,8 +20,6 @@ class AsyncEdFiSession(EdFiSession):
     """
 
     """
-    retry_status_codes: Set[int] = {401, 429, 500, 501, 503, 504}
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.session: aiohttp.ClientSession = None
@@ -138,9 +136,7 @@ class AsyncEndpointMixin:
             async def main():
                 async with await self.client.async_session.connect(**kwargs) as session:
                     return await func(self, *args, session=session, **kwargs)
-
             return asyncio.run(main())
-
         return wrapped
 
 

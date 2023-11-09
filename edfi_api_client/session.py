@@ -18,6 +18,8 @@ class EdFiSession:
     """
 
     """
+    retry_status_codes: Set[int] = {401, 429, 500, 501, 503, 504}
+
     def __init__(self,
         base_url: str,
         client_key: str,
