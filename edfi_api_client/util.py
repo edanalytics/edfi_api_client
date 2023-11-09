@@ -31,6 +31,7 @@ def snake_to_camel(name: str) -> str:
 def plural_to_singular(name: str) -> str:
     """
     Convert a (Ed-Fi resource) name from plural to singular.
+    TODO: Genericize this to handle all edge-cases.
 
     :param name:
     :return:

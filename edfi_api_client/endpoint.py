@@ -137,10 +137,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         @functools.wraps(func)
         def wrapped(self, *args, **kwargs):
             if self.swagger is None:
-                self.swagger = self.client.get_swagger(self.swagger_type)
-
+                self.swagger = self.client.get_swagger(self.swagger_type)  # Updates client.swaggers
             return func(self, *args, **kwargs)
-
         return wrapped
 
     @property
