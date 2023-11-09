@@ -1,3 +1,4 @@
+import functools
 import logging
 import time
 
@@ -8,7 +9,7 @@ from requests.exceptions import RequestsWarning
 
 from edfi_api_client import util
 
-from typing import Optional
+from typing import Callable, Optional, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
@@ -84,15 +85,52 @@ class EdFiSession:
             logging.info("Session authentication is expired. Attempting reconnection...")
             self.authenticate()
 
+    def with_exponential_backoff(func: Callable):
+        """
+        Decorator to apply exponential backoff during failed requests.
+        :return:
+        """
+        @functools.wraps(func)
+        def wrapped(self,
+            url: str,
+            params: 'EdFiParams' = None,
+            *args,
+            retry_on_failure: bool = False,
+            max_retries: int = 5,
+            max_wait: int = 500,
+            **kwargs
+        ):
+            if not retry_on_failure:
+                return func(self, url, params=params, *args, **kwargs)
 
-    ### Elementary GET Methods
+            # Attempt the GET until success or `max_retries` reached.
+            for n_tries in range(max_retries):
+
+                try:
+                    return func(self, url, params=params, *args, **kwargs)
+
+                except RequestsWarning:
+                    # If an API call fails, it may be due to rate-limiting.
+                    # Use exponential backoff to wait, then refresh and try again.
+                    time.sleep(
+                        min((2 ** n_tries) * 2, max_wait)
+                    )
+                    logging.warning(f"Retry number: {n_tries}")
+
+            # This block is reached only if max_retries has been reached.
+            else:
+                logging.warning(f"[Retry Failed] Endpoint  : {url}")
+                if params:
+                    logging.warning(f"[Retry Failed] Parameters: {params}")
+                raise RuntimeError("API retry failed: max retries exceeded for URL.")
+
+        return wrapped
+
+    ### GET Methods
+    @with_exponential_backoff
     def get_response(self,
         url: str,
         params: Optional['EdFiParams'] = None,
-        *,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 600,
         **kwargs
     ) -> requests.Response:
         """
@@ -100,58 +138,13 @@ class EdFiSession:
 
         :param url:
         :param params:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :return:
         """
         self.refresh_if_expired()
 
-        if retry_on_failure:
-            return self.get_response_with_exponential_backoff(url, params, max_retries=max_retries, max_wait=max_wait, **kwargs)
-
         response = self.session.get(url, headers=self.auth_headers, params=params, verify=self.verify_ssl)
         self.custom_raise_for_status(response)
         return response
-
-    def get_response_with_exponential_backoff(self,
-        url: str,
-        params: 'EdFiParams',
-        *,
-        max_retries,
-        max_wait,
-        **kwargs
-    ) -> requests.Response:
-        """
-        Complete a GET request against an endpoint URL.
-        In the case of failure, retry with exponential backoff until max_retries or max_wait has been exceeded.
-
-        :param url:
-        :param params:
-        :param max_retries:
-        :param max_wait:
-        :param kwargs: GET arguments
-        :return:
-        """
-        # Attempt the GET until success or `max_retries` reached.
-        for n_tries in range(max_retries):
-
-            try:
-                return self.get_response(url, params, **kwargs)
-
-            except RequestsWarning:
-                # If an API call fails, it may be due to rate-limiting.
-                # Use exponential backoff to wait, then refresh and try again.
-                time.sleep(
-                    min((2 ** n_tries) * 2, max_wait)
-                )
-                logging.warning(f"Retry number: {n_tries}")
-
-        # This block is reached only if max_retries has been reached.
-        else:
-            logging.warning(f"[Get with Retry Failed] Endpoint  : {url}")
-            logging.warning(f"[Get with Retry Failed] Parameters: {params}")
-            raise RuntimeError("API GET failed: max retries exceeded for URL.")
 
     def get_total_count(self, url: str, params: 'EdFiParams', **kwargs):
         """
@@ -169,6 +162,31 @@ class EdFiSession:
         res = self.get_response(url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
+
+    ### POST methods
+    @with_exponential_backoff
+    def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
+        """
+        Complete a POST request against an endpoint URL.
+
+        Note: Responses are returned regardless of status.
+
+        :param url:
+        :param data:
+        :return:
+        """
+        self.refresh_if_expired()
+
+        post_headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            **self.auth_headers
+        }
+        data = util.clean_post_row(data)
+        return self.session.post(url, headers=post_headers, data=data, verify=self.verify_ssl, **kwargs)
+
+
+    ### Error response methods
     @staticmethod
     def custom_raise_for_status(response):
         """

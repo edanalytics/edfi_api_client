@@ -5,11 +5,14 @@ import asyncio
 import functools
 import itertools
 import logging
+import os
+
+from collections import defaultdict
 
 from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
 
-from typing import Awaitable, AsyncGenerator, Callable, List, Optional, Set
+from typing import Awaitable, AsyncGenerator, Callable, Dict, Iterator, List, Optional, Set, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client import EdFiClient
@@ -105,6 +108,37 @@ class AsyncEdFiSession(EdFiSession):
         res = await self.get_response(url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
+
+    ### POST methods
+    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> aiohttp.ClientResponse:
+        """
+        Complete an asynchronous POST request against an endpoint URL.
+
+        Note: Responses are returned regardless of status.
+
+        :param url:
+        :param data:
+        :param kwargs:
+        :return:
+        """
+        self.refresh_if_expired()
+
+        post_headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            **self.auth_headers
+        }
+        data = util.clean_post_row(data)
+
+        async with self.session.post(
+            url, headers=post_headers, data=data,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            text = await response.text()
+            return response
+
+
+    ### Error response methods
     def custom_raise_for_status(self, response):
         """
         Override EdFiSession.custom_raise_for_status() to accept aiohttp.ClientResponse.status attribute.
@@ -263,6 +297,86 @@ class AsyncEndpointMixin:
 
         nested_params = await self.gather_with_concurrency(session.pool_size, *map(build_total_count_windows, top_level_params))
         return list(itertools.chain.from_iterable(nested_params))
+
+
+    ### POST methods
+    async def async_post_rows(self,
+        rows: Iterator[dict],
+        *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
+        session: 'AsyncEdFiSession',
+        **kwargs
+    ) -> Dict[str, List[int]]:
+        """
+        This method tries to asynchronously post all rows from an iterator.
+
+        :param rows:
+        :param include:
+        :param exclude:
+        :param session:
+        :return:
+        """
+        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
+        output_log = defaultdict(list)
+
+        async def post_and_log(idx: int, row: dict):
+            if include and idx not in include:
+                return
+            elif exclude and idx in exclude:
+                return
+
+            try:
+                response = await session.post_response(self.url, data=row, **kwargs)
+
+                if response.ok:
+                    output_log[f"{response.status}"].append(idx)
+                else:
+                    res_json = await response.json()
+                    output_log[f"{response.status} {res_json.get('message')}"].append(idx)
+
+            except Exception as error:
+                output_log[str(error)].append(idx)
+
+        await self.gather_with_concurrency(
+            session.pool_size,
+            *(post_and_log(idx, row) for idx, row in enumerate(rows))
+         )
+
+        # Sort row numbers for easier debugging
+        return {key: sorted(val) for key, val in output_log.items()}
+
+    @run_async_session
+    async def async_post_from_json(self,
+        path: str,
+        *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
+        session: 'AsyncEdFiSession',
+        **kwargs
+    ) -> Dict[str, List[int]]:
+        """
+
+        :param path:
+        :param include:
+        :param exclude:
+        :param session:
+        :return:
+        """
+        def stream_rows(path: str):
+            with open(path, 'rb') as fp:
+                yield from fp
+
+        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"JSON file not found: {path}")
+
+        return await self.async_post_rows(
+            rows=stream_rows(path),
+            include=include, exclude=exclude,
+            session=session
+        )
 
 
     ### Async Utilities
