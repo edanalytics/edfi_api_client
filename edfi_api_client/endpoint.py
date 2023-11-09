@@ -156,12 +156,12 @@ class EdFiEndpoint(AsyncEndpointMixin):
     @property
     @force_swagger
     def fields(self) -> List[str]:
-        return self.swagger.fields.get((self.namespace, self.name))
+        return self.swagger.endpoint_fields.get((self.namespace, self.name))
 
     @property
     @force_swagger
     def required_fields(self) -> List[str]:
-        return self.swagger.required_fields.get((self.namespace, self.name))
+        return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
 
 
     ### GET-all methods

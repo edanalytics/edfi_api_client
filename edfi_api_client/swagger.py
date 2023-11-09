@@ -32,8 +32,8 @@ class EdFiSwagger:
         self.deletes: List[(str, str)] = [endpoint for endpoint, has_deletes in self.get_path_deletes().items() if has_deletes]
 
         # Extract fields and surrogate keys from `definitions`
-        self.fields: Dict[(str, str), List[str]] = self.get_fields(exclude=['id', '_etag'])
-        self.required_fields: Dict[(str, str), List[str]] = self.get_required_fields()
+        self.endpoint_fields: Dict[(str, str), List[str]] = self.get_fields(exclude=['id', '_etag'])
+        self.endpoint_required_fields: Dict[(str, str), List[str]] = self.get_required_fields()
         self.reference_skeys: Dict[str, List[str]] = self.get_reference_skeys(exclude=['link', ])
 
         # Extract resource descriptions from `tags`
@@ -96,7 +96,7 @@ class EdFiSwagger:
             for namespace, endpoint in self.endpoints:
 
                 if self.build_definition_id(namespace, endpoint) == definition_id:
-                    filtered_fields = [field for field in metadata.get('required') if field not in exclude]
+                    filtered_fields = [field for field in metadata.get('properties', {}).keys() if field not in exclude]
                     field_mapping[(namespace, endpoint)] = filtered_fields
 
         return field_mapping
@@ -112,7 +112,7 @@ class EdFiSwagger:
             for namespace, endpoint in self.endpoints:
 
                 if self.build_definition_id(namespace, endpoint) == definition_id:
-                    field_mapping[(namespace, endpoint)] = list(metadata.get('properties', {}).keys())
+                    field_mapping[(namespace, endpoint)] = list(metadata.get('required', []))
 
         return field_mapping
 
