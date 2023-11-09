@@ -1,12 +1,15 @@
 import functools
 import logging
+import os
 import requests
+
+from collections import defaultdict
 
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
 
-from typing import Callable, Iterator, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.client import EdFiClient
@@ -162,7 +165,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
 
 
-    ### GET-all methods
+    ### GET methods
     def get_pages(self,
         *,
         page_size: int = 100,
@@ -318,6 +321,84 @@ class EdFiEndpoint(AsyncEndpointMixin):
             yield from self.params.build_offset_window_params(page_size, total_count=total_count)
 
 
+    ### POST methods
+    def post_rows(self,
+        rows: Iterator[dict],
+        *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+    ) -> Dict[str, List[int]]:
+        """
+        This method tries to post all rows from an iterator.
+
+        :param rows:
+        :param include:
+        :param exclude:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :return:
+        """
+        self.client.verbose_log(f"[Post {self.type}] Endpoint  : {self.url}")
+        output_log = defaultdict(list)
+
+        for idx, row in enumerate(rows):
+
+            if include and idx not in include:
+                continue
+            elif exclude and idx in exclude:
+                continue
+
+            try:
+                response = self.client.session.post_response(
+                    self.url, data=row,
+                    retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+                )
+
+                if response.ok:
+                    output_log[f"{response.status_code}"].append(idx)
+                else:
+                    output_log[f"{response.status_code} {response.json().get('message')}"].append(idx)
+
+            except Exception as error:
+                output_log[str(error)].append(idx)
+
+        return dict(output_log)
+
+    def post_from_json(self,
+        path: str,
+        *,
+        include: Iterator[int] = None,
+        exclude: Iterator[int] = None,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 500,
+    ) -> Dict[str, List[int]]:
+        """
+
+        :param path:
+        :param include:
+        :param exclude:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
+        :return:
+        """
+        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"JSON file not found: {path}")
+
+        with open(path, 'rb') as fp:
+            return self.post_rows(
+                fp, include=include, exclude=exclude,
+                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
+            )
+
+
 class EdFiResource(EdFiEndpoint):
     """
     Ed-Fi Resources are the primary use-case of the API.
@@ -467,3 +548,8 @@ class EdFiComposite(EdFiEndpoint):
             else:
                 self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
                 break
+
+    def post_rows(self, *args, **kwargs):
+        raise NotImplementedError(
+            "Rows cannot be posted to a composite directly!"
+        )
