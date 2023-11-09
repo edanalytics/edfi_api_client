@@ -1,3 +1,4 @@
+import functools
 import logging
 import os
 import requests
@@ -8,7 +9,7 @@ from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
 
-from typing import Dict, Iterator, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.client import EdFiClient
@@ -131,17 +132,37 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Swagger-adjacent properties and helper methods
+    def force_swagger(func: Callable) -> Callable:
+        """
+        This decorator gets the endpoints Swagger if not already collected.
+        If the endpoint is not found in the Swagger's metadata, the function ends prematurely.
+        """
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+            if self.swagger is None:
+                self.swagger = self.client.get_swagger(self.swagger_type)  # Updates client.swaggers
+            return func(self, *args, **kwargs)
+        return wrapped
+
     @property
+    @force_swagger
     def description(self) -> str:
-        if self.swagger is None:
-            self.swagger = self.client.get_swagger(self.swagger_type)
         return self.swagger.descriptions.get(self.name)
 
     @property
+    @force_swagger
     def has_deletes(self) -> bool:
-        if self.swagger is None:
-            self.swagger = self.client.get_swagger(self.swagger_type)
         return (self.namespace, self.name) in self.swagger.deletes
+
+    @property
+    @force_swagger
+    def fields(self) -> List[str]:
+        return self.swagger.endpoint_fields.get((self.namespace, self.name))
+
+    @property
+    @force_swagger
+    def required_fields(self) -> List[str]:
+        return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
 
 
     ### GET methods
