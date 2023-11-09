@@ -92,12 +92,13 @@ class EdFiSwagger:
         """
         field_mapping: Dict[Tuple[str, str], List[str]] = {}
 
-        for definition_id, metadata in self.json.get('definitions').items():
-            for namespace, endpoint in self.endpoints:
+        for namespace, endpoint in self.endpoints:
+            endpoint_definition_id = self.build_definition_id(namespace, endpoint)
 
-                if self.build_definition_id(namespace, endpoint) == definition_id:
-                    filtered_fields = [field for field in metadata.get('properties', {}).keys() if field not in exclude]
-                    field_mapping[(namespace, endpoint)] = filtered_fields
+            for definition_id, metadata in self.json.get('definitions').items():
+                if definition_id == endpoint_definition_id:
+                    filtered_fields = set(metadata.get('properties', {}).keys()).difference(exclude)
+                    field_mapping[(namespace, endpoint)] = list(filtered_fields)
 
         return field_mapping
 
@@ -108,10 +109,11 @@ class EdFiSwagger:
         """
         field_mapping: Dict[Tuple[str, str], List[str]] = {}
 
-        for definition_id, metadata in self.json.get('definitions').items():
-            for namespace, endpoint in self.endpoints:
+        for namespace, endpoint in self.endpoints:
+            endpoint_definition_id = self.build_definition_id(namespace, endpoint)
 
-                if self.build_definition_id(namespace, endpoint) == definition_id:
+            for definition_id, metadata in self.json.get('definitions').items():
+                if definition_id == endpoint_definition_id:
                     field_mapping[(namespace, endpoint)] = list(metadata.get('required', []))
 
         return field_mapping

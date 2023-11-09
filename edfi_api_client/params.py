@@ -67,7 +67,6 @@ class EdFiParams(dict):
         for key in __get_duplicates(cc_kwargs):
             logging.warning(f"Duplicate key `{key}` found in `kwargs`! The last will be used.")
 
-
         # Make sure the user does not pass in duplicates between params and kwargs.
         cc_kwargs_params = list(set(cc_params)) + list(set(cc_kwargs))
 
@@ -103,9 +102,9 @@ class EdFiParams(dict):
             params_list.append(offset_params)
 
         if reverse:
-            return params_list[::-1]
-        else:
-            return params_list
+            params_list.reverse()
+
+        return params_list
 
     def build_change_version_window_params(self, change_version_step_size: int) -> Iterator['EdFiParams']:
         """

@@ -208,7 +208,6 @@ class EdFiClient:
         :param func:
         :return:
         """
-
         @functools.wraps(func)
         def wrapped(self, *args, **kwargs):
             if self.session is None:

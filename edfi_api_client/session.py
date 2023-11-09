@@ -88,12 +88,12 @@ class EdFiSession:
     def with_exponential_backoff(func: Callable):
         """
         Decorator to apply exponential backoff during failed requests.
+        TODO: Is this logic and status codes consistent across request types?
         :return:
         """
         @functools.wraps(func)
         def wrapped(self,
             url: str,
-            params: 'EdFiParams' = None,
             *args,
             retry_on_failure: bool = False,
             max_retries: int = 5,
@@ -101,13 +101,13 @@ class EdFiSession:
             **kwargs
         ):
             if not retry_on_failure:
-                return func(self, url, params=params, *args, **kwargs)
+                return func(self, url, *args, **kwargs)
 
             # Attempt the GET until success or `max_retries` reached.
             for n_tries in range(max_retries):
 
                 try:
-                    return func(self, url, params=params, *args, **kwargs)
+                    return func(self, url, *args, **kwargs)
 
                 except RequestsWarning:
                     # If an API call fails, it may be due to rate-limiting.
@@ -120,19 +120,14 @@ class EdFiSession:
             # This block is reached only if max_retries has been reached.
             else:
                 logging.warning(f"[Retry Failed] Endpoint  : {url}")
-                if params:
-                    logging.warning(f"[Retry Failed] Parameters: {params}")
                 raise RuntimeError("API retry failed: max retries exceeded for URL.")
 
         return wrapped
 
+
     ### GET Methods
     @with_exponential_backoff
-    def get_response(self,
-        url: str,
-        params: Optional['EdFiParams'] = None,
-        **kwargs
-    ) -> requests.Response:
+    def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> requests.Response:
         """
         Complete a GET request against an endpoint URL.
 

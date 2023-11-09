@@ -27,8 +27,8 @@ class AsyncEdFiSession(EdFiSession):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.session: aiohttp.ClientSession = None
-        self.pool_size = None
+        self.session  : Optional[aiohttp.ClientSession] = None
+        self.pool_size: Optional[int] = None
 
         if not (self.client_key and self.client_secret):
             logging.warning("Client key and secret not provided. Async connection with ODS will not be attempted.")
@@ -50,7 +50,7 @@ class AsyncEdFiSession(EdFiSession):
         self.pool_size = pool_size
 
         self.session = aiohttp.ClientSession(
-            connector=aiohttp.connector.TCPConnector(limit=self.pool_size),
+            connector=aiohttp.TCPConnector(limit=self.pool_size),
             timeout=aiohttp.ClientTimeout(sock_connect=max_wait),
         )
 
@@ -174,7 +174,6 @@ class AsyncEndpointMixin:
                     return await func(self, *args, session=session, **kwargs)
 
             return asyncio.run(main())
-
         return wrapped
 
 
@@ -184,9 +183,11 @@ class AsyncEndpointMixin:
         session: 'AsyncEdFiSession',
 
         page_size: int = 100,
+        reverse_paging: bool = True,
+
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
-        reverse_paging: bool = True
+        **kwargs
     ) -> AsyncGenerator[List[dict], None]:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
@@ -194,9 +195,9 @@ class AsyncEndpointMixin:
 
         :param session:
         :param page_size:
+        :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
-        :param reverse_paging:
         :return:
         """
         async def verbose_get_page(param: 'EdFiParams'):
@@ -216,9 +217,9 @@ class AsyncEndpointMixin:
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = await self.async_get_paged_window_params(
             session=session,
-            page_size=page_size,
+            page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
-            reverse_paging=reverse_paging
+            **kwargs
         )
 
         for paged_param in paged_params_list:
@@ -232,21 +233,22 @@ class AsyncEndpointMixin:
         session: 'AsyncEdFiSession',
 
         page_size: int = 100,
+        reverse_paging: bool = True,
+
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
-        reverse_paging: bool = True,
         **kwargs
     ) -> str:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are written to a file as JSON lines.
 
-        :param session:
         :param path:
+        :param session:
         :param page_size:
+        :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
-        :param reverse_paging:
         :return:
         """
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
@@ -257,7 +259,8 @@ class AsyncEndpointMixin:
         paged_results = self.async_get_pages(
             session=session,
             page_size=page_size, reverse_paging=reverse_paging,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            **kwargs
         )
 
         async with aiofiles.open(path, 'wb') as fp:
@@ -273,21 +276,22 @@ class AsyncEndpointMixin:
         session: 'AsyncEdFiSession',
 
         page_size: int,
+        reverse_paging: bool,
         step_change_version: bool,
         change_version_step_size: int,
-        reverse_paging: bool
+        **kwargs
     ) -> List['EdFiParams']:
         """
 
         :param session:
         :param page_size:
+        :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
-        :param reverse_paging:
         :return:
         """
         async def build_total_count_windows(params):
-            total_count = await session.get_total_count(self.url, params)
+            total_count = await session.get_total_count(self.url, params, **kwargs)
             return params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
 
         if step_change_version:
@@ -303,18 +307,18 @@ class AsyncEndpointMixin:
     async def async_post_rows(self,
         rows: Iterator[dict],
         *,
+        session: 'AsyncEdFiSession',
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
-        session: 'AsyncEdFiSession',
         **kwargs
     ) -> Dict[str, List[int]]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
         :param rows:
+        :param session:
         :param include:
         :param exclude:
-        :param session:
         :return:
         """
         self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
@@ -350,21 +354,21 @@ class AsyncEndpointMixin:
     async def async_post_from_json(self,
         path: str,
         *,
+        session: 'AsyncEdFiSession',
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
-        session: 'AsyncEdFiSession',
         **kwargs
     ) -> Dict[str, List[int]]:
         """
 
         :param path:
+        :param session:
         :param include:
         :param exclude:
-        :param session:
         :return:
         """
-        def stream_rows(path: str):
-            with open(path, 'rb') as fp:
+        def stream_rows(path_: str):
+            with open(path_, 'rb') as fp:
                 yield from fp
 
         self.client.verbose_log(f"Posting rows from disk: `{path}`")
@@ -375,7 +379,8 @@ class AsyncEndpointMixin:
         return await self.async_post_rows(
             rows=stream_rows(path),
             include=include, exclude=exclude,
-            session=session
+            session=session,
+            **kwargs
         )
 
 

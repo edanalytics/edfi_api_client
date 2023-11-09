@@ -1,4 +1,3 @@
-import functools
 import logging
 import os
 import requests
@@ -9,7 +8,7 @@ from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
 
-from typing import Callable, Dict, Iterator, List, Optional
+from typing import BinaryIO, Dict, Iterator, List, Optional, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.client import EdFiClient
@@ -30,7 +29,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
          *,
          namespace: str = 'ed-fi',
          get_deletes: bool = False,
-
          params: Optional[dict] = None,
          **kwargs
     ):
@@ -86,7 +84,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Generic API methods
-    def ping(self) -> requests.Response:
+    def ping(self, **kwargs) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
 
@@ -95,7 +93,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         params = self.params.copy()
         params['limit'] = 1
 
-        res = self.client.session.get_response(self.url, params=params)
+        res = self.client.session.get_response(self.url, params=params, **kwargs)
 
         # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
@@ -104,7 +102,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return res
 
-    def total_count(self):
+    def total_count(self, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -112,9 +110,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        return self.client.session.get_total_count(self.url, self.params)
+        return self.client.session.get_total_count(self.url, self.params, **kwargs)
 
-    def get(self, limit: Optional[int] = None) -> List[dict]:
+    def get(self, limit: Optional[int] = None, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
@@ -128,40 +126,36 @@ class EdFiEndpoint(AsyncEndpointMixin):
         if limit is not None:
             params['limit'] = limit
 
-        return self.client.session.get_response(self.url, params=params).json()
+        return self.client.session.get_response(self.url, params=params, **kwargs).json()
 
 
     ### Swagger-adjacent properties and helper methods
-    def force_swagger(func: Callable) -> Callable:
+    def get_swagger_if_none(self):
         """
-        This decorator gets the endpoints Swagger if not already collected.
-        If the endpoint is not found in the Swagger's metadata, the function ends prematurely.
+        Gets the endpoint's Swagger if not already collected.
+        :return:
         """
-        @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
-            if self.swagger is None:
-                self.swagger = self.client.get_swagger(self.swagger_type)  # Updates client.swaggers
-            return func(self, *args, **kwargs)
-        return wrapped
+        if self.swagger is None:
+            self.swagger = self.client.get_swagger(self.swagger_type)  # Updates client.swaggers
 
     @property
-    @force_swagger
     def description(self) -> str:
+        self.get_swagger_if_none()
         return self.swagger.descriptions.get(self.name)
 
     @property
-    @force_swagger
     def has_deletes(self) -> bool:
+        self.get_swagger_if_none()
         return (self.namespace, self.name) in self.swagger.deletes
 
     @property
-    @force_swagger
     def fields(self) -> List[str]:
+        self.get_swagger_if_none()
         return self.swagger.endpoint_fields.get((self.namespace, self.name))
 
     @property
-    @force_swagger
     def required_fields(self) -> List[str]:
+        self.get_swagger_if_none()
         return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
 
 
@@ -169,26 +163,19 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def get_pages(self,
         *,
         page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
+        reverse_paging: bool = True,
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
-        reverse_paging: bool = True,
+        **kwargs
     ) -> Iterator[List[dict]]:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a generator.
 
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
+        :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
-        :param reverse_paging:
         :return:
         """
         self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
@@ -202,19 +189,15 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self.get_paged_window_params(
-            page_size=page_size,
+            page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
-            reverse_paging=reverse_paging
+            **kwargs
         )
 
         # Begin pagination-loop
         for paged_params in paged_params_list:
             self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
-
-            res = self.client.session.get_response(
-                self.url, params=paged_params,
-                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
-            )
+            res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
 
             self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
@@ -222,32 +205,25 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def get_rows(self,
         *,
         page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
+        reverse_paging: bool = True,
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
-        reverse_paging: bool = True
+        **kwargs
     ) -> Iterator[dict]:
         """
         This method returns all rows from an endpoint, applying pagination logic as necessary.
         Rows are returned as a generator.
 
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
+        :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
-        :param reverse_paging:
         :return:
         """
         paged_result_iter = self.get_pages(
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+            page_size=page_size, reverse_paging=reverse_paging,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            **kwargs
         )
 
         for paged_result in paged_result_iter:
@@ -258,14 +234,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         *,
         page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
+        reverse_paging: bool = True,
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
-        reverse_paging: bool = True,
+        **kwargs
     ) -> str:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
@@ -273,9 +245,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :param path:
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :param step_change_version:
         :param change_version_step_size:
         :param reverse_paging:
@@ -284,9 +253,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
         self.client.verbose_log(f"Writing rows to disk: `{path}`")
 
         paged_results = self.get_pages(
-            page_size=page_size,
-            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size, reverse_paging=reverse_paging
+            page_size=page_size, reverse_paging=reverse_paging,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            **kwargs
         )
 
         with open(path, 'wb') as fp:
@@ -298,9 +267,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def get_paged_window_params(self,
         *,
         page_size: int,
+        reverse_paging: bool,
         step_change_version: bool,
         change_version_step_size: int,
-        reverse_paging: bool
+        **kwargs
     ) -> Iterator[EdFiParams]:
         """
 
@@ -312,24 +282,23 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         if step_change_version:
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self.client.session.get_total_count(self.url, cv_window_params)
+                total_count = self.client.session.get_total_count(self.url, cv_window_params, **kwargs)
 
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
                 yield from cv_offset_params_list
+
         else:
-            total_count = self.client.session.get_total_count(self.url, self.params)
+            total_count = self.client.session.get_total_count(self.url, self.params, **kwargs)
             yield from self.params.build_offset_window_params(page_size, total_count=total_count)
 
 
     ### POST methods
     def post_rows(self,
-        rows: Iterator[dict],
+        rows: Union[Iterator[dict], BinaryIO],
         *,
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
+        **kwargs
     ) -> Dict[str, List[int]]:
         """
         This method tries to post all rows from an iterator.
@@ -337,9 +306,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param rows:
         :param include:
         :param exclude:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :return:
         """
         self.client.verbose_log(f"[Post {self.type}] Endpoint  : {self.url}")
@@ -353,10 +319,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
                 continue
 
             try:
-                response = self.client.session.post_response(
-                    self.url, data=row,
-                    retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
-                )
+                response = self.client.session.post_response(self.url, data=row, **kwargs)
 
                 if response.ok:
                     output_log[f"{response.status_code}"].append(idx)
@@ -373,18 +336,13 @@ class EdFiEndpoint(AsyncEndpointMixin):
         *,
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
+        **kwargs
     ) -> Dict[str, List[int]]:
         """
 
         :param path:
         :param include:
         :param exclude:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :return:
         """
         self.client.verbose_log(f"Posting rows from disk: `{path}`")
@@ -393,10 +351,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             raise FileNotFoundError(f"JSON file not found: {path}")
 
         with open(path, 'rb') as fp:
-            return self.post_rows(
-                fp, include=include, exclude=exclude,
-                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
-            )
+            return self.post_rows(fp, include=include, exclude=exclude, **kwargs)
 
 
 class EdFiResource(EdFiEndpoint):
@@ -492,24 +447,12 @@ class EdFiComposite(EdFiEndpoint):
             "Total counts have not yet been implemented in Ed-Fi composites!"
         )
 
-    def get_pages(self,
-        *,
-        page_size: int = 100,
-
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 500,
-
-        **kwargs
-    ) -> Iterator[List[dict]]:
+    def get_pages(self, *, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a generator.
 
         :param page_size:
-        :param retry_on_failure:
-        :param max_retries:
-        :param max_wait:
         :return:
         """
         if kwargs.get('step_change_version'):
@@ -530,11 +473,7 @@ class EdFiComposite(EdFiEndpoint):
 
             ### GET from the API and yield the resulting JSON payload
             self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
-
-            res = self.client.session.get_response(
-                self.url, params=paged_params,
-                retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait
-            )
+            res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
