@@ -98,3 +98,8 @@ def test_authenticated_client(secret: str = master_secret):
             break
         composite_rows.append(row)
     assert len(list(composite_rows)) == composite_count
+
+
+if __name__ == '__main__':
+    test_unauthenticated_client()
+    test_authenticated_client()
