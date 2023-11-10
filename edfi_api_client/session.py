@@ -79,10 +79,19 @@ class EdFiSession:
 
         return auth_response
 
-    def refresh_if_expired(self):
-        if self.refresh_at < int(time.time()):
-            logging.info("Session authentication is expired. Attempting reconnection...")
-            self.authenticate()
+    def refresh_if_expired(func: Callable):
+        """
+        Reauthenticate automatically before making a request if expired.
+
+        :return:
+        """
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+            if self.refresh_at < int(time.time()):
+                logging.info("Session authentication is expired. Attempting reconnection...")
+                self.authenticate()
+            return func(self, *args, **kwargs)
+        return wrapped
 
     def with_exponential_backoff(func: Callable):
         """
@@ -92,7 +101,6 @@ class EdFiSession:
         """
         @functools.wraps(func)
         def wrapped(self,
-            url: str,
             *args,
             retry_on_failure: bool = False,
             max_retries: int = 5,
@@ -100,13 +108,13 @@ class EdFiSession:
             **kwargs
         ):
             if not retry_on_failure:
-                return func(self, url, *args, **kwargs)
+                return func(self, *args, **kwargs)
 
             # Attempt the GET until success or `max_retries` reached.
             for n_tries in range(max_retries):
 
                 try:
-                    return func(self, url, *args, **kwargs)
+                    return func(self, *args, **kwargs)
 
                 except RequestsWarning:
                     # If an API call fails, it may be due to rate-limiting.
@@ -118,13 +126,13 @@ class EdFiSession:
 
             # This block is reached only if max_retries has been reached.
             else:
-                logging.warning(f"[Retry Failed] Endpoint  : {url}")
                 raise RuntimeError("API retry failed: max retries exceeded for URL.")
 
         return wrapped
 
 
     ### GET Methods
+    @refresh_if_expired
     @with_exponential_backoff
     def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> requests.Response:
         """
@@ -134,8 +142,6 @@ class EdFiSession:
         :param params:
         :return:
         """
-        self.refresh_if_expired()
-
         response = self.session.get(url, headers=self.auth_headers, params=params, verify=self.verify_ssl)
         self.custom_raise_for_status(response)
         return response
@@ -158,6 +164,7 @@ class EdFiSession:
 
 
     ### POST methods
+    @refresh_if_expired
     @with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
         """
@@ -169,8 +176,6 @@ class EdFiSession:
         :param data:
         :return:
         """
-        self.refresh_if_expired()
-
         post_headers = {
             "accept": "application/json",
             "Content-Type": "application/json",

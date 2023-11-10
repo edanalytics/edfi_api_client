@@ -73,7 +73,8 @@ class AsyncEdFiSession(EdFiSession):
         return self
 
 
-    ### Elementary GET Methods
+    ### GET Methods
+    @EdFiSession.refresh_if_expired
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete a GET request against an endpoint URL.
@@ -82,8 +83,6 @@ class AsyncEdFiSession(EdFiSession):
         :param params:
         :return:
         """
-        self.refresh_if_expired()
-
         async with self.session.get(
             url, headers=self.auth_headers, params=params,
             verify_ssl=self.verify_ssl, raise_for_status=False
@@ -110,6 +109,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### POST methods
+    @EdFiSession.refresh_if_expired
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> aiohttp.ClientResponse:
         """
         Complete an asynchronous POST request against an endpoint URL.
@@ -121,8 +121,6 @@ class AsyncEdFiSession(EdFiSession):
         :param kwargs:
         :return:
         """
-        self.refresh_if_expired()
-
         post_headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
