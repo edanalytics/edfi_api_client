@@ -57,8 +57,10 @@ def test_authenticated_client(secret: str = master_secret):
     resource = edfi.resource('students', minChangeVersion=0, maxChangeVersion=500000)
     assert resource.ping().ok
 
-    _ = resource.description
-    _ = resource.has_deletes
+    assert resource.description
+    assert resource.has_deletes
+    assert resource.fields
+    assert resource.required_fields
 
     resource_count = resource.total_count()
     resource_output_path = f"./.output/{resource.name}.jsonl"
@@ -71,8 +73,10 @@ def test_authenticated_client(secret: str = master_secret):
     ### Descriptor
     descriptor = edfi.descriptor('language_use_descriptors')
     assert descriptor.ping().ok
-    _ = descriptor.description
-    _ = descriptor.has_deletes
+    assert descriptor.description
+    assert descriptor.has_deletes
+    assert descriptor.fields
+    assert descriptor.required_fields
 
     descriptor_count = descriptor.total_count()
     descriptor_rows = descriptor.get_rows(page_size=500, step_change_version=False)
@@ -81,8 +85,10 @@ def test_authenticated_client(secret: str = master_secret):
     ### Composite
     composite = edfi.composite('students')
     assert composite.ping().ok
-    _ = composite.description
-    _ = composite.has_deletes
+    assert composite.description
+    assert composite.has_deletes  # TODO: Should this be False?
+    assert composite.fields
+    assert composite.required_fields
 
     # Composites don't have total-counts.
     composite_count = 42 * 10
