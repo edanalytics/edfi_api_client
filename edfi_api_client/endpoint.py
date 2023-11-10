@@ -159,7 +159,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
 
 
-    ### GET methods
+    ### GET Methods
     def get_pages(self,
         *,
         page_size: int = 100,
@@ -292,7 +292,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             yield from self.params.build_offset_window_params(page_size, total_count=total_count)
 
 
-    ### POST methods
+    ### POST Methods
     def post_rows(self,
         rows: Union[Iterator[dict], BinaryIO],
         *,
@@ -352,6 +352,20 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         with open(path, 'rb') as fp:
             return self.post_rows(fp, include=include, exclude=exclude, **kwargs)
+
+
+    ### DELETE Methods
+    def delete_ids(self, ids: Iterator[int], **kwargs):
+        """
+        Delete all records at the endpoint by ID.
+
+        :param ids:
+        :return:
+        """
+        self.client.verbose_log(f"[Delete {self.type}] Endpoint  : {self.url}")
+
+        for id in ids:
+            self.client.session.delete_response(self.url, id=id, **kwargs)
 
 
 class EdFiResource(EdFiEndpoint):

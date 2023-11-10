@@ -196,14 +196,12 @@ class AsyncEndpointMixin:
         return wrapped
 
 
-    ### GET-all methods
+    ### GET Methods
     async def async_get_pages(self,
         *,
         session: 'AsyncEdFiSession',
-
         page_size: int = 100,
         reverse_paging: bool = True,
-
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
@@ -247,13 +245,10 @@ class AsyncEndpointMixin:
     @run_async_session
     async def async_get_to_json(self,
         path: str,
-
         *,
         session: 'AsyncEdFiSession',
-
         page_size: int = 100,
         reverse_paging: bool = True,
-
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
@@ -293,7 +288,6 @@ class AsyncEndpointMixin:
     async def async_get_paged_window_params(self,
         *,
         session: 'AsyncEdFiSession',
-
         page_size: int,
         reverse_paging: bool,
         step_change_version: bool,
@@ -322,7 +316,7 @@ class AsyncEndpointMixin:
         return list(itertools.chain.from_iterable(nested_params))
 
 
-    ### POST methods
+    ### POST Methods
     async def async_post_rows(self,
         rows: Iterator[dict],
         *,
@@ -400,6 +394,23 @@ class AsyncEndpointMixin:
             include=include, exclude=exclude,
             session=session,
             **kwargs
+        )
+
+
+    ### DELETE Methods
+    async def async_delete_ids(self, ids: Iterator[int], *, session: 'AsyncEdFiSession', **kwargs):
+        """
+        Delete all records at the endpoint by ID.
+
+        :param ids:
+        :param session:
+        :return:
+        """
+        self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
+
+        await self.gather_with_concurrency(
+            session.pool_size,
+            *(await session.delete_response(self.url, id=id, **kwargs) for id in ids)
         )
 
 
