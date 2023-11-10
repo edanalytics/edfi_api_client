@@ -18,9 +18,6 @@ def test_async_post():
     output_edfi = EdFiClient(**easecret.get_secret(output_secret), verbose=False)
     input_edfi  = EdFiClient(**easecret.get_secret(input_secret) , verbose=False)
 
-    scratch_dir = "./.scratch"
-    os.makedirs(scratch_dir, exist_ok=True)
-
     async_get_kwargs = dict(
         retry_on_failure=True,
         page_size=500,
@@ -38,7 +35,7 @@ def test_async_post():
 
     for namespace, rr in output_edfi.descriptors:
     # for namespace, rr in resources:
-        output_path = os.path.join(scratch_dir, f"{rr}_async.jsonl")
+        output_path = os.path.join(".output", f"{rr}_async.jsonl")
         async_get_kwargs.update(path=output_path)
 
         # Get all rows to insert back into Ed-Fi
@@ -50,7 +47,10 @@ def test_async_post():
 
         # Insert those rows back into the ODS.
         input_endpoint = input_edfi.resource(rr)
-        error_log = input_endpoint.async_post_from_json(output_path, pool_size=8)
+        if rr == 'students':
+            error_log = input_endpoint.post_from_json(output_path)
+        else:
+            error_log = input_endpoint.async_post_from_json(output_path, pool_size=8)
         print(error_log)
 
 
