@@ -206,6 +206,7 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
+
     ### Methods for accessing ODS endpoints
     def require_session(func: Callable) -> Callable:
         """
@@ -248,12 +249,10 @@ class EdFiClient:
     @require_session
     def resource(self,
         name: str,
-
         *,
         namespace: str = 'ed-fi',
-        get_deletes: bool = False,
-
         params: Optional[dict] = None,
+        get_deletes: bool = False,
         **kwargs
     ) -> EdFiResource:
         return EdFiResource(
@@ -265,10 +264,8 @@ class EdFiClient:
     @require_session
     def descriptor(self,
         name: str,
-
         *,
         namespace: str = 'ed-fi',
-
         params: Optional[dict] = None,
         **kwargs
     ) -> EdFiDescriptor:
@@ -285,14 +282,12 @@ class EdFiClient:
     @require_session
     def composite(self,
         name: str,
-
         *,
         namespace: str = 'ed-fi',
+        params: Optional[dict] = None,
         composite: str = 'enrollment',
         filter_type: Optional[str] = None,
         filter_id: Optional[str] = None,
-
-        params: Optional[dict] = None,
         **kwargs
     ) -> EdFiComposite:
         return EdFiComposite(
