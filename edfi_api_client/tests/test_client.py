@@ -61,8 +61,12 @@ def test_authenticated_client(secret: str = master_secret):
     _ = resource.has_deletes
 
     resource_count = resource.total_count()
-    resource_rows = resource.get_rows(page_size=500, retry_on_failure=True, step_change_version=True)
-    assert len(list(resource_rows)) == resource_count
+    resource_output_path = f"./.output/{resource.name}.jsonl"
+
+    _ = resource.get_to_json(resource_output_path, page_size=500, retry_on_failure=True, step_change_version=True)
+
+    with open(resource_output_path, 'r') as fp:
+        assert len(fp.readlines()) == resource_count
 
     ### Descriptor
     descriptor = edfi.descriptor('language_use_descriptors')

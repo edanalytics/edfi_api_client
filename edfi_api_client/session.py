@@ -23,7 +23,6 @@ class EdFiSession:
         base_url: str,
         client_key: str,
         client_secret: str,
-
         verify_ssl: bool = True,
         **kwargs
     ):
