@@ -185,6 +185,24 @@ class EdFiSession:
         return self.session.post(url, headers=post_headers, data=data, verify=self.verify_ssl, **kwargs)
 
 
+    ### DELETE Methods
+    @refresh_if_expired
+    @with_exponential_backoff
+    def delete_response(self, url: str, id: int, **kwargs) -> requests.Response:
+        """
+        Complete a DELETE request against an endpoint URL.
+        :param url:
+        :param id:
+        :param kwargs:
+        :return:
+        """
+        delete_url = util.url_join(url, id)
+
+        response = self.session.get(delete_url, headers=self.auth_headers, verify=self.verify_ssl, **kwargs)
+        self.custom_raise_for_status(response)
+        return response
+
+
     ### Error response methods
     @staticmethod
     def custom_raise_for_status(response):
