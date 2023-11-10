@@ -8,7 +8,7 @@ from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.swagger import EdFiSwagger
 
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 
 import logging
@@ -47,31 +47,33 @@ class EdFiClient:
         verify_ssl   : bool = True,
         verbose      : bool = False,
     ):
-        self.verbose = verbose
+        self.verbose: bool = verbose
 
-        self.base_url = base_url
-        self.client_key = client_key
-        self.client_secret = client_secret
-        self.verify_ssl = verify_ssl
+        self.base_url: str = base_url
+        self.client_key: Optional[str] = client_key
+        self.client_secret: Optional[str] = client_secret
+        self.verify_ssl: bool = verify_ssl
 
-        self.api_version = int(api_version)
-        self.api_mode = api_mode or self.get_api_mode()
-        self.api_year = api_year
-        self.instance_code = instance_code
+        self.info: Optional[dict] = None  # Info payload lazily retrieved to minimize API calls
+
+        self.api_version: int = int(api_version)
+        self.api_mode: str = api_mode or self.get_api_mode()
+        self.api_year: Optional[int] = api_year
+        self.instance_code: Optional[str] = instance_code
 
         # Build endpoint URL pieces
-        self.instance_locator = self.get_instance_locator()
+        self.instance_locator: Optional[str] = self.get_instance_locator()
 
         # Swagger variables for populating resource metadata (retrieved lazily)
-        self.swaggers = {
+        self.swaggers: Dict[str, Optional[EdFiSwagger]] = {
             'resources'  : None,
             'descriptors': None,
             'composites' : None,
         }
 
         # If ID and secret are passed, prepare synchronous and asynchronous sessions.
-        self.session: EdFiSession = None
-        self.async_session: AsyncEdFiSession = None
+        self.session: Optional[EdFiSession] = None
+        self.async_session: Optional[AsyncEdFiSession] = None
 
         if self.client_key and self.client_secret:
             # Synchronous client connects immediately on init.
@@ -136,9 +138,13 @@ class EdFiClient:
             }
         }
 
+        This method is lazy to circumvent multiple API calls to the same endpoint.
+
         :return: The descriptive payload returned by the API host.
         """
-        return requests.get(self.base_url, verify=self.verify_ssl).json()
+        if self.info is None:
+            self.info = requests.get(self.base_url, verify=self.verify_ssl).json()
+        return self.info
 
     def get_api_mode(self) -> str:
         """
