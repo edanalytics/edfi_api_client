@@ -77,7 +77,7 @@ class AsyncEdFiSession(EdFiSession):
     @EdFiSession.refresh_if_expired
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> aiohttp.ClientResponse:
         """
-        Complete a GET request against an endpoint URL.
+        Complete an asynchronous GET request against an endpoint URL.
 
         :param url:
         :param params:
@@ -93,8 +93,7 @@ class AsyncEdFiSession(EdFiSession):
 
     async def get_total_count(self, url: str, params: 'EdFiParams', **kwargs) -> int:
         """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
+        This internal helper method is used during pagination.
 
         :param url:
         :param params:
@@ -108,7 +107,7 @@ class AsyncEdFiSession(EdFiSession):
         return int(res.headers.get('Total-Count'))
 
 
-    ### POST methods
+    ### POST Methods
     @EdFiSession.refresh_if_expired
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> aiohttp.ClientResponse:
         """

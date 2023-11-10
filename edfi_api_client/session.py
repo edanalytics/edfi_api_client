@@ -148,8 +148,7 @@ class EdFiSession:
 
     def get_total_count(self, url: str, params: 'EdFiParams', **kwargs):
         """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
+        This internal helper method is used during pagination.
 
         :param url:
         :param params:
@@ -163,7 +162,7 @@ class EdFiSession:
         return int(res.headers.get('Total-Count'))
 
 
-    ### POST methods
+    ### POST Methods
     @refresh_if_expired
     @with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
@@ -191,6 +190,7 @@ class EdFiSession:
     def delete_response(self, url: str, id: int, **kwargs) -> requests.Response:
         """
         Complete a DELETE request against an endpoint URL.
+
         :param url:
         :param id:
         :param kwargs:
