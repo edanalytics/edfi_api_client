@@ -77,6 +77,26 @@ def test_async(secret: str = master_secret):
             endpoint = edfi.resource(resource, minChangeVersion=0, max_change_version=max_change_version)
             endpoint_count = endpoint.total_count()
 
+
+            ### Synchronous Pull
+            print(f"\nResource: {resource}; Num rows: {k_row_count}k; Synchronous")
+
+            # Reset the output to ensure data has been written each run.
+            if os.path.exists(output_path):
+                os.remove(output_path)
+
+            runtime, _ = time_it(endpoint.get_to_json, **async_kwargs)
+
+            # Get row count of written file.
+            sync_count = sum(1 for _ in open(output_path))
+            if sync_count != endpoint_count:
+                print("    Number of extracted rows did not match:")
+                print(f"    Expected: {endpoint_count} ; Pulled: {sync_count}")
+
+            print(f"    Runtime: {runtime} seconds")
+
+
+            ### Asynchronous Pulls
             for pool_size in pool_sizes:
                 print(f"\nResource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
 
@@ -95,6 +115,7 @@ def test_async(secret: str = master_secret):
                     print(f"    Expected: {endpoint_count} ; Pulled: {async_count}")
 
                 print(f"    Runtime: {runtime} seconds")
+
 
 if __name__ == '__main__':
     test_async()
