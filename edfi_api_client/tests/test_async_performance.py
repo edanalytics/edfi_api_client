@@ -10,7 +10,7 @@ from edfi_api_client import EdFiClient
 master_secret = "edfi_scde_2023"
 
 
-def time_it(func, *args, **kwargs):
+def time_it(func, wrap_func=None, *args, **kwargs):
     """
     Helper for retrieving runtime of a function.
     Return runtime (in seconds), followed by function return.
@@ -23,6 +23,8 @@ def time_it(func, *args, **kwargs):
     """
     start = time.time()
     return_val = func(*args, **kwargs)
+    if wrap_func:
+        return_val = wrap_func(return_val)
     end = time.time()
 
     runtime = round(end - start, 2)
@@ -78,21 +80,18 @@ def test_async(secret: str = master_secret):
             endpoint = edfi.resource(resource, minChangeVersion=0, max_change_version=max_change_version)
             endpoint_count = endpoint.total_count()
 
-            print(endpoint.async_get_paged_window_params())
 
+            ## Synchronous Pull
+            print(f"\nResource: {resource}; Num rows: {k_row_count}k; Synchronous")
+            runtime, rows = time_it(endpoint.get_rows, wrap_func=list, **async_kwargs)
 
-            ### Synchronous Pull
-            # print(f"\nResource: {resource}; Num rows: {k_row_count}k; Synchronous")
-            # runtime, rows = time_it(endpoint.get_rows, **async_kwargs)
-            # rows = list(rows)
-            #
-            # # Get row count of written file.
-            # # sync_count = sum(1 for _ in open(output_path))
-            # if len(rows) != endpoint_count:
-            #     print("    Number of extracted rows did not match:")
-            #     print(f"    Expected: {endpoint_count} ; Pulled: {len(rows)}")
-            #
-            # print(f"    Runtime: {runtime} seconds")
+            # Get row count of written file.
+            # sync_count = sum(1 for _ in open(output_path))
+            if len(rows) != endpoint_count:
+                print("    Number of extracted rows did not match:")
+                print(f"    Expected: {endpoint_count} ; Pulled: {len(rows)}")
+
+            print(f"    Runtime: {runtime} seconds")
 
 
             ### Asynchronous Pulls
