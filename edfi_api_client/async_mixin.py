@@ -183,10 +183,8 @@ class AsyncEndpointMixin:
     async def async_get_pages(self,
         *,
         session: 'AsyncEdFiSession',
-
         page_size: int = 100,
         reverse_paging: bool = True,
-
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
@@ -228,15 +226,46 @@ class AsyncEndpointMixin:
             yield verbose_get_page(paged_param)
 
     @run_async_session
-    async def async_get_to_json(self,
-        path: str,
-
+    async def async_get_rows(self,
         *,
         session: 'AsyncEdFiSession',
-
         page_size: int = 100,
         reverse_paging: bool = True,
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
+        **kwargs
+    ) -> List[dict]:
+        """
+        This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
+        Rows are returned as a list in-memory.
 
+        :param session:
+        :param page_size:
+        :param reverse_paging:
+        :param step_change_version:
+        :param change_version_step_size:
+        :return:
+        """
+        paged_results = self.async_get_pages(
+            session=session,
+            page_size=page_size, reverse_paging=reverse_paging,
+            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            **kwargs
+        )
+
+        collected_pages = await self.gather_with_concurrency(
+            session.pool_size,
+            *[page async for page in paged_results]
+        )
+        return list(itertools.chain.from_iterable(collected_pages))
+
+    @run_async_session
+    async def async_get_to_json(self,
+        path: str,
+        *,
+        session: 'AsyncEdFiSession',
+        page_size: int = 100,
+        reverse_paging: bool = True,
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
@@ -277,11 +306,10 @@ class AsyncEndpointMixin:
     async def async_get_paged_window_params(self,
         *,
         session: 'AsyncEdFiSession',
-
-        page_size: int,
-        reverse_paging: bool,
-        step_change_version: bool,
-        change_version_step_size: int,
+        page_size: int = 100,
+        reverse_paging: bool = True,
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
         **kwargs
     ) -> List['EdFiParams']:
         """
