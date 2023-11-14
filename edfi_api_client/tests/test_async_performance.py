@@ -1,4 +1,5 @@
 import easecret
+import itertools
 import os
 import time
 
@@ -41,19 +42,19 @@ def test_async(secret: str = master_secret):
     max_change_versions = {
         "students": {
             20 : 491831,
-            40 : 945701,
-            80 : 1596723,
-            160: 2928422,
-            320: 4649473,
-            640: 11579986,
+            # 40 : 945701,
+            # 80 : 1596723,
+            # 160: 2928422,
+            # 320: 4649473,
+            # 640: 11579986,
         },
         "studentSectionAttendanceEvents": {
             20 : 70738320,
-            40 : 70825225,
-            80 : 70926490,
-            160: 71174025,
-            320: 72151990,
-            640: 73499849,
+            # 40 : 70825225,
+            # 80 : 70926490,
+            # 160: 71174025,
+            # 320: 72151990,
+            # 640: 73499849,
         },
     }
     pool_sizes = (4, 8, 16, 32,)
@@ -77,42 +78,34 @@ def test_async(secret: str = master_secret):
             endpoint = edfi.resource(resource, minChangeVersion=0, max_change_version=max_change_version)
             endpoint_count = endpoint.total_count()
 
+            print(endpoint.async_get_paged_window_params())
+
 
             ### Synchronous Pull
-            print(f"\nResource: {resource}; Num rows: {k_row_count}k; Synchronous")
-
-            # Reset the output to ensure data has been written each run.
-            if os.path.exists(output_path):
-                os.remove(output_path)
-
-            runtime, _ = time_it(endpoint.get_to_json, **async_kwargs)
-
-            # Get row count of written file.
-            sync_count = sum(1 for _ in open(output_path))
-            if sync_count != endpoint_count:
-                print("    Number of extracted rows did not match:")
-                print(f"    Expected: {endpoint_count} ; Pulled: {sync_count}")
-
-            print(f"    Runtime: {runtime} seconds")
+            # print(f"\nResource: {resource}; Num rows: {k_row_count}k; Synchronous")
+            # runtime, rows = time_it(endpoint.get_rows, **async_kwargs)
+            # rows = list(rows)
+            #
+            # # Get row count of written file.
+            # # sync_count = sum(1 for _ in open(output_path))
+            # if len(rows) != endpoint_count:
+            #     print("    Number of extracted rows did not match:")
+            #     print(f"    Expected: {endpoint_count} ; Pulled: {len(rows)}")
+            #
+            # print(f"    Runtime: {runtime} seconds")
 
 
             ### Asynchronous Pulls
             for pool_size in pool_sizes:
-                print(f"\nResource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
-
                 async_kwargs.update(pool_size=pool_size)
 
-                # Reset the output to ensure data has been written each run.
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-
-                runtime, _ = time_it(endpoint.async_get_to_json, **async_kwargs)
+                print(f"\nResource: {resource}; Num rows: {k_row_count}k; Pool size: {pool_size}")
+                runtime, rows = time_it(endpoint.async_get_rows, **async_kwargs)
 
                 # Get row count of written file.
-                async_count = sum(1 for _ in open(output_path))
-                if async_count != endpoint_count:
+                if len(rows) != endpoint_count:
                     print( "    Number of extracted rows did not match:")
-                    print(f"    Expected: {endpoint_count} ; Pulled: {async_count}")
+                    print(f"    Expected: {endpoint_count} ; Pulled: {len(rows)}")
 
                 print(f"    Runtime: {runtime} seconds")
 

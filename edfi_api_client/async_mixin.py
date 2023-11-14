@@ -166,12 +166,16 @@ class AsyncEndpointMixin:
         :return:
         """
         @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
+        def wrapped(self, *args, session: Optional['AsyncEdFiSession'] = None, **kwargs):
             async def main():
-                async with await self.client.async_session.connect(**kwargs) as session:
-                    return await func(self, *args, session=session, **kwargs)
+                async with await self.client.async_session.connect(**kwargs) as main_session:
+                    return await func(self, *args, session=main_session, **kwargs)
 
-            return asyncio.run(main())
+            if session is None:
+                return asyncio.run(main())
+            else:
+                return func(self, *args, session=session, **kwargs)
+
         return wrapped
 
 
@@ -269,6 +273,7 @@ class AsyncEndpointMixin:
 
         return path
 
+    @run_async_session
     async def async_get_paged_window_params(self,
         *,
         session: 'AsyncEdFiSession',
@@ -302,6 +307,7 @@ class AsyncEndpointMixin:
 
 
     ### POST methods
+    @run_async_session
     async def async_post_rows(self,
         rows: Iterator[dict],
         *,
