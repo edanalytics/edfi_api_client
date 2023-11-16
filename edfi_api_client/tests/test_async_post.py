@@ -24,17 +24,16 @@ def test_async_post():
         pool_size=8
     )
 
-    resources = (
+    resources = [
         ('ed-fi', 'students'),
         ('ed-fi', 'localEducationAgencies'),
         ('ed-fi', 'schools'),
         # ('ed-fi', 'studentSchoolAssociations'),
         # ('ed-fi', 'studentAssessments'),
         # ('ed-fi', 'studentSectionAttendanceEvents'),
-    )
+    ]
 
-    for namespace, rr in output_edfi.descriptors:
-    # for namespace, rr in resources:
+    for namespace, rr in output_edfi.descriptors + resources:
         output_path = os.path.join(".output", f"{rr}_async.jsonl")
         async_get_kwargs.update(path=output_path)
 
@@ -48,6 +47,7 @@ def test_async_post():
         # Insert those rows back into the ODS.
         input_endpoint = input_edfi.resource(rr)
         if rr == 'students':
+            print("Testing a synchronous post")
             error_log = input_endpoint.post_from_json(output_path)
         else:
             error_log = input_endpoint.async_post_from_json(output_path, pool_size=8)
