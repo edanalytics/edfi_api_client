@@ -1,5 +1,7 @@
 # Ed-Fi API Client Python Package
 
+Note: As of package version `0.3.x`, support for Ed-Fi2 has been removed.
+
 ## Quick Guide
 
 ```python
@@ -223,7 +225,11 @@ There is a separate Swagger defined for each component type (e.g., resources, de
 If `component` is unspecified, `resources` will be collected.
 
 ```python
->>> api.get_swagger(component='resources')  # Default
+>>> swagger = api.get_swagger(component='resources')  # Default
+>>> swagger
+<Ed-Fi Resources OpenAPI Swagger Specification>
+
+>>> swagger.json
 {'swagger': ...,
  'basePath': ...,
  'consumes': ...,
@@ -483,16 +489,17 @@ Because this GET does not use pagination, the return is a list, not a generator.
 
 
 <details>
-<summary><code>get_rows / get_pages</code></summary>
+<summary><code>get_rows / get_pages / get_to_json</code></summary>
 
 -----
 
-### get_rows / get_pages
+### get_rows / get_pages / get_to_json
 These are the primary methods for retrieving all JSON rows from the specified endpoint and parameters.
 The only difference in function is whether the rows are returned individually or in batches (i.e., pages).
 Iteration continues until no rows are returned.
 
-Both methods use identical arguments.
+All methods use identical arguments.
+Method `get_to_json()` takes an additional `path` argument.
 Under the hood, `get_rows()` implements `get_pages()`, but unnests the rows before returning.
 
 ```python
@@ -518,6 +525,44 @@ Under the hood, `get_rows()` implements `get_pages()`, but unnests the rows befo
 [{'id': 'abc123', 'studentUniqueId': '987654', 'birthDate': '1970-01-01', ...}, ...]
 ```
 To circumvent memory constraints, these methods return generators instead of lists.
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>post_rows / post_from_json</code></summary>
+
+-----
+
+### post_rows / post_from_json
+These are the primary methods for posting a set of JSON records to the specified endpoint and parameters.
+Method `post_rows()` takes an in-memory list; method `post_from_json()` streams records to post from a JSON file.
+
+Both methods return a dictionary mapping each response status code and message with the line numbers that returned that response.
+
+Both methods use identical arguments.
+Method `post_rows()` uses a positional `rows` argument;
+method `post_from_json()` uses a positional `path` argument.
+
+Optional arguments `include` and `exclude` can be specified to post a subset of rows, based on index in the list/file.
+If left blank, all rows are posted.
+These arguments are mutually-exclusive.
+
+```python
+>>> output_dict = students.post_rows(
+        rows=json_rows,
+        include=None,            # Optional list of indexes to include in the post.
+        exclude=None,            # Optional list of indexes to exclude from the post.
+        retry_on_failure=False,  # Reconnect session if request fails and reattempt (e.g., if authentication expires).
+        max_retries=5,           # If `retry_on_failure is True`, how many attempts before giving up.
+        max_wait=500,            # If `retry_on_failure is True`, max wait time for exponential backoff before giving up.
+    )
+
+>>> output_dict
+{'200': [1, 2, 3], '401: MESSAGE': [4, 5]}
+```
 
 -----
 
