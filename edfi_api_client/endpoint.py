@@ -61,9 +61,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         deletes_string = " Deletes" if self.get_deletes else ""
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
+        return f"<{self.type}{deletes_string}{params_string} [{self.raw}]>"
 
-        return f"<{self.type}{deletes_string}{params_string} [{full_name}]>"
+    @property
+    def raw(self) -> str:
+        return f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
 
     @property
     def url(self) -> str:
@@ -159,7 +161,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
 
 
-    ### GET methods
+    ### GET Methods
     def get_pages(self,
         *,
         page_size: int = 100,
@@ -292,7 +294,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             yield from self.params.build_offset_window_params(page_size, total_count=total_count)
 
 
-    ### POST methods
+    ### POST Methods
     def post_rows(self,
         rows: Union[Iterator[dict], BinaryIO],
         *,
@@ -320,14 +322,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
             try:
                 response = self.client.session.post_response(self.url, data=row, **kwargs)
-
-                if response.ok:
-                    output_log[f"{response.status_code}"].append(idx)
-                else:
-                    output_log[f"{response.status_code} {response.json().get('message')}"].append(idx)
-
+                self.log_response(output_log, idx, response=response)
             except Exception as error:
-                output_log[str(error)].append(idx)
+                self.log_response(output_log, idx, message=error)
 
         return dict(output_log)
 
@@ -352,6 +349,46 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         with open(path, 'rb') as fp:
             return self.post_rows(fp, include=include, exclude=exclude, **kwargs)
+
+
+    ### DELETE Methods
+    def delete_ids(self, ids: Iterator[int], **kwargs) -> Dict[str, List[int]]:
+        """
+        Delete all records at the endpoint by ID.
+
+        :param ids:
+        :return:
+        """
+        self.client.verbose_log(f"[Delete {self.type}] Endpoint  : {self.url}")
+        output_log = defaultdict(list)
+
+        for id in ids:
+            try:
+                response = self.client.session.delete_response(self.url, id=id, **kwargs)
+                self.log_response(output_log, id, response=response)
+            except Exception as error:
+                self.log_response(output_log, id, message=error)
+
+        return dict(output_log)
+
+    @staticmethod
+    def log_response(
+        output_log: dict,
+        idx: int,
+        response: Optional[requests.Response] = None,
+        message: Optional[Exception] = None
+    ):
+        """
+        Helper for updating response output logs consistently.
+        """
+        if response:
+            if response.ok:
+                message = f"{response.status_code}"
+            else:
+                message = f"{response.status_code} {response.json().get('message')}"
+
+        message = message or str(message)
+        output_log[message].append(idx)
 
 
 class EdFiResource(EdFiEndpoint):
@@ -404,10 +441,8 @@ class EdFiComposite(EdFiEndpoint):
         """
         composite = self.composite.title()
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
         filter_string = f" (filtered on {self.filter_type})" if self.filter_type else ""
-
-        return f"<{composite} Composite{params_string} [{full_name}]{filter_string}>"
+        return f"<{composite} Composite{params_string} [{self.raw}]{filter_string}>"
 
     @property
     def url(self) -> str:

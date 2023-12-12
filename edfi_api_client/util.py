@@ -1,7 +1,7 @@
 import json
 import re
 
-from typing import List, Union
+from typing import List, Optional, Union
 
 
 def camel_to_snake(name: str) -> str:
