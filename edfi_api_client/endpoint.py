@@ -40,13 +40,13 @@ class EdFiEndpoint(AsyncEndpointMixin):
             self.namespace: str = namespace
 
         # Or as a `(namespace, name)` tuple as output from Swagger
+        elif len(name) == 2:
+            self.namespace, self.name = name
+
         else:
-            try:
-                self.namespace, self.name = name
-            except ValueError:
-                logging.error(
-                    "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
-                )
+            logging.error(
+                "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
+            )
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
