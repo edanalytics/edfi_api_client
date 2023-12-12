@@ -61,9 +61,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         deletes_string = " Deletes" if self.get_deletes else ""
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
+        return f"<{self.type}{deletes_string}{params_string} [{self.raw}]>"
 
-        return f"<{self.type}{deletes_string}{params_string} [{full_name}]>"
+    @property
+    def raw(self) -> str:
+        return f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
 
     @property
     def url(self) -> str:
@@ -418,10 +420,8 @@ class EdFiComposite(EdFiEndpoint):
         """
         composite = self.composite.title()
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
         filter_string = f" (filtered on {self.filter_type})" if self.filter_type else ""
-
-        return f"<{composite} Composite{params_string} [{full_name}]{filter_string}>"
+        return f"<{composite} Composite{params_string} [{self.raw}]{filter_string}>"
 
     @property
     def url(self) -> str:
