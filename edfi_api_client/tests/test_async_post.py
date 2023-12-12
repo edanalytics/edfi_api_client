@@ -35,7 +35,7 @@ def test_async_post():
 
     for namespace, rr in output_edfi.descriptors + resources:
         try:
-            output_path = os.path.join(scratch_dir, f"{rr}_async.jsonl")
+            output_path = os.path.join(".scratch", f"{rr}_async.jsonl")
             async_get_kwargs.update(path=output_path)
 
             # Get all rows to insert back into Ed-Fi
