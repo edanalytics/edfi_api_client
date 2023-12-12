@@ -326,7 +326,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
             except Exception as error:
                 self.log_response(output_log, idx, message=error)
 
-
         return dict(output_log)
 
     def post_from_json(self,

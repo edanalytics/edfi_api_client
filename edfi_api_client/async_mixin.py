@@ -395,7 +395,7 @@ class AsyncEndpointMixin:
 
         async def delete_and_log(id: int, row: dict):
             try:
-                response = await session.post_response(self.url, data=row, **kwargs)
+                response = await session.delete_response(self.url, id=id, **kwargs)
                 await self.async_log_response(output_log, id, response=response)
             except Exception as error:
                 await self.async_log_response(output_log, id, message=error)
@@ -429,7 +429,6 @@ class AsyncEndpointMixin:
 
         message = message or str(message)
         output_log[message].append(idx)
-
 
 
     ### Async Utilities
