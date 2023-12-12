@@ -18,9 +18,6 @@ def test_async_post():
     output_edfi = EdFiClient(**easecret.get_secret(output_secret), verbose=False)
     input_edfi  = EdFiClient(**easecret.get_secret(input_secret) , verbose=False)
 
-    scratch_dir = "./.scratch"
-    os.makedirs(scratch_dir, exist_ok=True)
-
     async_get_kwargs = dict(
         retry_on_failure=True,
         page_size=500,
@@ -50,11 +47,20 @@ def test_async_post():
 
             # Insert those rows back into the ODS.
             input_endpoint = input_edfi.resource(rr)
-            error_log = input_endpoint.async_post_from_json(output_path, pool_size=8)
+            
+            if rr == 'localEducationAgencies':
+                print("Testing a synchronous post")
+                error_log = input_endpoint.post_from_json(output_path)
+            else:
+                error_log = input_endpoint.async_post_from_json(output_path, pool_size=8)
+            
             print(error_log)
 
         except Exception as err:
             print(f"ERROR: {err}")
+            
+        # Insert those rows back into the ODS.
+        input_endpoint = input_edfi.resource(rr)
 
 
 if __name__ == '__main__':
