@@ -77,7 +77,7 @@ class AsyncEdFiSession(EdFiSession):
     @EdFiSession.refresh_if_expired
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> aiohttp.ClientResponse:
         """
-        Complete a GET request against an endpoint URL.
+        Complete an asynchronous GET request against an endpoint URL.
 
         :param url:
         :param params:
@@ -87,14 +87,14 @@ class AsyncEdFiSession(EdFiSession):
             url, headers=self.auth_headers, params=params,
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             self.custom_raise_for_status(response)
             text = await response.text()
             return response
 
     async def get_total_count(self, url: str, params: 'EdFiParams', **kwargs) -> int:
         """
-        `total_count()` is accessible by the user and during reverse offset-pagination.
-        This internal helper method prevents code needing to be defined twice.
+        This internal helper method is used during pagination.
 
         :param url:
         :param params:
@@ -108,7 +108,7 @@ class AsyncEdFiSession(EdFiSession):
         return int(res.headers.get('Total-Count'))
 
 
-    ### POST methods
+    ### POST Methods
     @EdFiSession.refresh_if_expired
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> aiohttp.ClientResponse:
         """
@@ -132,20 +132,31 @@ class AsyncEdFiSession(EdFiSession):
             url, headers=post_headers, data=data,
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()
             return response
 
 
-    ### Error response methods
-    def custom_raise_for_status(self, response):
+    ### DELETE Methods
+    @EdFiSession.refresh_if_expired
+    async def delete_response(self, url: str, id: int, **kwargs) -> aiohttp.ClientResponse:
         """
-        Override EdFiSession.custom_raise_for_status() to accept aiohttp.ClientResponse.status attribute.
+        Complete an asynchronous DELETE request against an endpoint URL.
 
-        :param response:
+        :param url:
+        :param id:
+        :param kwargs:
         :return:
         """
-        response.status_code = response.status
-        super().custom_raise_for_status(response)
+        delete_url = util.url_join(url, id)
+
+        async with self.session.delete(
+            delete_url, headers=self.auth_headers,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
+            text = await response.text()
+            return response
 
 
 class AsyncEndpointMixin:
@@ -179,7 +190,7 @@ class AsyncEndpointMixin:
         return wrapped
 
 
-    ### GET-all methods
+    ### GET Methods
     async def async_get_pages(self,
         *,
         session: 'AsyncEdFiSession',
@@ -334,8 +345,7 @@ class AsyncEndpointMixin:
         return list(itertools.chain.from_iterable(nested_params))
 
 
-    ### POST methods
-    @run_async_session
+    ### POST Methods
     async def async_post_rows(self,
         rows: Iterator[dict],
         *,
@@ -353,7 +363,6 @@ class AsyncEndpointMixin:
         :param exclude:
         :return:
         """
-        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         async def post_and_log(idx: int, row: dict):
@@ -364,15 +373,11 @@ class AsyncEndpointMixin:
 
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
-
-                if response.ok:
-                    output_log[f"{response.status}"].append(idx)
-                else:
-                    res_json = await response.json()
-                    output_log[f"{response.status} {res_json.get('message')}"].append(idx)
-
+                await self.async_log_response(output_log, idx, response=response)
             except Exception as error:
-                output_log[str(error)].append(idx)
+                await self.async_log_response(output_log, idx, message=error)
+
+        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
 
         await self.gather_with_concurrency(
             session.pool_size,
@@ -414,6 +419,55 @@ class AsyncEndpointMixin:
             session=session,
             **kwargs
         )
+
+
+    ### DELETE Methods
+    async def async_delete_ids(self, ids: Iterator[int], *, session: 'AsyncEdFiSession', **kwargs):
+        """
+        Delete all records at the endpoint by ID.
+
+        :param ids:
+        :param session:
+        :return:
+        """
+        output_log = defaultdict(list)
+
+        async def delete_and_log(id: int, row: dict):
+            try:
+                response = await session.delete_response(self.url, id=id, **kwargs)
+                await self.async_log_response(output_log, id, response=response)
+            except Exception as error:
+                await self.async_log_response(output_log, id, message=error)
+
+        self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
+
+        await self.gather_with_concurrency(
+            session.pool_size,
+            *(delete_and_log(id, row) for id, row in enumerate(ids))
+        )
+
+        # Sort row numbers for easier debugging
+        return {key: sorted(val) for key, val in output_log.items()}
+
+    @staticmethod
+    async def async_log_response(
+        output_log: dict,
+        idx: int,
+        response: Optional[aiohttp.ClientResponse] = None,
+        message: Optional[Exception] = None
+    ):
+        """
+        Helper for updating response output logs consistently.
+        """
+        if response:
+            if response.ok:
+                message = f"{response.status_code}"
+            else:
+                res_json = await response.json()
+                message = f"{response.status_code} {res_json.get('message')}"
+
+        message = message or str(message)
+        output_log[message].append(idx)
 
 
     ### Async Utilities
