@@ -155,7 +155,6 @@ class AsyncEdFiSession(EdFiSession):
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            self.custom_raise_for_status(response)
             text = await response.text()
             return response
 
@@ -325,7 +324,6 @@ class AsyncEndpointMixin:
         :param exclude:
         :return:
         """
-        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         async def post_and_log(idx: int, row: dict):
@@ -336,9 +334,11 @@ class AsyncEndpointMixin:
 
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
-                util.log_response(output_log, idx, response=response)
+                await self.async_log_response(output_log, idx, response=response)
             except Exception as error:
-                util.log_response(output_log, idx, error=error)
+                await self.async_log_response(output_log, idx, message=error)
+
+        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
 
         await self.gather_with_concurrency(
             session.pool_size,
@@ -391,15 +391,16 @@ class AsyncEndpointMixin:
         :param session:
         :return:
         """
-        self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         async def delete_and_log(id: int, row: dict):
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
-                util.log_response(output_log, id, response=response)
+                await self.async_log_response(output_log, id, response=response)
             except Exception as error:
-                util.log_response(output_log, id, error=error)
+                await self.async_log_response(output_log, id, message=error)
+
+        self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
 
         await self.gather_with_concurrency(
             session.pool_size,
@@ -408,6 +409,26 @@ class AsyncEndpointMixin:
 
         # Sort row numbers for easier debugging
         return {key: sorted(val) for key, val in output_log.items()}
+
+    @staticmethod
+    async def async_log_response(
+        output_log: dict,
+        idx: int,
+        response: Optional[aiohttp.ClientResponse] = None,
+        message: Optional[Exception] = None
+    ):
+        """
+        Helper for updating response output logs consistently.
+        """
+        if response:
+            if response.ok:
+                message = f"{response.status_code}"
+            else:
+                res_json = await response.json()
+                message = f"{response.status_code} {res_json.get('message')}"
+
+        message = message or str(message)
+        output_log[message].append(idx)
 
 
 

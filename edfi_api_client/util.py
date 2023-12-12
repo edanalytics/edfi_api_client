@@ -69,21 +69,3 @@ def url_join(*args) -> str:
     return '/'.join(
         map(lambda x: str(x).rstrip('/'), filter(lambda x: x is not None, args))
     )
-
-def log_response(
-    output_log: dict,
-    idx: int,
-    response: Optional['Response'] = None,
-    error: Optional[Exception] = None
-):
-    """
-    Helper for updating response output logs consistently.
-    """
-    if error:
-        message = str(error)
-    elif response.ok:
-        message = f"{response.status_code}"
-    else:
-        message = f"{response.status_code} {response.json().get('message')}"
-
-    output_log[message].append(idx)

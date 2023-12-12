@@ -322,9 +322,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
             try:
                 response = self.client.session.post_response(self.url, data=row, **kwargs)
-                util.log_response(output_log, idx, response=response)
+                self.log_response(output_log, idx, response=response)
             except Exception as error:
-                util.log_response(output_log, idx, error=error)
+                self.log_response(output_log, idx, message=error)
 
 
         return dict(output_log)
@@ -366,11 +366,30 @@ class EdFiEndpoint(AsyncEndpointMixin):
         for id in ids:
             try:
                 response = self.client.session.delete_response(self.url, id=id, **kwargs)
-                util.log_response(output_log, id, response=response)
+                self.log_response(output_log, id, response=response)
             except Exception as error:
-                util.log_response(output_log, id, error=error)
+                self.log_response(output_log, id, message=error)
 
         return dict(output_log)
+
+    @staticmethod
+    def log_response(
+        output_log: dict,
+        idx: int,
+        response: Optional[requests.Response] = None,
+        message: Optional[Exception] = None
+    ):
+        """
+        Helper for updating response output logs consistently.
+        """
+        if response:
+            if response.ok:
+                message = f"{response.status_code}"
+            else:
+                message = f"{response.status_code} {response.json().get('message')}"
+
+        message = message or str(message)
+        output_log[message].append(idx)
 
 
 class EdFiResource(EdFiEndpoint):
