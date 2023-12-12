@@ -87,6 +87,7 @@ class AsyncEdFiSession(EdFiSession):
             url, headers=self.auth_headers, params=params,
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             self.custom_raise_for_status(response)
             text = await response.text()
             return response
@@ -131,6 +132,7 @@ class AsyncEdFiSession(EdFiSession):
             url, headers=post_headers, data=data,
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()
             return response
 
@@ -152,21 +154,10 @@ class AsyncEdFiSession(EdFiSession):
             delete_url, headers=self.auth_headers,
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             self.custom_raise_for_status(response)
             text = await response.text()
             return response
-
-
-    ### Error response methods
-    def custom_raise_for_status(self, response):
-        """
-        Override EdFiSession.custom_raise_for_status() to accept aiohttp.ClientResponse.status attribute.
-
-        :param response:
-        :return:
-        """
-        response.status_code = response.status
-        super().custom_raise_for_status(response)
 
 
 class AsyncEndpointMixin:
@@ -345,15 +336,9 @@ class AsyncEndpointMixin:
 
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
-
-                if response.ok:
-                    output_log[f"{response.status}"].append(idx)
-                else:
-                    res_json = await response.json()
-                    output_log[f"{response.status} {res_json.get('message')}"].append(idx)
-
+                util.log_response(output_log, idx, response=response)
             except Exception as error:
-                output_log[str(error)].append(idx)
+                util.log_response(output_log, idx, error=error)
 
         await self.gather_with_concurrency(
             session.pool_size,
