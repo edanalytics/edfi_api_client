@@ -168,7 +168,6 @@ class EdFiSession:
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
         """
         Complete a POST request against an endpoint URL.
-
         Note: Responses are returned regardless of status.
 
         :param url:
@@ -190,6 +189,7 @@ class EdFiSession:
     def delete_response(self, url: str, id: int, **kwargs) -> requests.Response:
         """
         Complete a DELETE request against an endpoint URL.
+        Note: Responses are returned regardless of status.
 
         :param url:
         :param id:
@@ -197,9 +197,7 @@ class EdFiSession:
         :return:
         """
         delete_url = util.url_join(url, id)
-
         response = self.session.get(delete_url, headers=self.auth_headers, verify=self.verify_ssl, **kwargs)
-        self.custom_raise_for_status(response)
         return response
 
 

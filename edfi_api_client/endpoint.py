@@ -322,14 +322,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
             try:
                 response = self.client.session.post_response(self.url, data=row, **kwargs)
-
-                if response.ok:
-                    output_log[f"{response.status_code}"].append(idx)
-                else:
-                    output_log[f"{response.status_code} {response.json().get('message')}"].append(idx)
-
+                util.log_response(output_log, idx, response=response)
             except Exception as error:
-                output_log[str(error)].append(idx)
+                util.log_response(output_log, idx, error=error)
+
 
         return dict(output_log)
 
