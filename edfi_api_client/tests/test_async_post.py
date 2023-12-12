@@ -27,31 +27,34 @@ def test_async_post():
         pool_size=8
     )
 
-    resources = (
+    resources = [
         ('ed-fi', 'students'),
         ('ed-fi', 'localEducationAgencies'),
         ('ed-fi', 'schools'),
         # ('ed-fi', 'studentSchoolAssociations'),
         # ('ed-fi', 'studentAssessments'),
         # ('ed-fi', 'studentSectionAttendanceEvents'),
-    )
+    ]
 
-    for namespace, rr in output_edfi.descriptors:
-    # for namespace, rr in resources:
-        output_path = os.path.join(scratch_dir, f"{rr}_async.jsonl")
-        async_get_kwargs.update(path=output_path)
+    for namespace, rr in output_edfi.descriptors + resources:
+        try:
+            output_path = os.path.join(scratch_dir, f"{rr}_async.jsonl")
+            async_get_kwargs.update(path=output_path)
 
-        # Get all rows to insert back into Ed-Fi
-        output_endpoint = output_edfi.resource((namespace, rr))
-        print(f"{namespace}/{rr}: {output_endpoint.total_count()}")
+            # Get all rows to insert back into Ed-Fi
+            output_endpoint = output_edfi.resource((namespace, rr))
+            print(f"{namespace}/{rr}: {output_endpoint.total_count()}")
 
-        output_endpoint.async_get_to_json(**async_get_kwargs)
-        print(f"    Rows written to {output_path}")
+            output_endpoint.async_get_to_json(**async_get_kwargs)
+            print(f"    Rows written to {output_path}")
 
-        # Insert those rows back into the ODS.
-        input_endpoint = input_edfi.resource(rr)
-        error_log = input_endpoint.async_post_from_json(output_path, pool_size=8)
-        print(error_log)
+            # Insert those rows back into the ODS.
+            input_endpoint = input_edfi.resource(rr)
+            error_log = input_endpoint.async_post_from_json(output_path, pool_size=8)
+            print(error_log)
+
+        except Exception as err:
+            print(f"ERROR: {err}")
 
 
 if __name__ == '__main__':
