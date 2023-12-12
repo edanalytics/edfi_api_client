@@ -392,11 +392,23 @@ class AsyncEndpointMixin:
         :return:
         """
         self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
+        output_log = defaultdict(list)
+
+        async def delete_and_log(id: int, row: dict):
+            try:
+                response = await session.post_response(self.url, data=row, **kwargs)
+                util.log_response(output_log, id, response=response)
+            except Exception as error:
+                util.log_response(output_log, id, error=error)
 
         await self.gather_with_concurrency(
             session.pool_size,
-            *(await session.delete_response(self.url, id=id, **kwargs) for id in ids)
+            *(delete_and_log(id, row) for id, row in enumerate(ids))
         )
+
+        # Sort row numbers for easier debugging
+        return {key: sorted(val) for key, val in output_log.items()}
+
 
 
     ### Async Utilities

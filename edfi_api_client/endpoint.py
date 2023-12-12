@@ -353,7 +353,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### DELETE Methods
-    def delete_ids(self, ids: Iterator[int], **kwargs):
+    def delete_ids(self, ids: Iterator[int], **kwargs) -> Dict[str, List[int]]:
         """
         Delete all records at the endpoint by ID.
 
@@ -361,9 +361,16 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         self.client.verbose_log(f"[Delete {self.type}] Endpoint  : {self.url}")
+        output_log = defaultdict(list)
 
         for id in ids:
-            self.client.session.delete_response(self.url, id=id, **kwargs)
+            try:
+                response = self.client.session.delete_response(self.url, id=id, **kwargs)
+                util.log_response(output_log, id, response=response)
+            except Exception as error:
+                util.log_response(output_log, id, error=error)
+
+        return dict(output_log)
 
 
 class EdFiResource(EdFiEndpoint):
