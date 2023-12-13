@@ -381,7 +381,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         Helper for updating response output logs consistently.
         """
-        if response:
+        if response is not None:
             if response.ok:
                 message = f"{response.status_code}"
             else:
