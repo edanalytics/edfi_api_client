@@ -146,21 +146,6 @@ class EdFiSession:
         self.custom_raise_for_status(response)
         return response
 
-    def get_total_count(self, url: str, params: 'EdFiParams', **kwargs):
-        """
-        This internal helper method is used during pagination.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        _params = params.copy()  # Don't mutate params in place
-        _params['totalCount'] = True
-        _params['limit'] = 0
-
-        res = self.get_response(url, _params, **kwargs)
-        return int(res.headers.get('Total-Count'))
-
 
     ### POST Methods
     @refresh_if_expired

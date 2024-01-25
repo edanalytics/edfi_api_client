@@ -34,8 +34,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
     ):
         self.client: 'EdFiClient' = client
 
-        # Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
-        self.set_name(name, namespace)
+        # Names can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
+        self.namespace, self.name = self._parse_names(namespace, name)
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
@@ -54,22 +54,19 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Naming and Pathing Methods
-    def set_name(self, name: str, namespace: str):
+    def _parse_names(self, namespace: str, name: str):
         """
         Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         """
         if isinstance(name, str):
-            self.name: str = util.snake_to_camel(name)
-            self.namespace: str = namespace
+            return namespace, util.snake_to_camel(name)
 
         # Or as a `(namespace, name)` tuple as output from Swagger
         elif len(name) == 2:
-            self.namespace, self.name = name
+            return name
 
         else:
-            logging.error(
-                "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
-            )
+            logging.error("Arguments `namespace` and `name` must be passed explicitly, or as a `(namespace, name)` tuple.")
 
     @property
     def raw(self) -> str:
@@ -110,7 +107,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return res
 
-    def total_count(self, **kwargs):
+    def get_total_count(self, params: Optional['EdFiParams'] = None, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -118,7 +115,16 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        return self.client.session.get_total_count(self.url, self.params, **kwargs)
+        _params = (params or self.params).copy()  # Don't mutate argument params or class params
+        _params['totalCount'] = True
+        _params['limit'] = 0
+
+        res = self.client.session.get_response(self.url, _params, **kwargs)
+        return int(res.headers.get('Total-Count'))
+
+    @property
+    def total_count(self):
+        return self.get_total_count()
 
     def get(self, limit: Optional[int] = None, **kwargs) -> List[dict]:
         """
@@ -290,13 +296,13 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         if step_change_version:
             for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self.client.session.get_total_count(self.url, cv_window_params, **kwargs)
+                total_count = self.get_total_count(params=cv_window_params, **kwargs)
 
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
                 yield from cv_offset_params_list
 
         else:
-            total_count = self.client.session.get_total_count(self.url, self.params, **kwargs)
+            total_count = self.get_total_count(params=self.params, **kwargs)
             yield from self.params.build_offset_window_params(page_size, total_count=total_count)
 
 

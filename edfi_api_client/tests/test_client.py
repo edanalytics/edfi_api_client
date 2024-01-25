@@ -62,7 +62,7 @@ def test_authenticated_client(secret: str = master_secret):
     assert resource.fields
     assert resource.required_fields
 
-    resource_count = resource.total_count()
+    resource_count = resource.get_total_count()
     resource_output_path = f"./.output/{resource.name}.jsonl"
 
     _ = resource.get_to_json(resource_output_path, page_size=500, retry_on_failure=True, step_change_version=True)
@@ -78,7 +78,7 @@ def test_authenticated_client(secret: str = master_secret):
     assert descriptor.fields
     assert descriptor.required_fields
 
-    descriptor_count = descriptor.total_count()
+    descriptor_count = descriptor.get_total_count()
     descriptor_rows = descriptor.get_rows(page_size=500, step_change_version=False)
     assert len(list(descriptor_rows)) == descriptor_count
 
