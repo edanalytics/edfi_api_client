@@ -21,7 +21,7 @@ logging.basicConfig(
 class EdFiClient:
     """
     Client for interacting with the Ed-Fi API.
-    Includes methods for authentication, parsing the Swagger, and getting content from endpoints.
+    Includes methods for authentication, ODS info, Swagger parsing, and endpoint initialization.
 
     :param base_url: The root URL of the API, without components like `data/v3`
     :param client_key: Authentication key

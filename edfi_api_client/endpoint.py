@@ -34,19 +34,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
     ):
         self.client: 'EdFiClient' = client
 
-        # Name and namespace can be passed manually
-        if isinstance(name, str):
-            self.name: str = util.snake_to_camel(name)
-            self.namespace: str = namespace
-
-        # Or as a `(namespace, name)` tuple as output from Swagger
-        elif len(name) == 2:
-            self.namespace, self.name = name
-
-        else:
-            logging.error(
-                "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
-            )
+        # Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
+        self.set_name(name, namespace)
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
@@ -62,6 +51,25 @@ class EdFiEndpoint(AsyncEndpointMixin):
         deletes_string = " Deletes" if self.get_deletes else ""
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
         return f"<{self.type}{deletes_string}{params_string} [{self.raw}]>"
+
+
+    ### Naming and Pathing Methods
+    def set_name(self, name: str, namespace: str):
+        """
+        Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
+        """
+        if isinstance(name, str):
+            self.name: str = util.snake_to_camel(name)
+            self.namespace: str = namespace
+
+        # Or as a `(namespace, name)` tuple as output from Swagger
+        elif len(name) == 2:
+            self.namespace, self.name = name
+
+        else:
+            logging.error(
+                "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
+            )
 
     @property
     def raw(self) -> str:
