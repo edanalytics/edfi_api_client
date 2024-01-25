@@ -144,7 +144,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Swagger-adjacent properties and helper methods
-    def get_swagger_if_none(self):
+    def _get_swagger_if_none(self):
         """
         Gets the endpoint's Swagger if not already collected.
         :return:
@@ -154,22 +154,22 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     @property
     def description(self) -> str:
-        self.get_swagger_if_none()
+        self._get_swagger_if_none()
         return self.swagger.descriptions.get(self.name)
 
     @property
     def has_deletes(self) -> bool:
-        self.get_swagger_if_none()
+        self._get_swagger_if_none()
         return (self.namespace, self.name) in self.swagger.deletes
 
     @property
     def fields(self) -> List[str]:
-        self.get_swagger_if_none()
+        self._get_swagger_if_none()
         return self.swagger.endpoint_fields.get((self.namespace, self.name))
 
     @property
     def required_fields(self) -> List[str]:
-        self.get_swagger_if_none()
+        self._get_swagger_if_none()
         return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
 
 
@@ -202,7 +202,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
-        paged_params_list = self.get_paged_window_params(
+        paged_params_list = self._get_paged_window_params(
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -278,7 +278,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return path
 
-    def get_paged_window_params(self,
+    def _get_paged_window_params(self,
         *,
         page_size: int,
         reverse_paging: bool,
@@ -334,9 +334,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
             try:
                 response = self.client.session.post_response(self.url, data=row, **kwargs)
-                self.log_response(output_log, idx, response=response)
+                self._log_response(output_log, idx, response=response)
             except Exception as error:
-                self.log_response(output_log, idx, message=error)
+                self._log_response(output_log, idx, message=error)
 
         return dict(output_log)
 
@@ -377,14 +377,14 @@ class EdFiEndpoint(AsyncEndpointMixin):
         for id in ids:
             try:
                 response = self.client.session.delete_response(self.url, id=id, **kwargs)
-                self.log_response(output_log, id, response=response)
+                self._log_response(output_log, id, response=response)
             except Exception as error:
-                self.log_response(output_log, id, message=error)
+                self._log_response(output_log, id, message=error)
 
         return dict(output_log)
 
     @staticmethod
-    def log_response(
+    def _log_response(
         output_log: dict,
         idx: int,
         response: Optional[requests.Response] = None,

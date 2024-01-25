@@ -221,7 +221,7 @@ class EdFiClient:
 
 
     ### Methods for accessing ODS endpoints
-    def require_session(func: Callable) -> Callable:
+    def _require_session(func: Callable) -> Callable:
         """
         This decorator verifies a session is established before calling the associated class method.
 
@@ -237,7 +237,7 @@ class EdFiClient:
             return func(self, *args, **kwargs)
         return wrapped
 
-    @require_session
+    @_require_session
     def get_newest_change_version(self) -> int:
         """
         Return the newest change version marked in the ODS (Ed-Fi3 only).
@@ -261,7 +261,7 @@ class EdFiClient:
 
 
     ### Endpoint Initializers
-    @require_session
+    @_require_session
     def resource(self,
         name: str,
         *,
@@ -276,7 +276,7 @@ class EdFiClient:
             params=params, **kwargs
         )
 
-    @require_session
+    @_require_session
     def descriptor(self,
         name: str,
         *,
@@ -294,7 +294,7 @@ class EdFiClient:
             params=params, **kwargs
         )
 
-    @require_session
+    @_require_session
     def composite(self,
         name: str,
         *,

@@ -79,7 +79,7 @@ class EdFiSession:
 
         return auth_response
 
-    def refresh_if_expired(func: Callable):
+    def _refresh_if_expired(func: Callable):
         """
         Reauthenticate automatically before making a request if expired.
 
@@ -93,7 +93,7 @@ class EdFiSession:
             return func(self, *args, **kwargs)
         return wrapped
 
-    def with_exponential_backoff(func: Callable):
+    def _with_exponential_backoff(func: Callable):
         """
         Decorator to apply exponential backoff during failed requests.
         TODO: Is this logic and status codes consistent across request types?
@@ -132,8 +132,8 @@ class EdFiSession:
 
 
     ### GET Methods
-    @refresh_if_expired
-    @with_exponential_backoff
+    @_refresh_if_expired
+    @_with_exponential_backoff
     def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> requests.Response:
         """
         Complete a GET request against an endpoint URL.
@@ -148,8 +148,8 @@ class EdFiSession:
 
 
     ### POST Methods
-    @refresh_if_expired
-    @with_exponential_backoff
+    @_refresh_if_expired
+    @_with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
         """
         Complete a POST request against an endpoint URL.
@@ -169,8 +169,8 @@ class EdFiSession:
 
 
     ### DELETE Methods
-    @refresh_if_expired
-    @with_exponential_backoff
+    @_refresh_if_expired
+    @_with_exponential_backoff
     def delete_response(self, url: str, id: int, **kwargs) -> requests.Response:
         """
         Complete a DELETE request against an endpoint URL.

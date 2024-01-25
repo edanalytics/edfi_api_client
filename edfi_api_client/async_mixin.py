@@ -74,7 +74,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### GET Methods
-    @EdFiSession.refresh_if_expired
+    @EdFiSession._refresh_if_expired
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete an asynchronous GET request against an endpoint URL.
@@ -109,7 +109,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### POST Methods
-    @EdFiSession.refresh_if_expired
+    @EdFiSession._refresh_if_expired
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> aiohttp.ClientResponse:
         """
         Complete an asynchronous POST request against an endpoint URL.
@@ -138,7 +138,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### DELETE Methods
-    @EdFiSession.refresh_if_expired
+    @EdFiSession._refresh_if_expired
     async def delete_response(self, url: str, id: int, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
