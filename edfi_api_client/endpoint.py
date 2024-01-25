@@ -78,9 +78,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         deletes = 'deletes' if self.get_deletes else None
 
         return util.url_join(
-            self.client.base_url,
-            self.client.version_url_string,
-            self.client.instance_locator,
+            self.client.resource_url,
             self.namespace, self.name, deletes
         )
 
@@ -454,14 +452,12 @@ class EdFiComposite(EdFiEndpoint):
         # If a filter is applied, the URL changes to match the filter type.
         if self.filter_type is None and self.filter_id is None:
             return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
+                self.client.composite_url,
                 self.namespace, self.composite, self.name.title()
             )
         elif self.filter_type is not None and self.filter_id is not None:
             return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
+                self.client.composite_url,
                 self.namespace, self.composite,
                 self.filter_type, self.filter_id, self.name
             )
