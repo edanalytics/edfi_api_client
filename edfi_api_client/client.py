@@ -61,9 +61,9 @@ class EdFiClient:
 
         # Swagger variables for populating resource metadata (retrieved lazily)
         self.swaggers: Dict[str, Optional[EdFiSwagger]] = {
-            'resources'  : None,
+            'resources': None,
             'descriptors': None,
-            'composites' : None,
+            'composites': None,
         }
 
         # If ID and secret are passed, prepare synchronous and asynchronous sessions.
@@ -110,7 +110,7 @@ class EdFiClient:
             logging.info(message)
 
 
-    ### Methods for accessing the Base URL payload and Swagger
+    ### Methods using the base URL info
     def get_info(self) -> dict:
         """
         Ed-Fi3 returns a helpful payload from the base URL.
@@ -145,6 +145,7 @@ class EdFiClient:
             self._info = self.get_info()
         return self._info
 
+
     # API Mode
     def get_api_mode(self) -> Optional[str]:
         """
@@ -153,6 +154,7 @@ class EdFiClient:
         """
         api_mode = self.info.get('apiMode')
         return util.camel_to_snake(api_mode) if api_mode else None
+
 
     # ODS Version
     def get_ods_version(self) -> Optional[str]:
@@ -165,6 +167,7 @@ class EdFiClient:
     @property
     def ods_version(self) -> Optional[str]:
         return self.get_ods_version()
+
 
     # Data Model Version
     def get_data_model_version(self) -> Optional[str]:
@@ -183,6 +186,7 @@ class EdFiClient:
     @property
     def data_model_version(self) -> Optional[str]:
         return self.get_data_model_version()
+
 
     # Instance Locator
     def get_instance_locator(self) -> Optional[str]:
@@ -216,6 +220,7 @@ class EdFiClient:
     @property
     def instance_locator(self) -> Optional[str]:
         return self.get_instance_locator()
+
 
     # URLs  TODO: Should these be pulled self.info?
     @property
@@ -343,26 +348,48 @@ class EdFiClient:
         payload = requests.get(swagger_url, verify=self.verify_ssl).json()
         swagger = EdFiSwagger(component, payload)
 
-        # Save the swagger in memory to save time on subsequent calls.
-        self.swaggers[component] = swagger
         return swagger
+
+
+    # Resources Swagger
+    @property
+    def resources_swagger(self):
+        if self.swaggers.get('resources') is None:
+            self.swaggers['resources'] = self.get_swagger('resources')
+        return self.swaggers.get('resources')
+
+    def list_resources(self) -> List[str]:
+        """
+        Return a list of resource endpoints, as defined in Swagger.
+        """
+        return self.resources_swagger.endpoints
 
     @property
     def resources(self) -> List[str]:
+        return self.list_resources()
+
+
+    # Descriptors Swagger
+    @property
+    def descriptors_swagger(self):
+        if self.swaggers.get('descriptors') is None:
+            self.swaggers['descriptors'] = self.get_swagger('descriptors')
+        return self.swaggers.get('descriptors')
+
+    def list_descriptors(self) -> List[str]:
         """
-        Return a list of resource endpoints, as defined in Swagger.
-        :return:
+        Return a list ofdescriptors endpoints, as defined in Swagger.
         """
-        if self.swaggers['resources'] is None:
-            self.get_swagger('resources')
-        return self.swaggers['resources'].endpoints
+        return self.descriptors_swagger.endpoints
 
     @property
     def descriptors(self) -> List[str]:
-        """
-        Return a list of descriptor endpoints, as defined in Swagger.
-        :return:
-        """
-        if self.swaggers['descriptors'] is None:
-            self.get_swagger('descriptors')
-        return self.swaggers['descriptors'].endpoints
+        return self.list_descriptors()
+
+
+    # Composites Swagger
+    @property
+    def composites_swagger(self):
+        if self.swaggers.get('composites') is None:
+            self.swaggers['composites'] = self.get_swagger('composites')
+        return self.swaggers.get('composites')
