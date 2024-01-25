@@ -93,22 +93,6 @@ class EdFiClient:
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
 
-    @staticmethod
-    def is_edfi2() -> bool:  # Deprecated method
-        return False
-
-    def verbose_log(self, message: str, verbose: bool = False):
-        """
-        Unified method for logging class state during API pulls.
-        Set `self.verbose=True or verbose=True` to log.
-
-        :param message:
-        :param verbose:
-        :return:
-        """
-        if self.verbose or verbose:
-            logging.info(message)
-
 
     ### Methods using the base URL info
     def get_info(self) -> dict:
@@ -393,3 +377,21 @@ class EdFiClient:
         if self.swaggers.get('composites') is None:
             self.swaggers['composites'] = self.get_swagger('composites')
         return self.swaggers.get('composites')
+
+
+    # Utility functions
+    @staticmethod
+    def is_edfi2() -> bool:  # Deprecated method
+        return False
+
+    def verbose_log(self, message: str, verbose: bool = False):
+        """
+        Unified method for logging class state during API pulls.
+        Set `self.verbose=True or verbose=True` to log.
+
+        :param message:
+        :param verbose:
+        :return:
+        """
+        if self.verbose or verbose:
+            logging.info(message)
