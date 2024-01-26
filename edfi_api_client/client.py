@@ -276,7 +276,7 @@ class EdFiClient:
 
         return EdFiResource(
             self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
-            session = self.session, swagger=self.resources_swagger,
+            session = self.session, async_session=self.async_session, swagger=self.resources_swagger,
             **kwargs
         )
 
@@ -295,7 +295,7 @@ class EdFiClient:
 
         return EdFiDescriptor(
             self.resource_url, name, namespace=namespace, params=params,
-            session=self.session, swagger=self.descriptors_swagger,
+            session=self.session, async_session=self.async_session, swagger=self.descriptors_swagger,
             **kwargs
         )
 
@@ -317,6 +317,6 @@ class EdFiClient:
         return EdFiComposite(
             self.composite_url, name, namespace=namespace, params=params,
             composite=composite, filter_type=filter_type, filter_id=filter_id,
-            session=self.session, swagger=self.composites_swagger,
+            session=self.session, async_session=self.async_session, swagger=self.composites_swagger,
             **kwargs
         )

@@ -30,6 +30,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         params: Optional[dict] = None,
 
         session: Optional[EdFiSession] = None,
+        async_session: Optional['AsyncEdFiSession'] = None,
         swagger: Optional[EdFiSwagger] = None,
         **kwargs
     ):
@@ -45,6 +46,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Optional helper classes with lazy attributes
         self.session: Optional[EdFiSession] = session
+        self.async_session: Optional['AsyncEdFiSession'] = async_session
         self.swagger: Optional[EdFiSwagger] = swagger
 
     def __repr__(self):

@@ -88,24 +88,9 @@ class AsyncEdFiSession(EdFiSession):
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            self.custom_raise_for_status(response)
+            self._custom_raise_for_status(response)
             text = await response.text()
             return response
-
-    async def get_total_count(self, url: str, params: 'EdFiParams', **kwargs) -> int:
-        """
-        This internal helper method is used during pagination.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = "true"
-        _params['limit'] = 0
-
-        res = await self.get_response(url, _params, **kwargs)
-        return int(res.headers.get('Total-Count'))
 
 
     ### POST Methods
@@ -179,7 +164,7 @@ class AsyncEndpointMixin:
         @functools.wraps(func)
         def wrapped(self, *args, session: Optional['AsyncEdFiSession'] = None, **kwargs):
             async def main():
-                async with await self.client.async_session.connect(**kwargs) as main_session:
+                async with await self.async_session.connect(**kwargs) as main_session:
                     return await func(self, *args, session=main_session, **kwargs)
 
             if session is None:
@@ -226,7 +211,7 @@ class AsyncEndpointMixin:
             logging.info(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
-        paged_params_list = await self.async_get_paged_window_params(
+        paged_params_list = await self._async_get_paged_window_params(
             session=session,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
@@ -314,7 +299,23 @@ class AsyncEndpointMixin:
         return path
 
     @_run_async_session
-    async def async_get_paged_window_params(self,
+    async def async_get_total_count(self, session: 'AsyncEdFiSession', params: 'EdFiParams', **kwargs) -> int:
+        """
+        This internal helper method is used during pagination.
+
+        :param session:
+        :param params:
+        :return:
+        """
+        _params = params.copy()
+        _params['totalCount'] = "true"
+        _params['limit'] = 0
+
+        res = await session.get_response(self.url, _params, **kwargs)
+        return int(res.headers.get('Total-Count'))
+
+    @_run_async_session
+    async def _async_get_paged_window_params(self,
         *,
         session: 'AsyncEdFiSession',
         page_size: int = 100,
@@ -333,7 +334,7 @@ class AsyncEndpointMixin:
         :return:
         """
         async def build_total_count_windows(params):
-            total_count = await session.get_total_count(self.url, params, **kwargs)
+            total_count = await self.async_get_total_count(session=session, params=params, **kwargs)
             return params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
 
         if step_change_version:
