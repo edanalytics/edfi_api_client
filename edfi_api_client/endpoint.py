@@ -8,11 +8,9 @@ from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
 from edfi_api_client.swagger import EdFiSwagger
+from edfi_api_client.session import EdFiSession
 
 from typing import BinaryIO, Dict, Iterator, List, Optional, Union
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from edfi_api_client.client import EdFiClient
 
 
 class EdFiEndpoint(AsyncEndpointMixin):
@@ -23,28 +21,29 @@ class EdFiEndpoint(AsyncEndpointMixin):
     type: str = None
 
     def __init__(self,
-        client: 'EdFiClient',
-        session: 'EdFiSession',
-        swagger: 'EdFiSwagger',
+        endpoint_url: str,
         name: str,
 
         *,
         namespace: str = 'ed-fi',
         get_deletes: bool = False,
         params: Optional[dict] = None,
+
+        session: Optional[EdFiSession] = None,
+        swagger: Optional[EdFiSwagger] = None,
         **kwargs
     ):
-        self.client: 'EdFiClient' = client
-        self.session: 'EdFiSession' = session
-        self.swagger: 'EdFiSwagger' = swagger
-
         # Names can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         self.namespace, self.name = self._parse_names(namespace, name)
+        self.endpoint_url = endpoint_url
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
         self.params = EdFiParams(params, **kwargs)
 
+        # Optional helper classes with lazy attributes
+        self.session: Optional[EdFiSession] = session
+        self.swagger: Optional[EdFiSwagger] = swagger
 
     def __repr__(self):
         """
@@ -86,7 +85,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         deletes = 'deletes' if self.get_deletes else None
 
         return util.url_join(
-            self.client.resource_url,
+            self.endpoint_url,
             self.namespace, self.name, deletes
         )
 
@@ -395,8 +394,15 @@ class EdFiEndpoint(AsyncEndpointMixin):
 class EdFiResource(EdFiEndpoint):
     type: str = 'Resource'
 
+
 class EdFiDescriptor(EdFiEndpoint):
     type: str = 'Descriptor'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self.get_deletes:
+            logging.warning("Descriptors do not have /deletes endpoints. Argument `get_deletes` has been ignored.")
 
 
 class EdFiComposite(EdFiEndpoint):
@@ -406,18 +412,10 @@ class EdFiComposite(EdFiEndpoint):
     type: str = 'Composite'
 
     def __init__(self,
-        client: 'EdFiClient',
-        session: 'EdFiSession',
-        swagger: 'EdFiSwagger',
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
+        *args,
         composite: str = 'enrollment',
         filter_type: Optional[str] = None,
         filter_id: Optional[str] = None,
-
-        params: Optional[dict] = None,
         **kwargs
     ):
         # Assign composite-specific arguments that are used in `self.url()`.
@@ -425,7 +423,11 @@ class EdFiComposite(EdFiEndpoint):
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
 
-        super().__init__(client=client, session=session, swagger=swagger, name=name, namespace=namespace, params=params)
+        # Init after to build 'self.url' with new attributes
+        super().__init__(*args, **kwargs)
+
+        if self.get_deletes:
+            logging.warning("Composites do not have /deletes endpoints. Argument `get_deletes` has been ignored.")
 
     def __repr__(self):
         """
@@ -447,12 +449,12 @@ class EdFiComposite(EdFiEndpoint):
         # If a filter is applied, the URL changes to match the filter type.
         if self.filter_type is None and self.filter_id is None:
             return util.url_join(
-                self.client.composite_url,
+                self.endpoint_url,
                 self.namespace, self.composite, self.name.title()
             )
         elif self.filter_type is not None and self.filter_id is not None:
             return util.url_join(
-                self.client.composite_url,
+                self.endpoint_url,
                 self.namespace, self.composite,
                 self.filter_type, self.filter_id, self.name
             )

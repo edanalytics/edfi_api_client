@@ -56,13 +56,13 @@ class EdFiClient:
         self.client_secret: Optional[str] = client_secret
         self.verify_ssl: bool = verify_ssl
 
-        self.api_version: int = int(api_version)
-        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self.info to pull mode from ODS.
-        self.api_year: Optional[int] = api_year
-        self.instance_code: Optional[str] = instance_code
-
         # Information from base URL get (retrieved lazily)
         self._info: Optional[dict] = None
+
+        self.api_version: int = int(api_version)
+        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
+        self.api_year: Optional[int] = api_year
+        self.instance_code: Optional[str] = instance_code
 
         # Swagger variables for populating resource metadata (retrieved lazily)
         self.resources_swagger: EdFiSwagger = self.get_swagger('resources')
@@ -134,6 +134,7 @@ class EdFiClient:
 
 
     # API Mode
+    # TODO: Make GETs eager and properties lazy.
     def get_api_mode(self) -> Optional[str]:
         """
         Retrieve api_mode from the metadata exposed at the API root.
@@ -275,9 +276,9 @@ class EdFiClient:
         **kwargs
     ) -> EdFiResource:
         return EdFiResource(
-            client=self, session=self.session, swagger=self.resources_swagger,
-            name=name, namespace=namespace, get_deletes=get_deletes,
-            params=params, **kwargs
+            self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
+            session = self.session, swagger=self.resources_swagger,
+            **kwargs
         )
 
     @_require_session
@@ -293,9 +294,9 @@ class EdFiClient:
         this may not be known to users, so a separate method is defined.
         """
         return EdFiDescriptor(
-            client=self, session=self.session, swagger=self.descriptors_swagger,
-            name=name, namespace=namespace, get_deletes=False,
-            params=params, **kwargs
+            self.resource_url, name, namespace=namespace, params=params,
+            session=self.session, swagger=self.descriptors_swagger,
+            **kwargs
         )
 
     @_require_session
@@ -310,10 +311,10 @@ class EdFiClient:
         **kwargs
     ) -> EdFiComposite:
         return EdFiComposite(
-            client=self, session=self.session, swagger=self.composites_swagger,
-            name=name, namespace=namespace, composite=composite,
-            filter_type=filter_type, filter_id=filter_id,
-            params=params, **kwargs
+            self.composite_url, name, namespace=namespace, params=params,
+            composite=composite, filter_type=filter_type, filter_id=filter_id,
+            session=self.session, swagger=self.composites_swagger,
+            **kwargs
         )
 
 
