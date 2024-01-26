@@ -168,7 +168,7 @@ class AsyncEndpointMixin:
     url: str
     params: 'EdFiParams'
 
-    def run_async_session(func: Callable) -> Callable:
+    def _run_async_session(func: Callable) -> Callable:
         """
         This decorator establishes an async session before calling the associated class method, if not defined.
         If a session is established at this time, complete a full asyncio run.
@@ -236,7 +236,7 @@ class AsyncEndpointMixin:
         for paged_param in paged_params_list:
             yield verbose_get_page(paged_param)
 
-    @run_async_session
+    @_run_async_session
     async def async_get_rows(self,
         *,
         session: 'AsyncEdFiSession',
@@ -264,13 +264,13 @@ class AsyncEndpointMixin:
             **kwargs
         )
 
-        collected_pages = await self.gather_with_concurrency(
+        collected_pages = await self._gather_with_concurrency(
             session.pool_size,
             *[page async for page in paged_results]
         )
         return list(itertools.chain.from_iterable(collected_pages))
 
-    @run_async_session
+    @_run_async_session
     async def async_get_to_json(self,
         path: str,
         *,
@@ -306,14 +306,14 @@ class AsyncEndpointMixin:
         )
 
         async with aiofiles.open(path, 'wb') as fp:
-            await self.gather_with_concurrency(
+            await self._gather_with_concurrency(
                 session.pool_size,
                 *[write_async_page(page, fp=fp) async for page in paged_results]
             )
 
         return path
 
-    @run_async_session
+    @_run_async_session
     async def async_get_paged_window_params(self,
         *,
         session: 'AsyncEdFiSession',
@@ -341,7 +341,7 @@ class AsyncEndpointMixin:
         else:
             top_level_params = [self.params]
 
-        nested_params = await self.gather_with_concurrency(session.pool_size, *map(build_total_count_windows, top_level_params))
+        nested_params = await self._gather_with_concurrency(session.pool_size, *map(build_total_count_windows, top_level_params))
         return list(itertools.chain.from_iterable(nested_params))
 
 
@@ -373,13 +373,13 @@ class AsyncEndpointMixin:
 
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
-                await self.async_log_response(output_log, idx, response=response)
+                await self._async_log_response(output_log, idx, response=response)
             except Exception as error:
-                await self.async_log_response(output_log, idx, message=error)
+                await self._async_log_response(output_log, idx, message=error)
 
         self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
 
-        await self.gather_with_concurrency(
+        await self._gather_with_concurrency(
             session.pool_size,
             *(post_and_log(idx, row) for idx, row in enumerate(rows))
          )
@@ -387,7 +387,7 @@ class AsyncEndpointMixin:
         # Sort row numbers for easier debugging
         return {key: sorted(val) for key, val in output_log.items()}
 
-    @run_async_session
+    @_run_async_session
     async def async_post_from_json(self,
         path: str,
         *,
@@ -435,13 +435,13 @@ class AsyncEndpointMixin:
         async def delete_and_log(id: int, row: dict):
             try:
                 response = await session.delete_response(self.url, id=id, **kwargs)
-                await self.async_log_response(output_log, id, response=response)
+                await self._async_log_response(output_log, id, response=response)
             except Exception as error:
-                await self.async_log_response(output_log, id, message=error)
+                await self._async_log_response(output_log, id, message=error)
 
         self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
 
-        await self.gather_with_concurrency(
+        await self._gather_with_concurrency(
             session.pool_size,
             *(delete_and_log(id, row) for id, row in enumerate(ids))
         )
@@ -450,7 +450,7 @@ class AsyncEndpointMixin:
         return {key: sorted(val) for key, val in output_log.items()}
 
     @staticmethod
-    async def async_log_response(
+    async def _async_log_response(
         output_log: dict,
         idx: int,
         response: Optional[aiohttp.ClientResponse] = None,
@@ -472,7 +472,7 @@ class AsyncEndpointMixin:
 
     ### Async Utilities
     @staticmethod
-    async def gather_with_concurrency(n, *tasks, return_exceptions: bool = False) -> list:
+    async def _gather_with_concurrency(n, *tasks, return_exceptions: bool = False) -> list:
         """
         Waits for an entire task queue to finish processing
 
