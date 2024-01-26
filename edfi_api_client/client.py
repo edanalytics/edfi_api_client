@@ -52,10 +52,8 @@ class EdFiClient:
         self.client_secret: Optional[str] = client_secret
         self.verify_ssl: bool = verify_ssl
 
-        self._info: Optional[dict] = None  # Info payload lazily retrieved to minimize API calls
-
         self.api_version: int = int(api_version)
-        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self._info
+        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self.info to pull mode from ODS.
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
 
@@ -123,11 +121,9 @@ class EdFiClient:
         """
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
-    @property
+    @functools.cached_property
     def info(self) -> dict:
-        if self._info is None:
-            self._info = self.get_info()
-        return self._info
+        return self.get_info()
 
 
     # API Mode
@@ -336,47 +332,29 @@ class EdFiClient:
 
 
     # Resources Swagger
-    @property
+    @functools.cached_property
     def resources_swagger(self):
-        if self.swaggers.get('resources') is None:
-            self.swaggers['resources'] = self.get_swagger('resources')
-        return self.swaggers.get('resources')
-
-    def list_resources(self) -> List[str]:
-        """
-        Return a list of resource endpoints, as defined in Swagger.
-        """
-        return self.resources_swagger.endpoints
+        return self.get_swagger('resource')
 
     @property
     def resources(self) -> List[str]:
-        return self.list_resources()
+        return self.resources_swagger.endpoints
 
 
     # Descriptors Swagger
-    @property
+    @functools.cached_property
     def descriptors_swagger(self):
-        if self.swaggers.get('descriptors') is None:
-            self.swaggers['descriptors'] = self.get_swagger('descriptors')
-        return self.swaggers.get('descriptors')
-
-    def list_descriptors(self) -> List[str]:
-        """
-        Return a list ofdescriptors endpoints, as defined in Swagger.
-        """
-        return self.descriptors_swagger.endpoints
+        return self.get_swagger('descriptors')
 
     @property
     def descriptors(self) -> List[str]:
-        return self.list_descriptors()
+        return self.descriptors_swagger.endpoints
 
 
     # Composites Swagger
-    @property
+    @functools.cached_property
     def composites_swagger(self):
-        if self.swaggers.get('composites') is None:
-            self.swaggers['composites'] = self.get_swagger('composites')
-        return self.swaggers.get('composites')
+        return self.get_swagger('composites')
 
 
     # Utility functions
