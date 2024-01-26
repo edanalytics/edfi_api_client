@@ -106,6 +106,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def description(self) -> Optional[str]:
         return self.swagger.get_endpoint_descriptions().get(self.name)
 
+
     ### Generic API methods
     def ping(self, **kwargs) -> requests.Response:
         """
@@ -113,10 +114,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        params = self.params.copy()
-        params['limit'] = 1
+        _params = self.params.copy()
+        _params['limit'] = 1
 
-        res = self.session.get_response(self.url, params=params, **kwargs)
+        res = self.session.get_response(self.url, params=_params, **kwargs)
 
         # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
@@ -125,7 +126,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return res
 
-    def get_total_count(self, params: Optional['EdFiParams'] = None, **kwargs):
+    def get_total_count(self, params: dict = {}, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -133,9 +134,12 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        _params = (params or self.params).copy()  # Don't mutate argument params or class params
+        logging.info(f"[Get Total Count] Endpoint  : {self.url}")
+
+        _params = EdFiParams({**self.params, **params})  # Merge and sanitize new params
         _params['totalCount'] = True
         _params['limit'] = 0
+        logging.info(f"[Get Total Count] Parameters: {_params}")
 
         res = self.session.get_response(self.url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
@@ -144,26 +148,27 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def total_count(self):
         return self.get_total_count()
 
-    def get(self, limit: Optional[int] = None, **kwargs) -> List[dict]:
+    def get(self, limit: Optional[int] = None, params: dict = {}, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
         :return:
         """
         logging.info(f"[Get {self.type}] Endpoint  : {self.url}")
-        logging.info(f"[Get {self.type}] Parameters: {self.params}")
 
-        params = self.params.copy()
-
+        _params = EdFiParams({**self.params, **params})  # Merge and sanitize new params
         if limit is not None:
-            params['limit'] = limit
+            _params['limit'] = limit
+        logging.info(f"[Get {self.type}] Parameters: {_params}")
 
-        return self.session.get_response(self.url, params=params, **kwargs).json()
+        return self.session.get_response(self.url, params=_params, **kwargs).json()
 
 
     ### GET Methods
     def get_pages(self,
         *,
+        params: dict = {},  # Optional additional params
+
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -182,6 +187,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
+        _params = EdFiParams({**self.params, **params})  # Merge and sanitize new params
+        logging.info(f"[Paged Get {self.type}] Parameters: {_params}")
+
         if step_change_version and reverse_paging:
             logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
@@ -191,6 +199,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._get_paged_window_params(
+            params=_params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -206,6 +215,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     def get_rows(self,
         *,
+        params: dict = {},  # Optional additional params
+
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -216,6 +227,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         This method returns all rows from an endpoint, applying pagination logic as necessary.
         Rows are returned as a generator.
 
+        :param params:
         :param page_size:
         :param reverse_paging:
         :param step_change_version:
@@ -223,6 +235,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         paged_result_iter = self.get_pages(
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -235,6 +248,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         path: str,
 
         *,
+        params: dict = {},  # Optional additional params
+
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -252,14 +267,16 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param reverse_paging:
         :return:
         """
-        logging.info(f"Writing rows to disk: `{path}`")
+        logging.info(f"[Get to JSON] Writing rows to disk: `{path}`")
 
         paged_results = self.get_pages(
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
         )
 
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'wb') as fp:
             for page in paged_results:
                 fp.write(util.page_to_bytes(page))
@@ -268,14 +285,17 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     def _get_paged_window_params(self,
         *,
+        params: EdFiParams,
+
         page_size: int,
         reverse_paging: bool,
         step_change_version: bool,
         change_version_step_size: int,
+
         **kwargs
     ) -> Iterator[EdFiParams]:
         """
-
+        :param params:
         :param page_size:
         :param step_change_version:
         :param change_version_step_size:
@@ -283,15 +303,15 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         if step_change_version:
-            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
+            for cv_window_params in params.build_change_version_window_params(change_version_step_size):
                 total_count = self.get_total_count(params=cv_window_params, **kwargs)
 
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
                 yield from cv_offset_params_list
 
         else:
-            total_count = self.get_total_count(params=self.params, **kwargs)
-            yield from self.params.build_offset_window_params(page_size, total_count=total_count)
+            total_count = self.get_total_count(params=params, **kwargs)
+            yield from params.build_offset_window_params(page_size, total_count=total_count)
 
 
     ### POST Methods
