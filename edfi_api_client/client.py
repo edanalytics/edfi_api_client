@@ -38,10 +38,10 @@ class EdFiClient:
         client_secret: Optional[str] = None,
 
         *,
+        api_version  : int = 3,  # Deprecated
         api_mode     : Optional[str] = None,
         api_year     : Optional[int] = None,
         instance_code: Optional[str] = None,
-        api_version  : int = 3,  # Deprecated
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
@@ -96,7 +96,7 @@ class EdFiClient:
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
 
 
-    ### Methods using the base URL info
+    ### Unauthenticated base-URL payload methods
     @property
     def info(self) -> dict:
         if self._info is None:
@@ -220,6 +220,19 @@ class EdFiClient:
         return util.url_join(self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions')
 
 
+    ### Unauthenticated Swagger methods
+    def get_swagger(self, component: str = 'resources'):
+        return EdFiSwagger(self.base_url, component=component)
+
+    @property
+    def resources(self) -> List[str]:
+        return self.resources_swagger.get_endpoints()
+
+    @property
+    def descriptors(self) -> List[str]:
+        return self.descriptors_swagger.get_endpoints()
+
+
     ### Methods for accessing ODS endpoints
     def _require_session(self):
         if self.session is None:
@@ -307,16 +320,3 @@ class EdFiClient:
             session=self.session, swagger=self.composites_swagger,
             **kwargs
         )
-
-
-    ### Methods related to retrieving the Swagger or attributes retrieved therein
-    def get_swagger(self, component: str = 'resources'):
-        return EdFiSwagger(self.base_url, component=component)
-
-    @property
-    def resources(self) -> List[str]:
-        return self.resources_swagger.get_endpoints()
-
-    @property
-    def descriptors(self) -> List[str]:
-        return self.descriptors_swagger.get_endpoints()

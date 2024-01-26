@@ -141,7 +141,7 @@ class EdFiSession:
         :return:
         """
         response = self.session.get(url, headers=self.auth_headers, params=params, verify=self.verify_ssl)
-        self.custom_raise_for_status(response)
+        self._custom_raise_for_status(response)
         return response
 
 
@@ -186,7 +186,7 @@ class EdFiSession:
 
     ### Error response methods
     @staticmethod
-    def custom_raise_for_status(response):
+    def _custom_raise_for_status(response):
         """
         Custom HTTP exception logic and logging.
         The built-in Response.raise_for_status() fails too broadly, even in cases where a connection-reset is enough.

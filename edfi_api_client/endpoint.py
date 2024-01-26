@@ -33,9 +33,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
         swagger: Optional[EdFiSwagger] = None,
         **kwargs
     ):
+        # Hide the intermediate endpoint-URL to prevent confusion
+        self._endpoint_url = endpoint_url
+
         # Names can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         self.namespace, self.name = self._parse_names(namespace, name)
-        self.endpoint_url = endpoint_url
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
@@ -85,7 +87,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         deletes = 'deletes' if self.get_deletes else None
 
         return util.url_join(
-            self.endpoint_url,
+            self._endpoint_url,
             self.namespace, self.name, deletes
         )
 
@@ -107,7 +109,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         return self.swagger.get_endpoint_descriptions().get(self.name)
 
 
-    ### Generic API methods
+    ### Session API methods
     def ping(self, params: Optional[dict] = None, **kwargs) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
@@ -124,9 +126,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         # To ping a composite, a limit of at least one is required.
         _params['limit'] = 1
 
-        res = self.session.get_response(self.url, params=_params, **kwargs)
-
         # We do not want to surface student-level data during ODS-checks.
+        res = self.session.get_response(self.url, params=_params, **kwargs)
         if res.ok:
             res._content = b'{"message": "Ping was successful! ODS data has been intentionally scrubbed from this response."}'
 
@@ -281,6 +282,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         Rows are written to a file as JSON lines.
 
         :param path:
+        :param params:
         :param page_size:
         :param step_change_version:
         :param change_version_step_size:
@@ -489,12 +491,12 @@ class EdFiComposite(EdFiEndpoint):
         # If a filter is applied, the URL changes to match the filter type.
         if self.filter_type is None and self.filter_id is None:
             return util.url_join(
-                self.endpoint_url,
+                self._endpoint_url,
                 self.namespace, self.composite, self.name.title()
             )
         elif self.filter_type is not None and self.filter_id is not None:
             return util.url_join(
-                self.endpoint_url,
+                self._endpoint_url,
                 self.namespace, self.composite,
                 self.filter_type, self.filter_id, self.name
             )
