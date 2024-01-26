@@ -5,10 +5,7 @@ from edfi_api_client import EdFiClient
 
 
 ###
-master_secret = "edfi_scde_2023"
-
-
-def test_unauthenticated_client(secret: str = master_secret):
+def test_unauthenticated_client(secret: str, verbose: bool = False):
     """
 
     :param secret:
@@ -16,7 +13,7 @@ def test_unauthenticated_client(secret: str = master_secret):
     """
     credentials = easecret.get_secret(secret)
     base_url = credentials.get('base_url')
-    edfi = EdFiClient(base_url)
+    edfi = EdFiClient(base_url, verbose=verbose)
 
     ### Info Payload
     info_payload = edfi.get_info()
@@ -42,14 +39,14 @@ def test_unauthenticated_client(secret: str = master_secret):
         _ = edfi.composite('students')
 
 
-def test_authenticated_client(secret: str = master_secret):
+def test_authenticated_client(secret: str, verbose: bool = False):
     """
 
     :param secret:
     :return:
     """
     credentials = easecret.get_secret(secret)
-    edfi = EdFiClient(**credentials)
+    edfi = EdFiClient(**credentials, verbose=verbose)
 
     _ = edfi.get_newest_change_version()
 
@@ -101,5 +98,8 @@ def test_authenticated_client(secret: str = master_secret):
 
 
 if __name__ == '__main__':
-    test_unauthenticated_client()
-    test_authenticated_client()
+    MASTER_SECRET = "edfi_scde_2023"
+    VERBOSE = False
+
+    test_unauthenticated_client(MASTER_SECRET, verbose=VERBOSE)
+    test_authenticated_client(MASTER_SECRET, verbose=VERBOSE)
