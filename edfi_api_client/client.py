@@ -13,7 +13,7 @@ from typing import Callable, Dict, List, Optional
 
 import logging
 logging.basicConfig(
-    level="INFO",
+    level="WARNING",
     format='[%(asctime)s] %(levelname)-8s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
 )
@@ -45,7 +45,9 @@ class EdFiClient:
         verify_ssl   : bool = True,
         verbose      : bool = False,
     ):
-        self.verbose: bool = verbose
+        # Update logger first
+        if verbose:
+            logging.getLogger().setLevel(logging.INFO)
 
         self.base_url: str = base_url
         self.client_key: Optional[str] = client_key
@@ -72,13 +74,13 @@ class EdFiClient:
             # Synchronous client connects immediately on init.
             self.session = EdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
             self.session.connect()
-            self.verbose_log("Connection to ODS successful!")
+            logging.info("Connection to ODS successful!")
 
             # Asynchronous client connects only when called in an async method.
             self.async_session = AsyncEdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
 
         else:
-            self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
+            logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
 
     def __repr__(self) -> str:
         """
@@ -319,7 +321,7 @@ class EdFiClient:
         :param component: Which component's swagger spec should be retrieved?
         :return: Swagger specification definition, as a dictionary.
         """
-        self.verbose_log(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
+        logging.info(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
 
         swagger_url = util.url_join(
             self.base_url, 'metadata', 'data/v3', component, 'swagger.json'
@@ -361,15 +363,3 @@ class EdFiClient:
     @staticmethod
     def is_edfi2() -> bool:  # Deprecated method
         return False
-
-    def verbose_log(self, message: str, verbose: bool = False):
-        """
-        Unified method for logging class state during API pulls.
-        Set `self.verbose=True or verbose=True` to log.
-
-        :param message:
-        :param verbose:
-        :return:
-        """
-        if self.verbose or verbose:
-            logging.info(message)

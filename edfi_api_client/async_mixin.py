@@ -212,18 +212,18 @@ class AsyncEndpointMixin:
         :return:
         """
         async def verbose_get_page(param: 'EdFiParams'):
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {param}")
+            logging.info(f"[Async Paged Get {self.type}] Parameters: {param}")
             res = await session.get_response(self.url, params=param)
             return await res.json()
 
-        self.client.verbose_log(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
 
         if step_change_version and reverse_paging:
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+            logging.info(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping")
+            logging.info(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping")
         else:
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
+            logging.info(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = await self.async_get_paged_window_params(
@@ -296,7 +296,7 @@ class AsyncEndpointMixin:
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
             await fp.write(util.page_to_bytes(await page))
 
-        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+        logging.info(f"Writing rows to disk: `{path}`")
 
         paged_results = self.async_get_pages(
             session=session,
@@ -377,7 +377,7 @@ class AsyncEndpointMixin:
             except Exception as error:
                 await self._async_log_response(output_log, idx, message=error)
 
-        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Async Post {self.type}] Endpoint  : {self.url}")
 
         await self._gather_with_concurrency(
             session.pool_size,
@@ -408,7 +408,7 @@ class AsyncEndpointMixin:
             with open(path_, 'rb') as fp:
                 yield from fp
 
-        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+        logging.info(f"Posting rows from disk: `{path}`")
 
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
@@ -439,7 +439,7 @@ class AsyncEndpointMixin:
             except Exception as error:
                 await self._async_log_response(output_log, id, message=error)
 
-        self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Async Delete {self.type}] Endpoint  : {self.url}")
 
         await self._gather_with_concurrency(
             session.pool_size,

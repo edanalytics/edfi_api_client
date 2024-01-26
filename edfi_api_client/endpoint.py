@@ -132,8 +132,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        self.client.verbose_log(f"[Get {self.type}] Endpoint  : {self.url}")
-        self.client.verbose_log(f"[Get {self.type}] Parameters: {self.params}")
+        logging.info(f"[Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Get {self.type}] Parameters: {self.params}")
 
         params = self.params.copy()
 
@@ -192,14 +192,14 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param change_version_step_size:
         :return:
         """
-        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
         if step_change_version and reverse_paging:
-            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
-            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
+            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
         else:
-            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+            logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._get_paged_window_params(
@@ -210,10 +210,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Begin pagination-loop
         for paged_params in paged_params_list:
-            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
             res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
 
-            self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+            logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
     def get_rows(self,
@@ -264,7 +264,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param reverse_paging:
         :return:
         """
-        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+        logging.info(f"Writing rows to disk: `{path}`")
 
         paged_results = self.get_pages(
             page_size=page_size, reverse_paging=reverse_paging,
@@ -322,7 +322,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        self.client.verbose_log(f"[Post {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Post {self.type}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         for idx, row in enumerate(rows):
@@ -354,7 +354,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+        logging.info(f"Posting rows from disk: `{path}`")
 
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
@@ -371,7 +371,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param ids:
         :return:
         """
-        self.client.verbose_log(f"[Delete {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Delete {self.type}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         for id in ids:
@@ -505,8 +505,8 @@ class EdFiComposite(EdFiEndpoint):
                 "Change versions are not implemented in composites! Remove `step_change_version` from arguments."
             )
 
-        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
-        self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Reset pagination parameters
         paged_params = self.params.copy()
@@ -517,20 +517,20 @@ class EdFiComposite(EdFiEndpoint):
         while True:
 
             ### GET from the API and yield the resulting JSON payload
-            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
             res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
-                self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+                logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
                 yield res.json()
 
-                self.client.verbose_log(f"@ Paginating offset...")
+                logging.info(f"@ Paginating offset...")
                 paged_params['offset'] += page_size
 
             # If no rows are returned, end pagination.
             else:
-                self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
+                logging.info(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
                 break
 
     def post_rows(self, *args, **kwargs):
