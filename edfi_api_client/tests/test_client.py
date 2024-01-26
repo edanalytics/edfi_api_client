@@ -20,6 +20,12 @@ def test_unauthenticated_client(secret: str, verbose: bool = False):
     payload_keys = ('apiMode', 'version', 'dataModels', 'urls',)
     assert all(key in info_payload for key in payload_keys)
 
+    ### Deprecated getters
+    print(edfi.get_api_mode())
+    print(edfi.get_ods_version())
+    print(edfi.get_data_model_version())
+    print(edfi.get_instance_locator())
+
     ### Swagger
     print(edfi.get_swagger(component='resources'))
     print(edfi.get_swagger(component='descriptors'))

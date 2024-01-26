@@ -1,3 +1,5 @@
+import deprecation
+import importlib
 import requests
 from requests.exceptions import HTTPError
 
@@ -59,14 +61,14 @@ class EdFiClient:
         self._info: Optional[dict] = None
 
         self.api_version: int = int(api_version)
-        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
+        self._api_mode: str = api_mode  # Make non-public to allow similar syntax for all info getters.
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
 
         # Swagger variables for populating resource metadata (retrieved lazily)
-        self.resources_swagger: EdFiSwagger = self.get_swagger('resources')
-        self.descriptors_swagger: EdFiSwagger = self.get_swagger('descriptors')
-        self.composites_swagger: EdFiSwagger = self.get_swagger('composites')
+        self.resources_swagger  : EdFiSwagger = EdFiSwagger(self.base_url, 'resources')
+        self.descriptors_swagger: EdFiSwagger = EdFiSwagger(self.base_url, 'descriptors')
+        self.composites_swagger : EdFiSwagger = EdFiSwagger(self.base_url, 'composites')
 
         # If ID and secret are passed, prepare synchronous and asynchronous sessions.
         self.session: Optional[EdFiSession] = None
@@ -129,33 +131,46 @@ class EdFiClient:
         """
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
-    # API Mode (attribute is set during init)
-    def get_api_mode(self) -> Optional[str]:
+    # API Mode
+    @property
+    def api_mode(self) -> Optional[str]:
         """
         Retrieve api_mode from the metadata exposed at the API root.
         :return:
         """
+        # Default to user-provided API mode if specified.
+        if self._api_mode:
+            return self._api_mode
+
         api_mode = self.info.get('apiMode')
         return util.camel_to_snake(api_mode) if api_mode else None
+
+    @deprecation.deprecated(
+        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
+        details="Get attributes directly using `EdFiClient.api_mode`."
+    )
+    def get_api_mode(self) -> Optional[str]:
+        return self.api_mode
 
     # ODS Version
     @property
     def ods_version(self) -> Optional[str]:
-        return self.get_ods_version()
-
-    def get_ods_version(self) -> Optional[str]:
         """
         Retrieve ods_version from the metadata exposed at the API root.
         :return:
         """
         return self.info.get('version')
 
+    @deprecation.deprecated(
+        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
+        details="Get attributes directly using `EdFiClient.ods_version`."
+    )
+    def get_ods_version(self) -> Optional[str]:
+        return self.ods_version
+
     # Data Model Version
     @property
     def data_model_version(self) -> Optional[str]:
-        return self.get_data_model_version()
-
-    def get_data_model_version(self) -> Optional[str]:
         """
         Retrieve Ed-Fi data model version from the metadata exposed at the API root.
         :return:
@@ -168,12 +183,16 @@ class EdFiClient:
         else:
             return None
 
+    @deprecation.deprecated(
+        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
+        details="Get attributes directly using `EdFiClient.data_model_version`."
+    )
+    def get_data_model_version(self) -> Optional[str]:
+        return self.data_model_version
+
     # Instance Locator
     @property
     def instance_locator(self) -> Optional[str]:
-        return self.get_instance_locator()
-
-    def get_instance_locator(self) -> Optional[str]:
         """
         Construct API URL components to resolve requests in a multi-ODS
 
@@ -201,6 +220,14 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
+    @deprecation.deprecated(
+        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
+        details="Get attributes directly using `EdFiClient.instance_locator`."
+    )
+    def get_instance_locator(self) -> Optional[str]:
+        return self.instance_locator
+
+
     # URLs
     # TODO: Should these be built here, or pulled from `self.info`?
     @property
@@ -222,7 +249,9 @@ class EdFiClient:
 
     ### Unauthenticated Swagger methods
     def get_swagger(self, component: str = 'resources'):
-        return EdFiSwagger(self.base_url, component=component)
+        swagger = EdFiSwagger(self.base_url, component=component)
+        _ = swagger.payload  # Force eager execution
+        return swagger
 
     @property
     def resources(self) -> List[str]:
