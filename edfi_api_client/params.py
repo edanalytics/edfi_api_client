@@ -24,6 +24,10 @@ class EdFiParams(dict):
     def copy(self) -> 'EdFiParams':
         return EdFiParams( super().copy() )
 
+    def update(self, iterable: dict):
+        sanitized = EdFiParams.sanitize_params(**dict(iterable))
+        return super().update(sanitized)
+
     @classmethod
     def sanitize_params(cls,
         params: Optional[dict] = None,

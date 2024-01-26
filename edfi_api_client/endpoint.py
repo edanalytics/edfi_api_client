@@ -108,25 +108,31 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Generic API methods
-    def ping(self, **kwargs) -> requests.Response:
+    def ping(self, params: Optional[dict] = None, **kwargs) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
 
         :return:
         """
+        logging.info(f"[Ping {self.type}] Endpoint  : {self.url}")
+
+        # Copy params and merge optional additions
         _params = self.params.copy()
+        if params:
+            _params.update(params)
+
+        # To ping a composite, a limit of at least one is required.
         _params['limit'] = 1
 
         res = self.session.get_response(self.url, params=_params, **kwargs)
 
-        # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
         if res.ok:
             res._content = b'{"message": "Ping was successful! ODS data has been intentionally scrubbed from this response."}'
 
         return res
 
-    def get_total_count(self, params: dict = {}, **kwargs):
+    def get_total_count(self, params: Optional[dict] = None, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -134,12 +140,16 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        logging.info(f"[Get Total Count] Endpoint  : {self.url}")
+        logging.info(f"[Get Total Count {self.type}] Endpoint  : {self.url}")
 
-        _params = EdFiParams({**self.params, **params})  # Merge and sanitize new params
+        # Copy params and merge optional additions
+        _params = self.params.copy()
+        if params:
+            _params.update(params)
+
         _params['totalCount'] = True
         _params['limit'] = 0
-        logging.info(f"[Get Total Count] Parameters: {_params}")
+        logging.info(f"[Get Total Count {self.type}] Parameters: {_params}")
 
         res = self.session.get_response(self.url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
@@ -148,7 +158,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def total_count(self):
         return self.get_total_count()
 
-    def get(self, limit: Optional[int] = None, params: dict = {}, **kwargs) -> List[dict]:
+    def get(self, limit: Optional[int] = None, params: Optional[dict] = None, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
@@ -156,9 +166,15 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         logging.info(f"[Get {self.type}] Endpoint  : {self.url}")
 
-        _params = EdFiParams({**self.params, **params})  # Merge and sanitize new params
-        if limit is not None:
+        # Copy params and merge optional additions
+        _params = self.params.copy()
+        if params:
+            _params.update(params)
+
+        # Override limit if passed
+        if limit:
             _params['limit'] = limit
+
         logging.info(f"[Get {self.type}] Parameters: {_params}")
 
         return self.session.get_response(self.url, params=_params, **kwargs).json()
@@ -167,7 +183,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     ### GET Methods
     def get_pages(self,
         *,
-        params: dict = {},  # Optional additional params
+        params: Optional[dict] = None,  # Optional additional params
 
         page_size: int = 100,
         reverse_paging: bool = True,
@@ -179,6 +195,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a generator.
 
+        :param params:
         :param page_size:
         :param reverse_paging:
         :param step_change_version:
@@ -187,7 +204,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
-        _params = EdFiParams({**self.params, **params})  # Merge and sanitize new params
+        # Copy params and merge optional additions
+        _params = self.params.copy()
+        if params:
+            _params.update(params)
         logging.info(f"[Paged Get {self.type}] Parameters: {_params}")
 
         if step_change_version and reverse_paging:
@@ -215,7 +235,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     def get_rows(self,
         *,
-        params: dict = {},  # Optional additional params
+        params: Optional[dict] = None,  # Optional additional params
 
         page_size: int = 100,
         reverse_paging: bool = True,
@@ -248,7 +268,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         path: str,
 
         *,
-        params: dict = {},  # Optional additional params
+        params: Optional[dict] = None,  # Optional additional params
 
         page_size: int = 100,
         reverse_paging: bool = True,
@@ -495,11 +515,12 @@ class EdFiComposite(EdFiEndpoint):
             "Total counts have not yet been implemented in Ed-Fi composites!"
         )
 
-    def get_pages(self, *, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
+    def get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a generator.
 
+        :param params:
         :param page_size:
         :return:
         """
@@ -513,6 +534,8 @@ class EdFiComposite(EdFiEndpoint):
 
         # Reset pagination parameters
         paged_params = self.params.copy()
+        if params:
+            paged_params.update(params)
         paged_params['limit'] = page_size
         paged_params['offset'] = 0
 
