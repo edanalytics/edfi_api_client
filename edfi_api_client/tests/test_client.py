@@ -21,9 +21,9 @@ def test_unauthenticated_client(secret: str, verbose: bool = False):
     assert all(key in info_payload for key in payload_keys)
 
     ### Swagger
-    _ = edfi.get_swagger(component='resources')
-    _ = edfi.get_swagger(component='descriptors')
-    _ = edfi.get_swagger(component='composites')
+    print(edfi.get_swagger(component='resources'))
+    print(edfi.get_swagger(component='descriptors'))
+    print(edfi.get_swagger(component='composites'))
 
     ### Authenticated methods
     with pytest.raises(ValueError):
@@ -48,15 +48,19 @@ def test_authenticated_client(secret: str, verbose: bool = False):
     credentials = easecret.get_secret(secret)
     edfi = EdFiClient(**credentials, verbose=verbose)
 
-    _ = edfi.get_newest_change_version()
+    print(edfi.get_newest_change_version())
 
     ### Resource
     resource = edfi.resource('students', minChangeVersion=0, maxChangeVersion=500000)
     assert resource.ping().ok
 
+    print(resource.description)
     assert resource.description
+    print(resource.has_deletes)
     assert resource.has_deletes
+    print(resource.fields)
     assert resource.fields
+    print(resource.required_fields)
     assert resource.required_fields
 
     resource_count = resource.get_total_count()
@@ -98,7 +102,7 @@ def test_authenticated_client(secret: str, verbose: bool = False):
 
 
 if __name__ == '__main__':
-    MASTER_SECRET = "edfi_scde_2023"
+    MASTER_SECRET = "edfi_sc_cougar_2024"
     VERBOSE = True
 
     test_unauthenticated_client(MASTER_SECRET, verbose=VERBOSE)
