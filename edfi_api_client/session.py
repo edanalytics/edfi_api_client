@@ -20,13 +20,13 @@ class EdFiSession:
 
     """
     def __init__(self,
-        base_url: str,
+        oauth_url: str,
         client_key: str,
         client_secret: str,
         verify_ssl: bool = True,
         **kwargs
     ):
-        self.base_url: str = base_url
+        self.oauth_url: str = oauth_url
         self.client_key: str = client_key
         self.client_secret: str = client_secret
         self.verify_ssl: bool = verify_ssl
@@ -57,10 +57,8 @@ class EdFiSession:
 
         :return:
         """
-        token_path = 'oauth/token'
-
         auth_response = requests.post(
-            util.url_join(self.base_url, token_path),
+            self.oauth_url,
             auth=HTTPBasicAuth(self.client_key, self.client_secret),
             data={'grant_type': 'client_credentials'},
             verify=self.verify_ssl

@@ -1,4 +1,3 @@
-import functools
 import requests
 from requests.exceptions import HTTPError
 
@@ -8,7 +7,7 @@ from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.swagger import EdFiSwagger
 
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 
 import logging
@@ -75,12 +74,12 @@ class EdFiClient:
 
         if self.client_key and self.client_secret:
             # Synchronous client connects immediately on init.
-            self.session = EdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+            self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
             self.session.connect()
             logging.info("Connection to ODS successful!")
 
             # Asynchronous client connects only when called in an async method.
-            self.async_session = AsyncEdFiSession(self.base_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+            self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
 
         else:
             logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
@@ -98,6 +97,12 @@ class EdFiClient:
 
 
     ### Methods using the base URL info
+    @property
+    def info(self) -> dict:
+        if self._info is None:
+            self._info = self.get_info()
+        return self._info
+
     def get_info(self) -> dict:
         """
         Ed-Fi3 returns a helpful payload from the base URL.
@@ -120,21 +125,11 @@ class EdFiClient:
             }
         }
 
-        This method is lazy to circumvent multiple API calls to the same endpoint.
-
         :return: The descriptive payload returned by the API host.
         """
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
-    @property
-    def info(self) -> dict:
-        if self._info is None:
-            self._info = self.get_info()
-        return self._info
-
-
-    # API Mode
-    # TODO: Make GETs eager and properties lazy.
+    # API Mode (attribute is set during init)
     def get_api_mode(self) -> Optional[str]:
         """
         Retrieve api_mode from the metadata exposed at the API root.
@@ -143,8 +138,11 @@ class EdFiClient:
         api_mode = self.info.get('apiMode')
         return util.camel_to_snake(api_mode) if api_mode else None
 
-
     # ODS Version
+    @property
+    def ods_version(self) -> Optional[str]:
+        return self.get_ods_version()
+
     def get_ods_version(self) -> Optional[str]:
         """
         Retrieve ods_version from the metadata exposed at the API root.
@@ -152,12 +150,11 @@ class EdFiClient:
         """
         return self.info.get('version')
 
-    @property
-    def ods_version(self) -> Optional[str]:
-        return self.get_ods_version()
-
-
     # Data Model Version
+    @property
+    def data_model_version(self) -> Optional[str]:
+        return self.get_data_model_version()
+
     def get_data_model_version(self) -> Optional[str]:
         """
         Retrieve Ed-Fi data model version from the metadata exposed at the API root.
@@ -171,12 +168,11 @@ class EdFiClient:
         else:
             return None
 
-    @property
-    def data_model_version(self) -> Optional[str]:
-        return self.get_data_model_version()
-
-
     # Instance Locator
+    @property
+    def instance_locator(self) -> Optional[str]:
+        return self.get_instance_locator()
+
     def get_instance_locator(self) -> Optional[str]:
         """
         Construct API URL components to resolve requests in a multi-ODS
@@ -205,12 +201,8 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
-    @property
-    def instance_locator(self) -> Optional[str]:
-        return self.get_instance_locator()
-
-
-    # URLs  TODO: Should these be pulled self.info?
+    # URLs
+    # TODO: Should these be built here, or pulled from `self.info`?
     @property
     def oauth_url(self) -> str:
         return util.url_join(self.base_url, 'oauth/token')
@@ -223,37 +215,27 @@ class EdFiClient:
     def composite_url(self) -> str:
         return util.url_join(self.base_url, 'composites/v1', self.instance_locator)
 
+    @property
+    def change_version_url(self) -> str:
+        return util.url_join(self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions')
+
 
     ### Methods for accessing ODS endpoints
-    def _require_session(func: Callable) -> Callable:
-        """
-        This decorator verifies a session is established before calling the associated class method.
+    def _require_session(self):
+        if self.session is None:
+            raise ValueError(
+                "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
+            )
 
-        :param func:
-        :return:
-        """
-        @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
-            if self.session is None:
-                raise ValueError(
-                    "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
-                )
-            return func(self, *args, **kwargs)
-        return wrapped
-
-    # TODO: ALL requests go through Session!
-    @_require_session
     def get_newest_change_version(self) -> int:
         """
         Return the newest change version marked in the ODS (Ed-Fi3 only).
 
         :return:
         """
-        change_query_path = util.url_join(
-            self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions'
-        )
+        self._require_session()
 
-        res = self.session.get_response(change_query_path)
+        res = self.session.get_response(self.change_version_url)
         if not res.ok:
             http_error_msg = (
                 f"Change version check failed with status `{res.status_code}`: {res.reason}"
@@ -266,7 +248,6 @@ class EdFiClient:
 
 
     ### Endpoint Initializers
-    @_require_session
     def resource(self,
         name: str,
         *,
@@ -275,13 +256,17 @@ class EdFiClient:
         get_deletes: bool = False,
         **kwargs
     ) -> EdFiResource:
+        """
+
+        """
+        self._require_session()
+
         return EdFiResource(
             self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
             session = self.session, swagger=self.resources_swagger,
             **kwargs
         )
 
-    @_require_session
     def descriptor(self,
         name: str,
         *,
@@ -293,13 +278,14 @@ class EdFiClient:
         Even though descriptors and resources are accessed via the same endpoint,
         this may not be known to users, so a separate method is defined.
         """
+        self._require_session()
+
         return EdFiDescriptor(
             self.resource_url, name, namespace=namespace, params=params,
             session=self.session, swagger=self.descriptors_swagger,
             **kwargs
         )
 
-    @_require_session
     def composite(self,
         name: str,
         *,
@@ -310,6 +296,11 @@ class EdFiClient:
         filter_id: Optional[str] = None,
         **kwargs
     ) -> EdFiComposite:
+        """
+
+        """
+        self._require_session()
+
         return EdFiComposite(
             self.composite_url, name, namespace=namespace, params=params,
             composite=composite, filter_type=filter_type, filter_id=filter_id,
