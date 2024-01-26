@@ -8,7 +8,7 @@ from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.swagger import EdFiSwagger
 
-from typing import Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 
 import logging
@@ -31,6 +31,8 @@ class EdFiClient:
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
     """
+    is_edfi2: bool = False  # Deprecated method
+
     def __init__(self,
         base_url     : str,
         client_key   : Optional[str] = None,
@@ -59,12 +61,13 @@ class EdFiClient:
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
 
+        # Information from base URL get (retrieved lazily)
+        self._info: Optional[dict] = None
+
         # Swagger variables for populating resource metadata (retrieved lazily)
-        self.swaggers: Dict[str, Optional[EdFiSwagger]] = {
-            'resources': None,
-            'descriptors': None,
-            'composites': None,
-        }
+        self.resources_swagger: EdFiSwagger = self.get_swagger('resources')
+        self.descriptors_swagger: EdFiSwagger = self.get_swagger('descriptors')
+        self.composites_swagger: EdFiSwagger = self.get_swagger('composites')
 
         # If ID and secret are passed, prepare synchronous and asynchronous sessions.
         self.session: Optional[EdFiSession] = None
@@ -123,9 +126,11 @@ class EdFiClient:
         """
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
-    @functools.cached_property
+    @property
     def info(self) -> dict:
-        return self.get_info()
+        if self._info is None:
+            self._info = self.get_info()
+        return self._info
 
 
     # API Mode
@@ -235,6 +240,7 @@ class EdFiClient:
             return func(self, *args, **kwargs)
         return wrapped
 
+    # TODO: ALL requests go through Session!
     @_require_session
     def get_newest_change_version(self) -> int:
         """
@@ -269,7 +275,7 @@ class EdFiClient:
         **kwargs
     ) -> EdFiResource:
         return EdFiResource(
-            client=self,
+            client=self, session=self.session, swagger=self.resources_swagger,
             name=name, namespace=namespace, get_deletes=get_deletes,
             params=params, **kwargs
         )
@@ -287,7 +293,7 @@ class EdFiClient:
         this may not be known to users, so a separate method is defined.
         """
         return EdFiDescriptor(
-            client=self,
+            client=self, session=self.session, swagger=self.descriptors_swagger,
             name=name, namespace=namespace, get_deletes=False,
             params=params, **kwargs
         )
@@ -304,7 +310,7 @@ class EdFiClient:
         **kwargs
     ) -> EdFiComposite:
         return EdFiComposite(
-            client=self,
+            client=self, session=self.session, swagger=self.composites_swagger,
             name=name, namespace=namespace, composite=composite,
             filter_type=filter_type, filter_id=filter_id,
             params=params, **kwargs
@@ -312,54 +318,13 @@ class EdFiClient:
 
 
     ### Methods related to retrieving the Swagger or attributes retrieved therein
-    def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
-        """
-        OpenAPI Specification describes the entire Ed-Fi API surface in a
-        JSON payload.
-        Can be used to surface available endpoints.
-
-        :param component: Which component's swagger spec should be retrieved?
-        :return: Swagger specification definition, as a dictionary.
-        """
-        logging.info(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
-
-        swagger_url = util.url_join(
-            self.base_url, 'metadata', 'data/v3', component, 'swagger.json'
-        )
-
-        payload = requests.get(swagger_url, verify=self.verify_ssl).json()
-        swagger = EdFiSwagger(component, payload)
-
-        return swagger
-
-
-    # Resources Swagger
-    @functools.cached_property
-    def resources_swagger(self):
-        return self.get_swagger('resource')
+    def get_swagger(self, component: str = 'resources'):
+        return EdFiSwagger(self.base_url, component=component)
 
     @property
     def resources(self) -> List[str]:
-        return self.resources_swagger.endpoints
-
-
-    # Descriptors Swagger
-    @functools.cached_property
-    def descriptors_swagger(self):
-        return self.get_swagger('descriptors')
+        return self.resources_swagger.get_endpoints()
 
     @property
     def descriptors(self) -> List[str]:
-        return self.descriptors_swagger.endpoints
-
-
-    # Composites Swagger
-    @functools.cached_property
-    def composites_swagger(self):
-        return self.get_swagger('composites')
-
-
-    # Utility functions
-    @staticmethod
-    def is_edfi2() -> bool:  # Deprecated method
-        return False
+        return self.descriptors_swagger.get_endpoints()

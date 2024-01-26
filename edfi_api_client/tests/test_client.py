@@ -99,7 +99,7 @@ def test_authenticated_client(secret: str, verbose: bool = False):
 
 if __name__ == '__main__':
     MASTER_SECRET = "edfi_scde_2023"
-    VERBOSE = False
+    VERBOSE = True
 
     test_unauthenticated_client(MASTER_SECRET, verbose=VERBOSE)
     test_authenticated_client(MASTER_SECRET, verbose=VERBOSE)

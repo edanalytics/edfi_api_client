@@ -7,6 +7,7 @@ from collections import defaultdict
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
+from edfi_api_client.swagger import EdFiSwagger
 
 from typing import BinaryIO, Dict, Iterator, List, Optional, Union
 from typing import TYPE_CHECKING
@@ -17,22 +18,25 @@ if TYPE_CHECKING:
 class EdFiEndpoint(AsyncEndpointMixin):
     """
     This is an abstract class for interacting with Ed-Fi resources and descriptors.
-    Composites override EdFiEndpoint with custom composite-logic.
+    Composites override with custom composite-logic.
     """
     type: str = None
-    swagger_type: str = None
 
     def __init__(self,
-         client: 'EdFiClient',
-         name: str,
+        client: 'EdFiClient',
+        session: 'EdFiSession',
+        swagger: 'EdFiSwagger',
+        name: str,
 
-         *,
-         namespace: str = 'ed-fi',
-         get_deletes: bool = False,
-         params: Optional[dict] = None,
-         **kwargs
+        *,
+        namespace: str = 'ed-fi',
+        get_deletes: bool = False,
+        params: Optional[dict] = None,
+        **kwargs
     ):
         self.client: 'EdFiClient' = client
+        self.session: 'EdFiSession' = session
+        self.swagger: 'EdFiSwagger' = swagger
 
         # Names can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         self.namespace, self.name = self._parse_names(namespace, name)
@@ -41,8 +45,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
         self.get_deletes: bool = get_deletes
         self.params = EdFiParams(params, **kwargs)
 
-        # Swagger attributes are loaded lazily
-        self.swagger = self.client.swaggers.get(self.swagger_type)
 
     def __repr__(self):
         """
@@ -54,7 +56,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Naming and Pathing Methods
-    def _parse_names(self, namespace: str, name: str):
+    @staticmethod
+    def _parse_names(namespace: str, name: str):
         """
         Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         """
@@ -87,6 +90,22 @@ class EdFiEndpoint(AsyncEndpointMixin):
             self.namespace, self.name, deletes
         )
 
+    ### Lazy swagger attributes
+    @property
+    def has_deletes(self) -> bool:
+        return self.swagger.get_endpoint_deletes().get((self.namespace, self.name))
+
+    @property
+    def fields(self) -> List[str]:
+        return self.swagger.get_endpoint_fields().get((self.namespace, self.name))
+
+    @property
+    def required_fields(self) -> List[str]:
+        return self.swagger.get_endpoint_fields_required().get((self.namespace, self.name))
+
+    @property
+    def description(self) -> Optional[str]:
+        return self.swagger.get_endpoint_descriptions().get(self.name)
 
     ### Generic API methods
     def ping(self, **kwargs) -> requests.Response:
@@ -98,7 +117,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         params = self.params.copy()
         params['limit'] = 1
 
-        res = self.client.session.get_response(self.url, params=params, **kwargs)
+        res = self.session.get_response(self.url, params=params, **kwargs)
 
         # To ping a composite, a limit of at least one is required.
         # We do not want to surface student-level data during ODS-checks.
@@ -119,7 +138,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         _params['totalCount'] = True
         _params['limit'] = 0
 
-        res = self.client.session.get_response(self.url, _params, **kwargs)
+        res = self.session.get_response(self.url, _params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
     @property
@@ -140,37 +159,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         if limit is not None:
             params['limit'] = limit
 
-        return self.client.session.get_response(self.url, params=params, **kwargs).json()
-
-
-    ### Swagger-adjacent properties and helper methods
-    def _get_swagger_if_none(self):
-        """
-        Gets the endpoint's Swagger if not already collected.
-        :return:
-        """
-        if self.swagger is None:
-            self.swagger = self.client.get_swagger(self.swagger_type)  # Updates client.swaggers
-
-    @property
-    def description(self) -> str:
-        self._get_swagger_if_none()
-        return self.swagger.descriptions.get(self.name)
-
-    @property
-    def has_deletes(self) -> bool:
-        self._get_swagger_if_none()
-        return (self.namespace, self.name) in self.swagger.deletes
-
-    @property
-    def fields(self) -> List[str]:
-        self._get_swagger_if_none()
-        return self.swagger.endpoint_fields.get((self.namespace, self.name))
-
-    @property
-    def required_fields(self) -> List[str]:
-        self._get_swagger_if_none()
-        return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
+        return self.session.get_response(self.url, params=params, **kwargs).json()
 
 
     ### GET Methods
@@ -211,7 +200,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         # Begin pagination-loop
         for paged_params in paged_params_list:
             logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
-            res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
+            res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
             logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
@@ -333,7 +322,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
                 continue
 
             try:
-                response = self.client.session.post_response(self.url, data=row, **kwargs)
+                response = self.session.post_response(self.url, data=row, **kwargs)
                 self._log_response(output_log, idx, response=response)
             except Exception as error:
                 self._log_response(output_log, idx, message=error)
@@ -376,7 +365,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         for id in ids:
             try:
-                response = self.client.session.delete_response(self.url, id=id, **kwargs)
+                response = self.session.delete_response(self.url, id=id, **kwargs)
                 self._log_response(output_log, id, response=response)
             except Exception as error:
                 self._log_response(output_log, id, message=error)
@@ -404,19 +393,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
 class EdFiResource(EdFiEndpoint):
-    """
-    Ed-Fi Resources are the primary use-case of the API.
-    """
     type: str = 'Resource'
-    swagger_type: str = 'resources'
-
 
 class EdFiDescriptor(EdFiEndpoint):
-    """
-    Ed-Fi Descriptors are used identically to Resources, but they are listed in a separate Swagger.
-    """
     type: str = 'Descriptor'
-    swagger_type: str = 'descriptors'
 
 
 class EdFiComposite(EdFiEndpoint):
@@ -424,10 +404,11 @@ class EdFiComposite(EdFiEndpoint):
 
     """
     type: str = 'Composite'
-    swagger_type: str = 'composites'
 
     def __init__(self,
         client: 'EdFiClient',
+        session: 'EdFiSession',
+        swagger: 'EdFiSwagger',
         name: str,
 
         *,
@@ -444,7 +425,7 @@ class EdFiComposite(EdFiEndpoint):
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
 
-        super().__init__(client=client, name=name, namespace=namespace, params=params)
+        super().__init__(client=client, session=session, swagger=swagger, name=name, namespace=namespace, params=params)
 
     def __repr__(self):
         """
@@ -518,7 +499,7 @@ class EdFiComposite(EdFiEndpoint):
 
             ### GET from the API and yield the resulting JSON payload
             logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
-            res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
+            res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
