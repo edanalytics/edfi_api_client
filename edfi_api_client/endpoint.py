@@ -7,53 +7,47 @@ from collections import defaultdict
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
+from edfi_api_client.swagger import EdFiSwagger
+from edfi_api_client.session import EdFiSession
 
 from typing import BinaryIO, Dict, Iterator, List, Optional, Union
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from edfi_api_client.client import EdFiClient
 
 
 class EdFiEndpoint(AsyncEndpointMixin):
     """
     This is an abstract class for interacting with Ed-Fi resources and descriptors.
-    Composites override EdFiEndpoint with custom composite-logic.
+    Composites override with custom composite-logic.
     """
     type: str = None
-    swagger_type: str = None
 
     def __init__(self,
-         client: 'EdFiClient',
-         name: str,
+        endpoint_url: str,
+        name: str,
 
-         *,
-         namespace: str = 'ed-fi',
-         get_deletes: bool = False,
-         params: Optional[dict] = None,
-         **kwargs
+        *,
+        namespace: str = 'ed-fi',
+        get_deletes: bool = False,
+        params: Optional[dict] = None,
+
+        session: Optional[EdFiSession] = None,
+        async_session: Optional['AsyncEdFiSession'] = None,
+        swagger: Optional[EdFiSwagger] = None,
+        **kwargs
     ):
-        self.client: 'EdFiClient' = client
+        # Hide the intermediate endpoint-URL to prevent confusion
+        self._endpoint_url = endpoint_url
 
-        # Name and namespace can be passed manually
-        if isinstance(name, str):
-            self.name: str = util.snake_to_camel(name)
-            self.namespace: str = namespace
-
-        # Or as a `(namespace, name)` tuple as output from Swagger
-        elif len(name) == 2:
-            self.namespace, self.name = name
-
-        else:
-            logging.error(
-                "Arguments `name` and `namespace` must be passed explicitly, or as a `(namespace, name)` tuple."
-            )
+        # Names can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
+        self.namespace, self.name = self._parse_names(namespace, name)
 
         # Build URL and dynamic params object
         self.get_deletes: bool = get_deletes
         self.params = EdFiParams(params, **kwargs)
 
-        # Swagger attributes are loaded lazily
-        self.swagger = self.client.swaggers.get(self.swagger_type)
+        # Optional helper classes with lazy attributes
+        self.session: Optional[EdFiSession] = session
+        self.async_session: Optional['AsyncEdFiSession'] = async_session
+        self.swagger: Optional[EdFiSwagger] = swagger
 
     def __repr__(self):
         """
@@ -62,6 +56,23 @@ class EdFiEndpoint(AsyncEndpointMixin):
         deletes_string = " Deletes" if self.get_deletes else ""
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
         return f"<{self.type}{deletes_string}{params_string} [{self.raw}]>"
+
+
+    ### Naming and Pathing Methods
+    @staticmethod
+    def _parse_names(namespace: str, name: str):
+        """
+        Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
+        """
+        if isinstance(name, str):
+            return namespace, util.snake_to_camel(name)
+
+        # Or as a `(namespace, name)` tuple as output from Swagger
+        elif len(name) == 2:
+            return name
+
+        else:
+            logging.error("Arguments `namespace` and `name` must be passed explicitly, or as a `(namespace, name)` tuple.")
 
     @property
     def raw(self) -> str:
@@ -78,33 +89,53 @@ class EdFiEndpoint(AsyncEndpointMixin):
         deletes = 'deletes' if self.get_deletes else None
 
         return util.url_join(
-            self.client.base_url,
-            self.client.version_url_string,
-            self.client.instance_locator,
+            self._endpoint_url,
             self.namespace, self.name, deletes
         )
 
+    ### Lazy swagger attributes
+    @property
+    def has_deletes(self) -> bool:
+        return self.swagger.get_endpoint_deletes().get((self.namespace, self.name))
 
-    ### Generic API methods
-    def ping(self, **kwargs) -> requests.Response:
+    @property
+    def fields(self) -> List[str]:
+        return self.swagger.get_endpoint_fields().get((self.namespace, self.name))
+
+    @property
+    def required_fields(self) -> List[str]:
+        return self.swagger.get_endpoint_fields_required().get((self.namespace, self.name))
+
+    @property
+    def description(self) -> Optional[str]:
+        return self.swagger.get_endpoint_descriptions().get(self.name)
+
+
+    ### Session API methods
+    def ping(self, params: Optional[dict] = None, **kwargs) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
 
         :return:
         """
-        params = self.params.copy()
-        params['limit'] = 1
+        logging.info(f"[Ping {self.type}] Endpoint  : {self.url}")
 
-        res = self.client.session.get_response(self.url, params=params, **kwargs)
+        # Copy params and merge optional additions
+        _params = self.params.copy()
+        if params:
+            _params.update(params)
 
         # To ping a composite, a limit of at least one is required.
+        _params['limit'] = 1
+
         # We do not want to surface student-level data during ODS-checks.
+        res = self.session.get_response(self.url, params=_params, **kwargs)
         if res.ok:
             res._content = b'{"message": "Ping was successful! ODS data has been intentionally scrubbed from this response."}'
 
         return res
 
-    def total_count(self, **kwargs):
+    def get_total_count(self, params: Optional[dict] = None, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -112,58 +143,51 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        return self.client.session.get_total_count(self.url, self.params, **kwargs)
+        logging.info(f"[Get Total Count {self.type}] Endpoint  : {self.url}")
 
-    def get(self, limit: Optional[int] = None, **kwargs) -> List[dict]:
+        # Copy params and merge optional additions
+        _params = self.params.copy()
+        if params:
+            _params.update(params)
+
+        _params['totalCount'] = True
+        _params['limit'] = 0
+        logging.info(f"[Get Total Count {self.type}] Parameters: {_params}")
+
+        res = self.session.get_response(self.url, _params, **kwargs)
+        return int(res.headers.get('Total-Count'))
+
+    @property
+    def total_count(self):
+        return self.get_total_count()
+
+    def get(self, limit: Optional[int] = None, params: Optional[dict] = None, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
         :return:
         """
-        self.client.verbose_log(f"[Get {self.type}] Endpoint  : {self.url}")
-        self.client.verbose_log(f"[Get {self.type}] Parameters: {self.params}")
+        logging.info(f"[Get {self.type}] Endpoint  : {self.url}")
 
-        params = self.params.copy()
+        # Copy params and merge optional additions
+        _params = self.params.copy()
+        if params:
+            _params.update(params)
 
-        if limit is not None:
-            params['limit'] = limit
+        # Override limit if passed
+        if limit:
+            _params['limit'] = limit
 
-        return self.client.session.get_response(self.url, params=params, **kwargs).json()
+        logging.info(f"[Get {self.type}] Parameters: {_params}")
 
-
-    ### Swagger-adjacent properties and helper methods
-    def get_swagger_if_none(self):
-        """
-        Gets the endpoint's Swagger if not already collected.
-        :return:
-        """
-        if self.swagger is None:
-            self.swagger = self.client.get_swagger(self.swagger_type)  # Updates client.swaggers
-
-    @property
-    def description(self) -> str:
-        self.get_swagger_if_none()
-        return self.swagger.descriptions.get(self.name)
-
-    @property
-    def has_deletes(self) -> bool:
-        self.get_swagger_if_none()
-        return (self.namespace, self.name) in self.swagger.deletes
-
-    @property
-    def fields(self) -> List[str]:
-        self.get_swagger_if_none()
-        return self.swagger.endpoint_fields.get((self.namespace, self.name))
-
-    @property
-    def required_fields(self) -> List[str]:
-        self.get_swagger_if_none()
-        return self.swagger.endpoint_required_fields.get((self.namespace, self.name))
+        return self.session.get_response(self.url, params=_params, **kwargs).json()
 
 
     ### GET Methods
     def get_pages(self,
         *,
+        params: Optional[dict] = None,  # Optional additional params
+
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -174,23 +198,31 @@ class EdFiEndpoint(AsyncEndpointMixin):
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a generator.
 
+        :param params:
         :param page_size:
         :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
         :return:
         """
-        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+
+        # Copy params and merge optional additions
+        _params = self.params.copy()
+        if params:
+            _params.update(params)
+        logging.info(f"[Paged Get {self.type}] Parameters: {_params}")
 
         if step_change_version and reverse_paging:
-            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
-            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
+            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
         else:
-            self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+            logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
-        paged_params_list = self.get_paged_window_params(
+        paged_params_list = self._get_paged_window_params(
+            params=_params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -198,14 +230,16 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Begin pagination-loop
         for paged_params in paged_params_list:
-            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
-            res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
+            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
-            self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+            logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
     def get_rows(self,
         *,
+        params: Optional[dict] = None,  # Optional additional params
+
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -216,6 +250,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         This method returns all rows from an endpoint, applying pagination logic as necessary.
         Rows are returned as a generator.
 
+        :param params:
         :param page_size:
         :param reverse_paging:
         :param step_change_version:
@@ -223,6 +258,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         paged_result_iter = self.get_pages(
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -235,6 +271,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         path: str,
 
         *,
+        params: Optional[dict] = None,  # Optional additional params
+
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -246,36 +284,42 @@ class EdFiEndpoint(AsyncEndpointMixin):
         Rows are written to a file as JSON lines.
 
         :param path:
+        :param params:
         :param page_size:
         :param step_change_version:
         :param change_version_step_size:
         :param reverse_paging:
         :return:
         """
-        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+        logging.info(f"[Get to JSON] Writing rows to disk: `{path}`")
 
         paged_results = self.get_pages(
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
         )
 
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'wb') as fp:
             for page in paged_results:
                 fp.write(util.page_to_bytes(page))
 
         return path
 
-    def get_paged_window_params(self,
+    def _get_paged_window_params(self,
         *,
+        params: EdFiParams,
+
         page_size: int,
         reverse_paging: bool,
         step_change_version: bool,
         change_version_step_size: int,
+
         **kwargs
     ) -> Iterator[EdFiParams]:
         """
-
+        :param params:
         :param page_size:
         :param step_change_version:
         :param change_version_step_size:
@@ -283,15 +327,15 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         if step_change_version:
-            for cv_window_params in self.params.build_change_version_window_params(change_version_step_size):
-                total_count = self.client.session.get_total_count(self.url, cv_window_params, **kwargs)
+            for cv_window_params in params.build_change_version_window_params(change_version_step_size):
+                total_count = self.get_total_count(params=cv_window_params, **kwargs)
 
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
                 yield from cv_offset_params_list
 
         else:
-            total_count = self.client.session.get_total_count(self.url, self.params, **kwargs)
-            yield from self.params.build_offset_window_params(page_size, total_count=total_count)
+            total_count = self.get_total_count(params=params, **kwargs)
+            yield from params.build_offset_window_params(page_size, total_count=total_count)
 
 
     ### POST Methods
@@ -310,7 +354,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        self.client.verbose_log(f"[Post {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Post {self.type}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         for idx, row in enumerate(rows):
@@ -321,10 +365,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
                 continue
 
             try:
-                response = self.client.session.post_response(self.url, data=row, **kwargs)
-                self.log_response(output_log, idx, response=response)
+                response = self.session.post_response(self.url, data=row, **kwargs)
+                self._log_response(output_log, idx, response=response)
             except Exception as error:
-                self.log_response(output_log, idx, message=error)
+                self._log_response(output_log, idx, message=error)
 
         return dict(output_log)
 
@@ -342,7 +386,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+        logging.info(f"Posting rows from disk: `{path}`")
 
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
@@ -359,20 +403,20 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param ids:
         :return:
         """
-        self.client.verbose_log(f"[Delete {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Delete {self.type}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         for id in ids:
             try:
-                response = self.client.session.delete_response(self.url, id=id, **kwargs)
-                self.log_response(output_log, id, response=response)
+                response = self.session.delete_response(self.url, id=id, **kwargs)
+                self._log_response(output_log, id, response=response)
             except Exception as error:
-                self.log_response(output_log, id, message=error)
+                self._log_response(output_log, id, message=error)
 
         return dict(output_log)
 
     @staticmethod
-    def log_response(
+    def _log_response(
         output_log: dict,
         idx: int,
         response: Optional[requests.Response] = None,
@@ -381,7 +425,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         Helper for updating response output logs consistently.
         """
-        if response:
+        if response is not None:
             if response.ok:
                 message = f"{response.status_code}"
             else:
@@ -392,19 +436,17 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
 class EdFiResource(EdFiEndpoint):
-    """
-    Ed-Fi Resources are the primary use-case of the API.
-    """
     type: str = 'Resource'
-    swagger_type: str = 'resources'
 
 
 class EdFiDescriptor(EdFiEndpoint):
-    """
-    Ed-Fi Descriptors are used identically to Resources, but they are listed in a separate Swagger.
-    """
     type: str = 'Descriptor'
-    swagger_type: str = 'descriptors'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self.get_deletes:
+            logging.warning("Descriptors do not have /deletes endpoints. Argument `get_deletes` has been ignored.")
 
 
 class EdFiComposite(EdFiEndpoint):
@@ -412,19 +454,12 @@ class EdFiComposite(EdFiEndpoint):
 
     """
     type: str = 'Composite'
-    swagger_type: str = 'composites'
 
     def __init__(self,
-        client: 'EdFiClient',
-        name: str,
-
-        *,
-        namespace: str = 'ed-fi',
+        *args,
         composite: str = 'enrollment',
         filter_type: Optional[str] = None,
         filter_id: Optional[str] = None,
-
-        params: Optional[dict] = None,
         **kwargs
     ):
         # Assign composite-specific arguments that are used in `self.url()`.
@@ -432,7 +467,11 @@ class EdFiComposite(EdFiEndpoint):
         self.filter_type: Optional[str] = filter_type
         self.filter_id: Optional[str] = filter_id
 
-        super().__init__(client=client, name=name, namespace=namespace, params=params)
+        # Init after to build 'self.url' with new attributes
+        super().__init__(*args, **kwargs)
+
+        if self.get_deletes:
+            logging.warning("Composites do not have /deletes endpoints. Argument `get_deletes` has been ignored.")
 
     def __repr__(self):
         """
@@ -454,14 +493,12 @@ class EdFiComposite(EdFiEndpoint):
         # If a filter is applied, the URL changes to match the filter type.
         if self.filter_type is None and self.filter_id is None:
             return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
+                self._endpoint_url,
                 self.namespace, self.composite, self.name.title()
             )
         elif self.filter_type is not None and self.filter_id is not None:
             return util.url_join(
-                self.client.base_url, 'composites/v1',
-                self.client.instance_locator,
+                self._endpoint_url,
                 self.namespace, self.composite,
                 self.filter_type, self.filter_id, self.name
             )
@@ -482,11 +519,12 @@ class EdFiComposite(EdFiEndpoint):
             "Total counts have not yet been implemented in Ed-Fi composites!"
         )
 
-    def get_pages(self, *, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
+    def get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a generator.
 
+        :param params:
         :param page_size:
         :return:
         """
@@ -495,11 +533,13 @@ class EdFiComposite(EdFiEndpoint):
                 "Change versions are not implemented in composites! Remove `step_change_version` from arguments."
             )
 
-        self.client.verbose_log(f"[Paged Get {self.type}] Endpoint  : {self.url}")
-        self.client.verbose_log(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Reset pagination parameters
         paged_params = self.params.copy()
+        if params:
+            paged_params.update(params)
         paged_params['limit'] = page_size
         paged_params['offset'] = 0
 
@@ -507,20 +547,20 @@ class EdFiComposite(EdFiEndpoint):
         while True:
 
             ### GET from the API and yield the resulting JSON payload
-            self.client.verbose_log(f"[Paged Get {self.type}] Parameters: {paged_params}")
-            res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
+            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
-                self.client.verbose_log(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+                logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
                 yield res.json()
 
-                self.client.verbose_log(f"@ Paginating offset...")
+                logging.info(f"@ Paginating offset...")
                 paged_params['offset'] += page_size
 
             # If no rows are returned, end pagination.
             else:
-                self.client.verbose_log(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
+                logging.info(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
                 break
 
     def post_rows(self, *args, **kwargs):

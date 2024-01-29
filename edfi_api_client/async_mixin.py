@@ -74,7 +74,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### GET Methods
-    @EdFiSession.refresh_if_expired
+    @EdFiSession._refresh_if_expired
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete an asynchronous GET request against an endpoint URL.
@@ -88,28 +88,13 @@ class AsyncEdFiSession(EdFiSession):
             verify_ssl=self.verify_ssl, raise_for_status=False
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            self.custom_raise_for_status(response)
+            self._custom_raise_for_status(response)
             text = await response.text()
             return response
 
-    async def get_total_count(self, url: str, params: 'EdFiParams', **kwargs) -> int:
-        """
-        This internal helper method is used during pagination.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        _params = params.copy()
-        _params['totalCount'] = "true"
-        _params['limit'] = 0
-
-        res = await self.get_response(url, _params, **kwargs)
-        return int(res.headers.get('Total-Count'))
-
 
     ### POST Methods
-    @EdFiSession.refresh_if_expired
+    @EdFiSession._refresh_if_expired
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> aiohttp.ClientResponse:
         """
         Complete an asynchronous POST request against an endpoint URL.
@@ -138,7 +123,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### DELETE Methods
-    @EdFiSession.refresh_if_expired
+    @EdFiSession._refresh_if_expired
     async def delete_response(self, url: str, id: int, **kwargs) -> aiohttp.ClientResponse:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
@@ -168,7 +153,7 @@ class AsyncEndpointMixin:
     url: str
     params: 'EdFiParams'
 
-    def run_async_session(func: Callable) -> Callable:
+    def _run_async_session(func: Callable) -> Callable:
         """
         This decorator establishes an async session before calling the associated class method, if not defined.
         If a session is established at this time, complete a full asyncio run.
@@ -179,7 +164,7 @@ class AsyncEndpointMixin:
         @functools.wraps(func)
         def wrapped(self, *args, session: Optional['AsyncEdFiSession'] = None, **kwargs):
             async def main():
-                async with await self.client.async_session.connect(**kwargs) as main_session:
+                async with await self.async_session.connect(**kwargs) as main_session:
                     return await func(self, *args, session=main_session, **kwargs)
 
             if session is None:
@@ -212,21 +197,21 @@ class AsyncEndpointMixin:
         :return:
         """
         async def verbose_get_page(param: 'EdFiParams'):
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Parameters: {param}")
+            logging.info(f"[Async Paged Get {self.type}] Parameters: {param}")
             res = await session.get_response(self.url, params=param)
             return await res.json()
 
-        self.client.verbose_log(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Async Paged Get {self.type}] Endpoint  : {self.url}")
 
         if step_change_version and reverse_paging:
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+            logging.info(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping")
+            logging.info(f"[Async Paged Get {self.type}] Pagination Method: Change Version Stepping")
         else:
-            self.client.verbose_log(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
+            logging.info(f"[Async Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
-        paged_params_list = await self.async_get_paged_window_params(
+        paged_params_list = await self._async_get_paged_window_params(
             session=session,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
@@ -236,7 +221,7 @@ class AsyncEndpointMixin:
         for paged_param in paged_params_list:
             yield verbose_get_page(paged_param)
 
-    @run_async_session
+    @_run_async_session
     async def async_get_rows(self,
         *,
         session: 'AsyncEdFiSession',
@@ -264,13 +249,13 @@ class AsyncEndpointMixin:
             **kwargs
         )
 
-        collected_pages = await self.gather_with_concurrency(
+        collected_pages = await self._gather_with_concurrency(
             session.pool_size,
             *[page async for page in paged_results]
         )
         return list(itertools.chain.from_iterable(collected_pages))
 
-    @run_async_session
+    @_run_async_session
     async def async_get_to_json(self,
         path: str,
         *,
@@ -296,7 +281,7 @@ class AsyncEndpointMixin:
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
             await fp.write(util.page_to_bytes(await page))
 
-        self.client.verbose_log(f"Writing rows to disk: `{path}`")
+        logging.info(f"Writing rows to disk: `{path}`")
 
         paged_results = self.async_get_pages(
             session=session,
@@ -306,15 +291,31 @@ class AsyncEndpointMixin:
         )
 
         async with aiofiles.open(path, 'wb') as fp:
-            await self.gather_with_concurrency(
+            await self._gather_with_concurrency(
                 session.pool_size,
                 *[write_async_page(page, fp=fp) async for page in paged_results]
             )
 
         return path
 
-    @run_async_session
-    async def async_get_paged_window_params(self,
+    @_run_async_session
+    async def async_get_total_count(self, session: 'AsyncEdFiSession', params: 'EdFiParams', **kwargs) -> int:
+        """
+        This internal helper method is used during pagination.
+
+        :param session:
+        :param params:
+        :return:
+        """
+        _params = params.copy()
+        _params['totalCount'] = "true"
+        _params['limit'] = 0
+
+        res = await session.get_response(self.url, _params, **kwargs)
+        return int(res.headers.get('Total-Count'))
+
+    @_run_async_session
+    async def _async_get_paged_window_params(self,
         *,
         session: 'AsyncEdFiSession',
         page_size: int = 100,
@@ -333,7 +334,7 @@ class AsyncEndpointMixin:
         :return:
         """
         async def build_total_count_windows(params):
-            total_count = await session.get_total_count(self.url, params, **kwargs)
+            total_count = await self.async_get_total_count(session=session, params=params, **kwargs)
             return params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
 
         if step_change_version:
@@ -341,7 +342,7 @@ class AsyncEndpointMixin:
         else:
             top_level_params = [self.params]
 
-        nested_params = await self.gather_with_concurrency(session.pool_size, *map(build_total_count_windows, top_level_params))
+        nested_params = await self._gather_with_concurrency(session.pool_size, *map(build_total_count_windows, top_level_params))
         return list(itertools.chain.from_iterable(nested_params))
 
 
@@ -373,13 +374,13 @@ class AsyncEndpointMixin:
 
             try:
                 response = await session.post_response(self.url, data=row, **kwargs)
-                await self.async_log_response(output_log, idx, response=response)
+                await self._async_log_response(output_log, idx, response=response)
             except Exception as error:
-                await self.async_log_response(output_log, idx, message=error)
+                await self._async_log_response(output_log, idx, message=error)
 
-        self.client.verbose_log(f"[Async Post {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Async Post {self.type}] Endpoint  : {self.url}")
 
-        await self.gather_with_concurrency(
+        await self._gather_with_concurrency(
             session.pool_size,
             *(post_and_log(idx, row) for idx, row in enumerate(rows))
          )
@@ -387,7 +388,7 @@ class AsyncEndpointMixin:
         # Sort row numbers for easier debugging
         return {key: sorted(val) for key, val in output_log.items()}
 
-    @run_async_session
+    @_run_async_session
     async def async_post_from_json(self,
         path: str,
         *,
@@ -408,7 +409,7 @@ class AsyncEndpointMixin:
             with open(path_, 'rb') as fp:
                 yield from fp
 
-        self.client.verbose_log(f"Posting rows from disk: `{path}`")
+        logging.info(f"Posting rows from disk: `{path}`")
 
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
@@ -435,13 +436,13 @@ class AsyncEndpointMixin:
         async def delete_and_log(id: int, row: dict):
             try:
                 response = await session.delete_response(self.url, id=id, **kwargs)
-                await self.async_log_response(output_log, id, response=response)
+                await self._async_log_response(output_log, id, response=response)
             except Exception as error:
-                await self.async_log_response(output_log, id, message=error)
+                await self._async_log_response(output_log, id, message=error)
 
-        self.client.verbose_log(f"[Async Delete {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Async Delete {self.type}] Endpoint  : {self.url}")
 
-        await self.gather_with_concurrency(
+        await self._gather_with_concurrency(
             session.pool_size,
             *(delete_and_log(id, row) for id, row in enumerate(ids))
         )
@@ -450,7 +451,7 @@ class AsyncEndpointMixin:
         return {key: sorted(val) for key, val in output_log.items()}
 
     @staticmethod
-    async def async_log_response(
+    async def _async_log_response(
         output_log: dict,
         idx: int,
         response: Optional[aiohttp.ClientResponse] = None,
@@ -459,7 +460,7 @@ class AsyncEndpointMixin:
         """
         Helper for updating response output logs consistently.
         """
-        if response:
+        if response is not None:
             if response.ok:
                 message = f"{response.status_code}"
             else:
@@ -472,7 +473,7 @@ class AsyncEndpointMixin:
 
     ### Async Utilities
     @staticmethod
-    async def gather_with_concurrency(n, *tasks, return_exceptions: bool = False) -> list:
+    async def _gather_with_concurrency(n, *tasks, return_exceptions: bool = False) -> list:
         """
         Waits for an entire task queue to finish processing
 

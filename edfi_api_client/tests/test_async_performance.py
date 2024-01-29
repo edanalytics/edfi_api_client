@@ -7,9 +7,6 @@ from edfi_api_client import EdFiClient
 
 
 ###
-master_secret = "edfi_scde_2023"
-
-
 def time_it(func, wrap_func=None, *args, **kwargs):
     """
     Helper for retrieving runtime of a function.
@@ -30,14 +27,15 @@ def time_it(func, wrap_func=None, *args, **kwargs):
     runtime = round(end - start, 2)
     return runtime, return_val
 
-def test_async(secret: str = master_secret):
+def test_async(secret: str, verbose: bool = False):
     """
 
     :param secret:
+    :param verbose:
     :return:
     """
     credentials = easecret.get_secret(secret)
-    edfi = EdFiClient(**credentials, verbose=False)
+    edfi = EdFiClient(**credentials, verbose=verbose)
 
     # Map resources to exact change versions to extract N * 1000 rows.
     # Source: `edfi_scde_2023`
@@ -78,7 +76,7 @@ def test_async(secret: str = master_secret):
         for k_row_count, max_change_version in cv_row_counts.items():
 
             endpoint = edfi.resource(resource, minChangeVersion=0, max_change_version=max_change_version)
-            endpoint_count = endpoint.total_count()
+            endpoint_count = endpoint.total_count
 
 
             ## Synchronous Pull
@@ -110,4 +108,8 @@ def test_async(secret: str = master_secret):
 
 
 if __name__ == '__main__':
-    test_async()
+    # MASTER_SECRET = "edfi_sc_cougar_2024"
+    MASTER_SECRET = "edfi_scde_2023"
+    VERBOSE = False
+
+    test_async(MASTER_SECRET, verbose=VERBOSE)

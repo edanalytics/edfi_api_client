@@ -20,13 +20,13 @@ class EdFiSession:
 
     """
     def __init__(self,
-        base_url: str,
+        oauth_url: str,
         client_key: str,
         client_secret: str,
         verify_ssl: bool = True,
         **kwargs
     ):
-        self.base_url: str = base_url
+        self.oauth_url: str = oauth_url
         self.client_key: str = client_key
         self.client_secret: str = client_secret
         self.verify_ssl: bool = verify_ssl
@@ -57,10 +57,8 @@ class EdFiSession:
 
         :return:
         """
-        token_path = 'oauth/token'
-
         auth_response = requests.post(
-            util.url_join(self.base_url, token_path),
+            self.oauth_url,
             auth=HTTPBasicAuth(self.client_key, self.client_secret),
             data={'grant_type': 'client_credentials'},
             verify=self.verify_ssl
@@ -79,7 +77,7 @@ class EdFiSession:
 
         return auth_response
 
-    def refresh_if_expired(func: Callable):
+    def _refresh_if_expired(func: Callable):
         """
         Reauthenticate automatically before making a request if expired.
 
@@ -93,7 +91,7 @@ class EdFiSession:
             return func(self, *args, **kwargs)
         return wrapped
 
-    def with_exponential_backoff(func: Callable):
+    def _with_exponential_backoff(func: Callable):
         """
         Decorator to apply exponential backoff during failed requests.
         TODO: Is this logic and status codes consistent across request types?
@@ -132,8 +130,8 @@ class EdFiSession:
 
 
     ### GET Methods
-    @refresh_if_expired
-    @with_exponential_backoff
+    @_refresh_if_expired
+    @_with_exponential_backoff
     def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> requests.Response:
         """
         Complete a GET request against an endpoint URL.
@@ -143,28 +141,13 @@ class EdFiSession:
         :return:
         """
         response = self.session.get(url, headers=self.auth_headers, params=params, verify=self.verify_ssl)
-        self.custom_raise_for_status(response)
+        self._custom_raise_for_status(response)
         return response
-
-    def get_total_count(self, url: str, params: 'EdFiParams', **kwargs):
-        """
-        This internal helper method is used during pagination.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        _params = params.copy()  # Don't mutate params in place
-        _params['totalCount'] = True
-        _params['limit'] = 0
-
-        res = self.get_response(url, _params, **kwargs)
-        return int(res.headers.get('Total-Count'))
 
 
     ### POST Methods
-    @refresh_if_expired
-    @with_exponential_backoff
+    @_refresh_if_expired
+    @_with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
         """
         Complete a POST request against an endpoint URL.
@@ -184,8 +167,8 @@ class EdFiSession:
 
 
     ### DELETE Methods
-    @refresh_if_expired
-    @with_exponential_backoff
+    @_refresh_if_expired
+    @_with_exponential_backoff
     def delete_response(self, url: str, id: int, **kwargs) -> requests.Response:
         """
         Complete a DELETE request against an endpoint URL.
@@ -203,7 +186,7 @@ class EdFiSession:
 
     ### Error response methods
     @staticmethod
-    def custom_raise_for_status(response):
+    def _custom_raise_for_status(response):
         """
         Custom HTTP exception logic and logging.
         The built-in Response.raise_for_status() fails too broadly, even in cases where a connection-reset is enough.

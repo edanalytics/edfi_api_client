@@ -5,10 +5,7 @@ from edfi_api_client import EdFiClient
 
 
 ###
-master_secret = "edfi_scde_2023"
-
-
-def test_unauthenticated_client(secret: str = master_secret):
+def test_unauthenticated_client(secret: str, verbose: bool = False):
     """
 
     :param secret:
@@ -16,7 +13,7 @@ def test_unauthenticated_client(secret: str = master_secret):
     """
     credentials = easecret.get_secret(secret)
     base_url = credentials.get('base_url')
-    edfi = EdFiClient(base_url)
+    edfi = EdFiClient(base_url, verbose=verbose)
 
     ### Info Payload
     info_payload = edfi.get_info()
@@ -24,9 +21,9 @@ def test_unauthenticated_client(secret: str = master_secret):
     assert all(key in info_payload for key in payload_keys)
 
     ### Swagger
-    _ = edfi.get_swagger(component='resources')
-    _ = edfi.get_swagger(component='descriptors')
-    _ = edfi.get_swagger(component='composites')
+    print(edfi.get_swagger(component='resources'))
+    print(edfi.get_swagger(component='descriptors'))
+    print(edfi.get_swagger(component='composites'))
 
     ### Authenticated methods
     with pytest.raises(ValueError):
@@ -42,27 +39,31 @@ def test_unauthenticated_client(secret: str = master_secret):
         _ = edfi.composite('students')
 
 
-def test_authenticated_client(secret: str = master_secret):
+def test_authenticated_client(secret: str, verbose: bool = False):
     """
 
     :param secret:
     :return:
     """
     credentials = easecret.get_secret(secret)
-    edfi = EdFiClient(**credentials)
+    edfi = EdFiClient(**credentials, verbose=verbose)
 
-    _ = edfi.get_newest_change_version()
+    print(edfi.get_newest_change_version())
 
     ### Resource
     resource = edfi.resource('students', minChangeVersion=0, maxChangeVersion=500000)
     assert resource.ping().ok
 
+    print(resource.description)
     assert resource.description
+    print(resource.has_deletes)
     assert resource.has_deletes
+    print(resource.fields)
     assert resource.fields
+    print(resource.required_fields)
     assert resource.required_fields
 
-    resource_count = resource.total_count()
+    resource_count = resource.get_total_count()
     resource_output_path = f"./.output/{resource.name}.jsonl"
 
     _ = resource.get_to_json(resource_output_path, page_size=500, retry_on_failure=True, step_change_version=True)
@@ -78,7 +79,7 @@ def test_authenticated_client(secret: str = master_secret):
     assert descriptor.fields
     assert descriptor.required_fields
 
-    descriptor_count = descriptor.total_count()
+    descriptor_count = descriptor.get_total_count()
     descriptor_rows = descriptor.get_rows(page_size=500, step_change_version=False)
     assert len(list(descriptor_rows)) == descriptor_count
 
@@ -101,5 +102,8 @@ def test_authenticated_client(secret: str = master_secret):
 
 
 if __name__ == '__main__':
-    test_unauthenticated_client()
-    test_authenticated_client()
+    MASTER_SECRET = "edfi_sc_cougar_2024"
+    VERBOSE = True
+
+    test_unauthenticated_client(MASTER_SECRET, verbose=VERBOSE)
+    test_authenticated_client(MASTER_SECRET, verbose=VERBOSE)
