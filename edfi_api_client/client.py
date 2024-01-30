@@ -61,7 +61,7 @@ class EdFiClient:
         self._info: Optional[dict] = None
 
         self.api_version: int = int(api_version)
-        self._api_mode: str = api_mode  # Make non-public to allow similar syntax for all info getters.
+        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
 
@@ -131,26 +131,15 @@ class EdFiClient:
         """
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
-    # API Mode
-    @property
-    def api_mode(self) -> Optional[str]:
+    # API Mode (attribute is set during init)
+    def get_api_mode(self) -> Optional[str]:
         """
         Retrieve api_mode from the metadata exposed at the API root.
+        After API mode is deprecated in Ed-Fi 7, we can consider deprecating this method.
         :return:
         """
-        # Default to user-provided API mode if specified.
-        if self._api_mode:
-            return self._api_mode
-
         api_mode = self.info.get('apiMode')
         return util.camel_to_snake(api_mode) if api_mode else None
-
-    @deprecation.deprecated(
-        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
-        details="Get attributes directly using `EdFiClient.api_mode`."
-    )
-    def get_api_mode(self) -> Optional[str]:
-        return self.api_mode
 
     # ODS Version
     @property
