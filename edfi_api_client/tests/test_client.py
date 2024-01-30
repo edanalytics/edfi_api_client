@@ -28,8 +28,8 @@ def test_unauthenticated_client(secret: str, verbose: bool = False):
 
     ### Swagger
     print(edfi.get_swagger(component='resources'))
-    print(edfi.get_swagger(component='descriptors'))
-    print(edfi.get_swagger(component='composites'))
+    print(edfi.descriptors_swagger)
+    print(edfi.composites_swagger.version_url_string)
 
     ### Authenticated methods
     with pytest.raises(ValueError):
