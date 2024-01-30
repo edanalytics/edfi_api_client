@@ -93,7 +93,7 @@ class EdFiClient:
         (Un)Authenticated Ed-Fi(2/3) Client [{api_mode}]
         """
         _session_string = "Authenticated" if self.session else "Unauthenticated"
-        _api_mode = util.snake_to_camel(self.api_mode)
+        _api_mode = util.snake_to_camel(self.api_mode) if self.api_mode else "None"
         if self.api_year:
             _api_mode += f" {self.api_year}"
 
@@ -129,14 +129,14 @@ class EdFiClient:
         return requests.get(self.base_url, verify=self.verify_ssl).json()
 
 
-    def get_api_mode(self) -> str:
+    def get_api_mode(self) -> Optional[str]:
         """
         Retrieve api_mode from the metadata exposed at the API root.
 
         :return:
         """
         api_mode = self.get_info().get('apiMode')
-        return util.camel_to_snake(api_mode)
+        return util.camel_to_snake(api_mode) if api_mode else None
 
 
     def get_ods_version(self) -> Optional[str]:
