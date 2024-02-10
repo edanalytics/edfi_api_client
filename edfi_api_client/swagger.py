@@ -33,22 +33,18 @@ class EdFiSwagger:
         """
         return f"<Ed-Fi {self.component.title()} OpenAPI Swagger Specification>"
 
-
-    @classmethod
-    def get_swagger(cls, base_url: str, component: str = 'resources') -> dict:
+    def get_json(self) -> dict:
         """
         OpenAPI Specification describes the entire Ed-Fi API surface in a
         JSON payload.
         Can be used to surface available endpoints.
 
-        :param base_url:
-        :param component: Which component's swagger spec should be retrieved?
         :return: Swagger specification definition, as a dictionary.
         """
-        logging.info(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
+        logging.info(f"[Get {self.component.title()} Swagger] Retrieving Swagger into memory...")
 
         swagger_url = util.url_join(
-            base_url, 'metadata', 'data/v3', component, 'swagger.json'
+            self.base_url, 'metadata', 'data/v3', self.component, 'swagger.json'
         )
 
         return requests.get(swagger_url).json()
@@ -57,7 +53,7 @@ class EdFiSwagger:
     @property
     def payload(self) -> dict:
         if self._json is None:
-            self._json = self.get_swagger(self.base_url, self.component)
+            self._json = self.get_json()
         return self._json
 
     @property
