@@ -307,11 +307,11 @@ class AsyncEndpointMixin:
         :param params:
         :return:
         """
-        _params = params.copy()
-        _params['totalCount'] = "true"
-        _params['limit'] = 0
+        params = (params or self.params).copy()
+        params['totalCount'] = "true"
+        params['limit'] = 0
 
-        res = await session.get_response(self.url, _params, **kwargs)
+        res = await session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
     @_run_async_session
