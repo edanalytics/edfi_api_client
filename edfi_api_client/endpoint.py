@@ -112,7 +112,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Session API methods
-    def ping(self, params: Optional[dict] = None, **kwargs) -> requests.Response:
+    def ping(self, *, params: Optional[dict] = None, **kwargs) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
 
@@ -120,16 +120,12 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         logging.info(f"[Ping {self.type}] Endpoint  : {self.url}")
 
-        # Copy params and merge optional additions
-        _params = self.params.copy()
-        if params:
-            _params.update(params)
-
-        # To ping a composite, a limit of at least one is required.
-        _params['limit'] = 1
+        # Override init params if passed
+        params = (params or self.params).copy()
+        params['limit'] = 1  # To ping a composite, a limit of at least one is required.
 
         # We do not want to surface student-level data during ODS-checks.
-        res = self.session.get_response(self.url, params=_params, **kwargs)
+        res = self.session.get_response(self.url, params=params, **kwargs)
         if res.ok:
             res._content = b'{"message": "Ping was successful! ODS data has been intentionally scrubbed from this response."}'
 
@@ -145,16 +141,14 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         logging.info(f"[Get Total Count {self.type}] Endpoint  : {self.url}")
 
-        # Copy params and merge optional additions
-        _params = self.params.copy()
-        if params:
-            _params.update(params)
+        # Override init params if passed
+        params = (params or self.params).copy()
+        params['totalCount'] = True
+        params['limit'] = 0
 
-        _params['totalCount'] = True
-        _params['limit'] = 0
-        logging.info(f"[Get Total Count {self.type}] Parameters: {_params}")
+        logging.info(f"[Get Total Count {self.type}] Parameters: {params}")
 
-        res = self.session.get_response(self.url, _params, **kwargs)
+        res = self.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
     @property
@@ -169,18 +163,15 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         logging.info(f"[Get {self.type}] Endpoint  : {self.url}")
 
-        # Copy params and merge optional additions
-        _params = self.params.copy()
-        if params:
-            _params.update(params)
+        # Override init params if passed
+        params = (params or self.params).copy()
 
-        # Override limit if passed
-        if limit:
-            _params['limit'] = limit
+        if limit:  # Override limit if passed
+            params['limit'] = limit
 
-        logging.info(f"[Get {self.type}] Parameters: {_params}")
+        logging.info(f"[Get {self.type}] Parameters: {params}")
 
-        return self.session.get_response(self.url, params=_params, **kwargs).json()
+        return self.session.get_response(self.url, params=params, **kwargs).json()
 
 
     ### GET Methods
@@ -207,11 +198,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
 
-        # Copy params and merge optional additions
-        _params = self.params.copy()
-        if params:
-            _params.update(params)
-        logging.info(f"[Paged Get {self.type}] Parameters: {_params}")
+        # Override init params if passed
+        params = (params or self.params).copy()
+        logging.info(f"[Paged Get {self.type}] Parameters: {params}")
 
         if step_change_version and reverse_paging:
             logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
@@ -222,7 +211,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._get_paged_window_params(
-            params=_params,
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -537,11 +526,8 @@ class EdFiComposite(EdFiEndpoint):
         logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
 
         # Reset pagination parameters
-        paged_params = self.params.copy()
-        if params:
-            paged_params.update(params)
-        paged_params['limit'] = page_size
-        paged_params['offset'] = 0
+        paged_params = (params or self.params).copy()
+        paged_params.init_page_by_offset(page_size)
 
         # Begin pagination-loop
         while True:
@@ -556,7 +542,7 @@ class EdFiComposite(EdFiEndpoint):
                 yield res.json()
 
                 logging.info(f"@ Paginating offset...")
-                paged_params['offset'] += page_size
+                paged_params.page_by_offset(page_size)
 
             # If no rows are returned, end pagination.
             else:

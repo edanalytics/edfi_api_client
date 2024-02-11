@@ -21,18 +21,12 @@ class EdFiParams(dict):
         self.min_change_version = self.get('minChangeVersion')
         self.max_change_version = self.get('maxChangeVersion')
 
+
     def copy(self) -> 'EdFiParams':
         return EdFiParams( super().copy() )
 
-    def update(self, iterable: dict):
-        sanitized = EdFiParams.sanitize_params(**dict(iterable))
-        return super().update(sanitized)
-
     @classmethod
-    def sanitize_params(cls,
-        params: Optional[dict] = None,
-        **kwargs
-    ) -> dict:
+    def sanitize_params(cls, params: Optional[dict] = None, **kwargs) -> dict:
         """
         To maximize flexibility to the user, params can be passed in a dictionary or as kwargs.
         These are all sterilized to enforce camelCasing and to remove null values.
@@ -46,11 +40,6 @@ class EdFiParams(dict):
         :param kwargs:
         :return:
         """
-        def __get_duplicates(list_: List[str]):
-            return set(
-                item for item in list_ if list_.count(item) > 1
-            )
-
         # Retrieve all non-null params and kwargs passed by the user.
         _params = {
             key: val for key, val in (params or {}).items()
@@ -65,16 +54,16 @@ class EdFiParams(dict):
         cc_params = [util.snake_to_camel(key) for key in _params.keys()]
         cc_kwargs = [util.snake_to_camel(key) for key in _kwargs.keys()]
 
-        for key in __get_duplicates(cc_params):
+        for key in cls.find_duplicates(cc_params):
             logging.warning(f"Duplicate key `{key}` found in `params`! The last will be used.")
 
-        for key in __get_duplicates(cc_kwargs):
+        for key in cls.find_duplicates(cc_kwargs):
             logging.warning(f"Duplicate key `{key}` found in `kwargs`! The last will be used.")
 
         # Make sure the user does not pass in duplicates between params and kwargs.
         cc_kwargs_params = list(set(cc_params)) + list(set(cc_kwargs))
 
-        for key in __get_duplicates(cc_kwargs_params):
+        for key in cls.find_duplicates(cc_kwargs_params):
             logging.warning(f"Duplicate key `{key}` found between `params` and `kwargs`! The kwarg will be used.")
 
         # Populate the final parameters.
@@ -88,6 +77,14 @@ class EdFiParams(dict):
 
         return final_params
 
+    @staticmethod
+    def find_duplicates(params: List[str]) -> List[str]:
+        return list(set(
+            item for item in params if params.count(item) > 1
+        ))
+
+
+    ### Resource pagination methods
     def build_offset_window_params(self, page_size: int, total_count: int, reverse: bool = False) -> List['EdFiParams']:
         """
         Iterate offset-stepping by `page_size` until `total_count` is reached.
@@ -129,3 +126,20 @@ class EdFiParams(dict):
             cv_params['maxChangeVersion'] = min(self.max_change_version, cv_window_start + change_version_step_size)
 
             yield cv_params
+
+
+    ### Composite pagination methods (without 'totalCount' header)
+    def init_page_by_offset(self, page_size: int):
+        """
+
+        :param page_size:
+        :return:
+        """
+        if 'limit' in self or 'offset' in self:
+            logging.warning("The previously-defined limit and offset will be reset for paging.")
+
+        self['limit'] = page_size
+        self['offset'] = 0
+
+    def page_by_offset(self, page_size: int):
+        self['offset'] += page_size
