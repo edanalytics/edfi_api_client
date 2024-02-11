@@ -131,7 +131,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return res
 
-    def get_total_count(self, params: Optional[dict] = None, **kwargs):
+    def get_total_count(self, *, params: Optional[dict] = None, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -155,7 +155,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def total_count(self):
         return self.get_total_count()
 
-    def get(self, limit: Optional[int] = None, params: Optional[dict] = None, **kwargs) -> List[dict]:
+    def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
