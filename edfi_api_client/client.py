@@ -1,4 +1,3 @@
-import deprecation
 import importlib
 import requests
 from requests.exceptions import HTTPError
@@ -75,14 +74,10 @@ class EdFiClient:
         self.async_session: Optional[AsyncEdFiSession] = None
 
         if self.client_key and self.client_secret:
-            # Synchronous client connects immediately on init.
-            self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
-            self.session.connect()
-            logging.info("Connection to ODS successful!")
-
-            # Asynchronous client connects only when called in an async method.
+            # Synchronous client connects immediately; async client connects only when called in an async method.
+            self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl).connect()
             self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
-
+            logging.info("Connection to ODS successful!")
         else:
             logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
 
@@ -150,10 +145,6 @@ class EdFiClient:
         """
         return self.info.get('version')
 
-    @deprecation.deprecated(
-        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
-        details="Get attributes directly using `EdFiClient.ods_version`."
-    )
     def get_ods_version(self) -> Optional[str]:
         return self.ods_version
 
@@ -172,10 +163,6 @@ class EdFiClient:
         else:
             return None
 
-    @deprecation.deprecated(
-        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
-        details="Get attributes directly using `EdFiClient.data_model_version`."
-    )
     def get_data_model_version(self) -> Optional[str]:
         return self.data_model_version
 
@@ -209,10 +196,6 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
-    @deprecation.deprecated(
-        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
-        details="Get attributes directly using `EdFiClient.instance_locator`."
-    )
     def get_instance_locator(self) -> Optional[str]:
         return self.instance_locator
 

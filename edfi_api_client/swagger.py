@@ -29,7 +29,7 @@ class EdFiSwagger:
 
     def __repr__(self):
         """
-        Ed-Fi {self.type} OpenAPI Swagger Specification
+        Ed-Fi {self.component} OpenAPI Swagger Specification
         """
         return f"<Ed-Fi {self.component.title()} OpenAPI Swagger Specification>"
 
