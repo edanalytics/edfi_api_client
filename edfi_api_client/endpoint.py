@@ -18,7 +18,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     This is an abstract class for interacting with Ed-Fi resources and descriptors.
     Composites override with custom composite-logic.
     """
-    type: str = None
+    component: str = None
 
     def __init__(self,
         endpoint_url: str,
@@ -55,7 +55,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         deletes_string = " Deletes" if self.get_deletes else ""
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        return f"<{self.type}{deletes_string}{params_string} [{self.raw}]>"
+        return f"<{self.component}{deletes_string}{params_string} [{self.raw}]>"
 
 
     ### Naming and Pathing Methods
@@ -118,7 +118,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        logging.info(f"[Ping {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Ping {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
@@ -139,14 +139,14 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        logging.info(f"[Get Total Count {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Get Total Count {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
         params['totalCount'] = True
         params['limit'] = 0
 
-        logging.info(f"[Get Total Count {self.type}] Parameters: {params}")
+        logging.info(f"[Get Total Count {self.component}] Parameters: {params}")
 
         res = self.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
@@ -161,7 +161,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        logging.info(f"[Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Get {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
@@ -169,7 +169,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         if limit:  # Override limit if passed
             params['limit'] = limit
 
-        logging.info(f"[Get {self.type}] Parameters: {params}")
+        logging.info(f"[Get {self.component}] Parameters: {params}")
 
         return self.session.get_response(self.url, params=params, **kwargs).json()
 
@@ -196,18 +196,18 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param change_version_step_size:
         :return:
         """
-        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
-        logging.info(f"[Paged Get {self.type}] Parameters: {params}")
+        logging.info(f"[Paged Get {self.component}] Parameters: {params}")
 
         if step_change_version and reverse_paging:
-            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+            logging.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
-            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
+            logging.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping")
         else:
-            logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+            logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._get_paged_window_params(
@@ -219,10 +219,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Begin pagination-loop
         for paged_params in paged_params_list:
-            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            logging.info(f"[Paged Get {self.component}] Parameters: {paged_params}")
             res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
-            logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+            logging.info(f"[Paged Get {self.component}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
     def get_rows(self,
@@ -343,7 +343,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        logging.info(f"[Post {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         for idx, row in enumerate(rows):
@@ -392,7 +392,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param ids:
         :return:
         """
-        logging.info(f"[Delete {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Delete {self.component}] Endpoint  : {self.url}")
         output_log = defaultdict(list)
 
         for id in ids:
@@ -425,11 +425,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
 class EdFiResource(EdFiEndpoint):
-    type: str = 'Resource'
+    component: str = 'Resource'
 
 
 class EdFiDescriptor(EdFiEndpoint):
-    type: str = 'Descriptor'
+    component: str = 'Descriptor'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -442,7 +442,7 @@ class EdFiComposite(EdFiEndpoint):
     """
 
     """
-    type: str = 'Composite'
+    component: str = 'Composite'
 
     def __init__(self,
         *args,
@@ -522,8 +522,8 @@ class EdFiComposite(EdFiEndpoint):
                 "Change versions are not implemented in composites! Remove `step_change_version` from arguments."
             )
 
-        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
-        logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+        logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
 
         # Reset pagination parameters
         paged_params = (params or self.params).copy()
@@ -533,12 +533,12 @@ class EdFiComposite(EdFiEndpoint):
         while True:
 
             ### GET from the API and yield the resulting JSON payload
-            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            logging.info(f"[Paged Get {self.component}] Parameters: {paged_params}")
             res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
-                logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+                logging.info(f"[Paged Get {self.component}] Retrieved {len(res.json())} rows.")
                 yield res.json()
 
                 logging.info(f"@ Paginating offset...")
@@ -546,7 +546,7 @@ class EdFiComposite(EdFiEndpoint):
 
             # If no rows are returned, end pagination.
             else:
-                logging.info(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
+                logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
                 break
 
     def post_rows(self, *args, **kwargs):

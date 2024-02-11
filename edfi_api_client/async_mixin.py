@@ -31,7 +31,7 @@ class AsyncEdFiSession(EdFiSession):
         self.pool_size: Optional[int] = None
 
         if not (self.client_key and self.client_secret):
-            logging.warning("Client key and secret not provided. Async connection with ODS will not be attempted.")
+            logging.critical("Client key and secret not provided. Async connection with ODS will not be attempted.")
             exit(1)
 
     async def __aenter__(self):
@@ -69,7 +69,7 @@ class AsyncEdFiSession(EdFiSession):
             )
 
         # Update time attributes and auth headers with latest authentication information.
-        self.authenticate()
+        self.authenticate()  # Blocking method to make sure authentication happens once
         return self
 
 

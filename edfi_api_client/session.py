@@ -50,7 +50,7 @@ class EdFiSession:
 
         # Update time attributes and auth headers with latest authentication information.
         self.authenticate()
-        return self.session
+        return self
 
     def authenticate(self) -> requests.Response:
         """
