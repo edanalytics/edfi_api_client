@@ -280,7 +280,7 @@ class AsyncEndpointMixin:
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
             await fp.write(util.page_to_bytes(await page))
 
-        logging.info(f"Writing rows to disk: `{path}`")
+        logging.info(f"[Async Get to JSON {self.component}] Filepath: `{path}`")
 
         paged_results = self.async_get_pages(
             page_size=page_size, reverse_paging=reverse_paging,
@@ -341,6 +341,7 @@ class AsyncEndpointMixin:
 
 
     ### POST Methods
+    @async_main
     async def async_post_rows(self,
         rows: Iterator[dict],
         *,
@@ -364,6 +365,7 @@ class AsyncEndpointMixin:
             elif exclude and idx in exclude:
                 return
 
+            logging.info(f"[Async Post Row {self.component}] Index: {idx}")
             try:
                 response = await self.async_session.post_response(self.url, data=row, **kwargs)
                 await self._async_log_response(output_log, idx, response=response)
@@ -399,10 +401,11 @@ class AsyncEndpointMixin:
             with open(path_, 'rb') as fp:
                 yield from fp
 
-        logging.info(f"Posting rows from disk: `{path}`")
+        logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
 
         if not os.path.exists(path):
-            raise FileNotFoundError(f"JSON file not found: {path}")
+            logging.critical("JSON file not found: {path}")
+            exit(1)
 
         return await self.async_post_rows(
             rows=stream_rows(path),

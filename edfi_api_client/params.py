@@ -115,9 +115,8 @@ class EdFiParams(dict):
         :return:
         """
         if self.min_change_version is None or self.max_change_version is None:
-            raise ValueError(
-                "! Cannot paginate change version steps without specifying min and max change versions!"
-            )
+            logging.critical("Cannot paginate change version steps without specifying min and max change versions!")
+            exit(1)
 
         change_version_step_windows = range(self.min_change_version, self.max_change_version, change_version_step_size)
         for idx, cv_window_start in enumerate(change_version_step_windows):

@@ -182,19 +182,22 @@ class EdFiClient:
 
         elif self.api_mode in ('year_specific',):
             if not self.api_year:
-                raise ValueError("`api_year` required for 'year_specific' mode.")
+                logging.critical("`api_year` required for 'year_specific' mode.")
+                exit(1)
             return str(self.api_year)
 
         elif self.api_mode in ('instance_year_specific',):
             if not self.api_year or not self.instance_code:
-                raise ValueError("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
+                logging.critical("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
+                exit(1)
             return f"{self.instance_code}/{self.api_year}"
 
         else:
-            raise ValueError(
+            logging.critical(
                 "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n"
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
+            exit(1)
 
     def get_instance_locator(self) -> Optional[str]:
         return self.instance_locator
@@ -237,9 +240,10 @@ class EdFiClient:
     ### Methods for accessing ODS endpoints
     def _require_session(self):
         if self.session is None:
-            raise ValueError(
+            logging.critical(
                 "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
             )
+            exit(1)
 
     def get_newest_change_version(self) -> int:
         """

@@ -280,7 +280,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param reverse_paging:
         :return:
         """
-        logging.info(f"[Get to JSON] Writing rows to disk: `{path}`")
+        logging.info(f"[Get to JSON {self.component}] Filepath: `{path}`")
 
         paged_results = self.get_pages(
             params=params,
@@ -353,6 +353,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             elif exclude and idx in exclude:
                 continue
 
+            logging.info(f"[Post Row {self.component}] Index: {idx}")
             try:
                 response = self.session.post_response(self.url, data=row, **kwargs)
                 self._log_response(output_log, idx, response=response)
@@ -375,10 +376,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        logging.info(f"Posting rows from disk: `{path}`")
+        logging.info(f"[Post from JSON {self.component}] Filepath: `{path}`")
 
         if not os.path.exists(path):
-            raise FileNotFoundError(f"JSON file not found: {path}")
+            logging.critical(f"JSON file not found: {path}")
+            exit(1)
 
         with open(path, 'rb') as fp:
             return self.post_rows(fp, include=include, exclude=exclude, **kwargs)
@@ -492,9 +494,8 @@ class EdFiComposite(EdFiEndpoint):
                 self.filter_type, self.filter_id, self.name
             )
         else:
-            raise ValueError(
-                "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
-            )
+            logging.critical("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
+            exit(1)
 
     def total_count(self):
         """
@@ -518,9 +519,9 @@ class EdFiComposite(EdFiEndpoint):
         :return:
         """
         if kwargs.get('step_change_version'):
-            raise KeyError(
-                "Change versions are not implemented in composites! Remove `step_change_version` from arguments."
-            )
+            logging.critical("Change versions are not implemented in composites! Remove `step_change_version` from arguments.")
+            exit(1)
+                
 
         logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
         logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
@@ -541,7 +542,7 @@ class EdFiComposite(EdFiEndpoint):
                 logging.info(f"[Paged Get {self.component}] Retrieved {len(res.json())} rows.")
                 yield res.json()
 
-                logging.info(f"@ Paginating offset...")
+                logging.info(f"    @ Paginating offset...")
                 paged_params.page_by_offset(page_size)
 
             # If no rows are returned, end pagination.
