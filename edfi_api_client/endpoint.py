@@ -151,9 +151,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
         res = self.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
-    @property
-    def total_count(self):
-        return self.get_total_count()
+    def total_count(self, *args, **kwargs):
+        logging.warning("`EdFiEndpoint.total_count()` is deprecated. Use `EdFiEndpoint.get_total_count()` instead.")
+        return self.get_total_count(*args, **kwargs)
 
     def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:
         """
@@ -496,7 +496,7 @@ class EdFiComposite(EdFiEndpoint):
                 "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
             )
 
-    def total_count(self):
+    def get_total_count(self):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
