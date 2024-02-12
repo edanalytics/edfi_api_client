@@ -1,4 +1,3 @@
-import deprecation
 import importlib
 import requests
 from requests.exceptions import HTTPError
@@ -99,12 +98,6 @@ class EdFiClient:
 
 
     ### Unauthenticated base-URL payload methods
-    @property
-    def info(self) -> dict:
-        if self._info is None:
-            self._info = self.get_info()
-        return self._info
-
     def get_info(self) -> dict:
         """
         Ed-Fi3 returns a helpful payload from the base URL.
@@ -129,42 +122,32 @@ class EdFiClient:
 
         :return: The descriptive payload returned by the API host.
         """
-        return requests.get(self.base_url, verify=self.verify_ssl).json()
+        if self._info is None:
+            self._info = requests.get(self.base_url, verify=self.verify_ssl).json()
+        return self._info
 
-    # API Mode (attribute is set during init)
     def get_api_mode(self) -> Optional[str]:
         """
         Retrieve api_mode from the metadata exposed at the API root.
         After API mode is deprecated in Ed-Fi 7, we can consider deprecating this method.
         :return:
         """
-        api_mode = self.info.get('apiMode')
+        api_mode = self.get_info().get('apiMode')
         return util.camel_to_snake(api_mode) if api_mode else None
 
-    # ODS Version
-    @property
-    def ods_version(self) -> Optional[str]:
+    def get_ods_version(self) -> Optional[str]:
         """
         Retrieve ods_version from the metadata exposed at the API root.
         :return:
         """
-        return self.info.get('version')
-
-    @deprecation.deprecated(
-        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
-        details="Get attributes directly using `EdFiClient.ods_version`."
-    )
-    def get_ods_version(self) -> Optional[str]:
-        return self.ods_version
-
-    # Data Model Version
-    @property
-    def data_model_version(self) -> Optional[str]:
+        return self..get_info().get('version')
+    
+    def get_data_model_version(self) -> Optional[str]:
         """
         Retrieve Ed-Fi data model version from the metadata exposed at the API root.
         :return:
         """
-        data_models = self.info.get('dataModels', [])
+        data_models = self..get_info().get('dataModels', [])
 
         for data_model_dict in data_models:
             if data_model_dict.get('name') == 'Ed-Fi':
@@ -172,16 +155,7 @@ class EdFiClient:
         else:
             return None
 
-    @deprecation.deprecated(
-        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
-        details="Get attributes directly using `EdFiClient.data_model_version`."
-    )
-    def get_data_model_version(self) -> Optional[str]:
-        return self.data_model_version
-
-    # Instance Locator
-    @property
-    def instance_locator(self) -> Optional[str]:
+    def get_instance_locator(self) -> Optional[str]:
         """
         Construct API URL components to resolve requests in a multi-ODS
 
@@ -209,31 +183,24 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
-    @deprecation.deprecated(
-        deprecated_in="0.3.0", removed_in="0.4.0", current_version=importlib.metadata.version('edfi_api_client'),
-        details="Get attributes directly using `EdFiClient.instance_locator`."
-    )
-    def get_instance_locator(self) -> Optional[str]:
-        return self.instance_locator
-
 
     # URLs
-    # TODO: Should these be built here, or pulled from `self.info`?
+    # TODO: Should these be built here, or pulled from `self._info`?
     @property
     def oauth_url(self) -> str:
         return util.url_join(self.base_url, 'oauth/token')
 
     @property
     def resource_url(self) -> str:
-        return util.url_join(self.base_url, 'data/v3', self.instance_locator)
+        return util.url_join(self.base_url, 'data/v3', self.get_instance_locator())
 
     @property
     def composite_url(self) -> str:
-        return util.url_join(self.base_url, 'composites/v1', self.instance_locator)
+        return util.url_join(self.base_url, 'composites/v1', self.get_instance_locator())
 
     @property
     def change_version_url(self) -> str:
-        return util.url_join(self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions')
+        return util.url_join(self.base_url, 'changeQueries/v1', self.get_instance_locator(), 'availableChangeVersions')
 
 
     ### Unauthenticated Swagger methods
