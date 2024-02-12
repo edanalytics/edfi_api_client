@@ -140,14 +140,14 @@ class EdFiClient:
         Retrieve ods_version from the metadata exposed at the API root.
         :return:
         """
-        return self..get_info().get('version')
+        return self.get_info().get('version')
     
     def get_data_model_version(self) -> Optional[str]:
         """
         Retrieve Ed-Fi data model version from the metadata exposed at the API root.
         :return:
         """
-        data_models = self..get_info().get('dataModels', [])
+        data_models = self.get_info().get('dataModels', [])
 
         for data_model_dict in data_models:
             if data_model_dict.get('name') == 'Ed-Fi':
