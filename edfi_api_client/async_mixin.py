@@ -236,7 +236,7 @@ class AsyncEndpointMixin:
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
-    ) -> AsyncGenerator[List[dict], None]:
+    ) -> AsyncIterator[dict]:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a list in-memory.
@@ -253,12 +253,9 @@ class AsyncEndpointMixin:
             **kwargs
         )
 
-        collected_pages = await self._gather_with_concurrency(
-            self.async_session.pool_size,
-            *[page async for page in paged_results]
-        )
-        for row in itertools.chain.from_iterable(collected_pages):
-            yield row
+        async for page in paged_results:
+            for row in page:
+                yield row
 
     @async_main
     async def async_get_to_json(self,
