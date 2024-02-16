@@ -5,6 +5,7 @@ import time
 
 from edfi_api_client import EdFiClient
 
+from test_util import format_print, time_it
 
 ###
 def time_it(func, wrap_func=None, *args, **kwargs):
