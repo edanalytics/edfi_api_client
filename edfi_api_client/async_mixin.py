@@ -194,7 +194,7 @@ class AsyncEndpointMixin:
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
-    ) -> AsyncGenerator[List[dict], None]:
+    ) -> AsyncIterator[List[dict]]:
         """
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are returned in pages as a coroutine.
@@ -220,13 +220,13 @@ class AsyncEndpointMixin:
             logging.info(f"[Async Paged Get {self.component}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
-        paged_params_list = await self._async_get_paged_window_params(
+        paged_params_list = self._async_get_paged_window_params(
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
         )
 
-        for paged_param in paged_params_list:
+        async for paged_param in paged_params_list:
             yield verbose_get_page(paged_param)
 
     async def async_get_rows(self,
@@ -322,7 +322,7 @@ class AsyncEndpointMixin:
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
-    ) -> Awaitable[List['EdFiParams']]:
+    ) -> AsyncIterator['EdFiParams']:
         """
 
         :param page_size:
@@ -331,17 +331,15 @@ class AsyncEndpointMixin:
         :param change_version_step_size:
         :return:
         """
-        async def build_total_count_windows(params):
-            total_count = await self.async_get_total_count(params=params, **kwargs)
-            return params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
-
         if step_change_version:
             top_level_params = self.params.build_change_version_window_params(change_version_step_size)
         else:
             top_level_params = [self.params]
 
-        nested_params = await self._gather_with_concurrency(self.async_session.pool_size, *map(build_total_count_windows, top_level_params))
-        return list(itertools.chain.from_iterable(nested_params))
+        for params in top_level_params:
+            total_count = await self.async_get_total_count(params=params, **kwargs)
+            for window_params in params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging):
+                yield window_params
 
 
     ### POST Methods
