@@ -364,7 +364,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
             try:
                 response = self.session.post_response(self.url, data=row, **kwargs)
-                output_log.record(idx, response=response)
+                res_json = response.json() if response.text else {}
+                output_log.record(idx, status=response.status_code, message=res_json.get('message'))
             except Exception as error:
                 output_log.record(idx, message=error)
             finally:
@@ -416,7 +417,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         for id in ids:
             try:
                 response = self.session.delete_response(self.url, id=id, **kwargs)
-                output_log.record(id, response=response)
+                res_json = response.json() if response.text else {}
+                output_log.record(id, status=response.status_code, message=res_json.get('message'))
             except Exception as error:
                 output_log.record(id, message=error)
             finally:

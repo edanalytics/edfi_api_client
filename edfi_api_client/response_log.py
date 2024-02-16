@@ -1,12 +1,8 @@
-import aiohttp
 import collections
 import logging
 
 from typing import Dict, Optional
 from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from requests import Response
-    from aiohttp import ClientResponse
 
 
 class ResponseLog:
@@ -22,6 +18,17 @@ class ResponseLog:
     def __len__(self):
         return len(self.log_dict)
 
+    def record(self, key: str, status: Optional[str] = None, message: Optional[str] = None):
+        # 200 responses return no JSON message.
+        if not status:
+            status = self.ERROR
+
+        # Caught exceptions return no status codes.
+        if not message:
+            message = self.SUCCESS
+
+        self.log_dict[key] = (status, message)
+
     def count_statuses(self):
         counts_by_elem1 = collections.Counter(status for status, _ in self.log_dict.values())
         return dict(counts_by_elem1)
@@ -33,8 +40,11 @@ class ResponseLog:
             full_message = f"{status} {message}"
             message_indexes[full_message].append(id)
 
-        # TODO: Sort IDs before displaying.
-        return dict(message_indexes)
+        # Sort outputs before returning.
+        sorted_values = {
+            key: sorted(value) for key, value in message_indexes.items()
+        }
+        return sorted_values
 
     def log_progress(self, n: int = 1):
         # Do not log empty dict, and only log every N records.
@@ -56,51 +66,3 @@ class ResponseLog:
     #     if item == cls.SUCCESS:
     #         return 0  # Always first!
     #     return item
-
-
-
-    def record(self,
-        idx: int,
-        *,
-        response: Optional['Response'] = None,
-        message: Optional[Exception] = None
-    ):
-        """
-        Helper for saving response outputs during POSTs/DELETEs
-        """
-        if response is not None:
-            status = str(response.status_code)
-            if not response.ok:
-                message = response.json().get('message')
-            else:
-                message = self.SUCCESS
-
-        else:
-            status = self.ERROR
-            message = str(message)
-
-        self.log_dict[idx] = (status, message)
-
-    async def async_record(self,
-        idx: int,
-        *,
-        response: Optional['ClientResponse'] = None,
-        message: Optional[Exception] = None
-    ):
-        """
-        Same as log_response, but with async responses.
-        TODO: Union these into a single method.
-        """
-        if response is not None:
-            status = str(response.status)
-            if not response.ok:
-                res_json = await response.json()
-                message = res_json.get('message')
-            else:
-                message = self.SUCCESS
-
-        else:
-            status = self.ERROR
-            message = str(message)
-
-        self.log_dict[idx] = (status, message)

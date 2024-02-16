@@ -4,6 +4,7 @@ import aiohttp_retry
 import asyncio
 import functools
 import itertools
+import json
 import logging
 import os
 
@@ -368,9 +369,11 @@ class AsyncEndpointMixin:
 
             try:
                 response = await self.async_session.post_response(self.url, data=row, **kwargs)
-                await output_log.async_record(idx, response=response)
+                res_text = await response.text()
+                res_json = json.loads(res_text) if res_text else {}
+                output_log.record(idx, status=response.status, message=res_json.get('message'))
             except Exception as error:
-                await output_log.async_record(idx, message=error)
+                output_log.record(idx, message=error)
             finally:
                 output_log.log_progress(100)
 
@@ -429,9 +432,11 @@ class AsyncEndpointMixin:
         async def delete_and_log(id: int, row: dict):
             try:
                 response = await self.async_session.delete_response(self.url, id=id, **kwargs)
-                await output_log.async_record(id, response=response)
+                res_text = await response.text()
+                res_json = json.loads(res_text) if res_text else {}
+                output_log.record(idx, status=response.status, message=res_json.get('message'))
             except Exception as error:
-                await output_log.async_record(id, message=error)
+                output_log.record(id, message=error)
             finally:
                 output_log.log_progress(100)
 
