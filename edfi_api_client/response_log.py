@@ -52,17 +52,9 @@ class ResponseLog:
             return
 
         status_counts = self.count_statuses()
-        # status_counts = sorted(status_counts, key=self.custom_status_sort) # See TD below.
         status_strings = [f"({status}: {count})" for status, count in status_counts.items()]
 
         message = f"[Count Processed: {len(self.log_dict)}]"
         if status_strings:
             message += ": " + ', '.join(status_strings)
         logging.info(message)
-
-    # TODO: Elegant way to put Success first and Error last?
-    # @classmethod
-    # def custom_status_sort(cls, item):
-    #     if item == cls.SUCCESS:
-    #         return 0  # Always first!
-    #     return item
