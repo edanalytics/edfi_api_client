@@ -9,8 +9,9 @@ from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
 from edfi_api_client.swagger import EdFiSwagger
 from edfi_api_client.session import EdFiSession
+from edfi_api_client.response_log import ResponseLog
 
-from typing import BinaryIO, Dict, Iterator, List, Optional, Union
+from typing import BinaryIO, Callable, Dict, Iterator, List, Optional, Union
 
 
 class EdFiEndpoint(AsyncEndpointMixin):
@@ -328,13 +329,21 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### POST Methods
+    def post(self, data, **kwargs) -> requests.Response:
+        """
+        Initialize a new response log if none provided.
+        Start counting at zero.
+        """
+        logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
+        return self.session.post_response(self.url, data=data, **kwargs)
+
     def post_rows(self,
         rows: Union[Iterator[dict], BinaryIO],
         *,
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
-    ) -> Dict[str, List[int]]:
+    ) -> ResponseLog:
         """
         This method tries to post all rows from an iterator.
 
@@ -344,7 +353,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
-        output_log = defaultdict(list)
+        output_log = ResponseLog()
 
         for idx, row in enumerate(rows):
 
@@ -353,14 +362,16 @@ class EdFiEndpoint(AsyncEndpointMixin):
             elif exclude and idx in exclude:
                 continue
 
-            logging.info(f"[Post Row {self.component}] Index: {idx}")
             try:
                 response = self.session.post_response(self.url, data=row, **kwargs)
-                self._log_response(output_log, idx, response=response)
+                output_log.record(idx, response=response)
             except Exception as error:
-                self._log_response(output_log, idx, message=error)
+                output_log.record(idx, message=error)
+            finally:
+                output_log.log_progress(100)
 
-        return dict(output_log)
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
     def post_from_json(self,
         path: str,
@@ -387,7 +398,12 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### DELETE Methods
-    def delete_ids(self, ids: Iterator[int], **kwargs) -> Dict[str, List[int]]:
+    def delete(self, id: int, **kwargs) -> requests.Response:
+        logging.info(f"[Delete {self.component}] Endpoint  : {self.url}")
+        logging.info(f"[Delete {self.component}] Identifier: {id}")
+        return self.session.delete_response(self.url, id=id, **kwargs)
+
+    def delete_ids(self, ids: Iterator[int], **kwargs) -> ResponseLog:
         """
         Delete all records at the endpoint by ID.
 
@@ -395,35 +411,19 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         logging.info(f"[Delete {self.component}] Endpoint  : {self.url}")
-        output_log = defaultdict(list)
+        output_log = ResponseLog()
 
         for id in ids:
             try:
                 response = self.session.delete_response(self.url, id=id, **kwargs)
-                self._log_response(output_log, id, response=response)
+                output_log.record(id, response=response)
             except Exception as error:
-                self._log_response(output_log, id, message=error)
+                output_log.record(id, message=error)
+            finally:
+                output_log.log_progress(100)
 
-        return dict(output_log)
-
-    @staticmethod
-    def _log_response(
-        output_log: dict,
-        idx: int,
-        response: Optional[requests.Response] = None,
-        message: Optional[Exception] = None
-    ):
-        """
-        Helper for updating response output logs consistently.
-        """
-        if response is not None:
-            if response.ok:
-                message = f"{response.status_code}"
-            else:
-                message = f"{response.status_code} {response.json().get('message')}"
-
-        message = message or str(message)
-        output_log[message].append(idx)
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
 
 class EdFiResource(EdFiEndpoint):

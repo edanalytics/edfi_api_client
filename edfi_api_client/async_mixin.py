@@ -11,6 +11,7 @@ from collections import defaultdict
 
 from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
+from edfi_api_client.response_log import ResponseLog
 
 from typing import Awaitable, AsyncGenerator, Callable, Dict, Iterator, List, Optional, Set, Union
 from typing import TYPE_CHECKING
@@ -348,7 +349,7 @@ class AsyncEndpointMixin:
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
-    ) -> Awaitable[Dict[str, List[int]]]:
+    ) -> Awaitable[ResponseLog]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
@@ -357,7 +358,7 @@ class AsyncEndpointMixin:
         :param exclude:
         :return:
         """
-        output_log = defaultdict(list)
+        output_log = ResponseLog()
 
         async def post_and_log(idx: int, row: dict):
             if include and idx not in include:
@@ -365,12 +366,13 @@ class AsyncEndpointMixin:
             elif exclude and idx in exclude:
                 return
 
-            logging.info(f"[Async Post Row {self.component}] Index: {idx}")
             try:
                 response = await self.async_session.post_response(self.url, data=row, **kwargs)
-                await self._async_log_response(output_log, idx, response=response)
+                await output_log.async_record(idx, response=response)
             except Exception as error:
-                await self._async_log_response(output_log, idx, message=error)
+                await output_log.async_record(idx, message=error)
+            finally:
+                output_log.log_progress(100)
 
         logging.info(f"[Async Post {self.component}] Endpoint  : {self.url}")
 
@@ -379,8 +381,8 @@ class AsyncEndpointMixin:
             *(post_and_log(idx, row) for idx, row in enumerate(rows))
          )
 
-        # Sort row numbers for easier debugging
-        return {key: sorted(val) for key, val in output_log.items()}
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
     @async_main
     async def async_post_from_json(self,
@@ -389,7 +391,7 @@ class AsyncEndpointMixin:
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
-    ) -> Union[Dict[str, List[int]], Awaitable[Dict[str, List[int]]]]:
+    ) -> Union[ResponseLog, Awaitable[ResponseLog]]:
         """
 
         :param path:
@@ -415,21 +417,23 @@ class AsyncEndpointMixin:
 
 
     ### DELETE Methods
-    async def async_delete_ids(self, ids: Iterator[int], **kwargs) -> Awaitable[Dict[str, List[int]]]:
+    async def async_delete_ids(self, ids: Iterator[int], **kwargs) -> Awaitable[ResponseLog]:
         """
         Delete all records at the endpoint by ID.
 
         :param ids:
         :return:
         """
-        output_log = defaultdict(list)
+        output_log = ResponseLog()
 
         async def delete_and_log(id: int, row: dict):
             try:
                 response = await self.async_session.delete_response(self.url, id=id, **kwargs)
-                await self._async_log_response(output_log, id, response=response)
+                await output_log.async_record(id, response=response)
             except Exception as error:
-                await self._async_log_response(output_log, id, message=error)
+                await output_log.async_record(id, message=error)
+            finally:
+                output_log.log_progress(100)
 
         logging.info(f"[Async Delete {self.component}] Endpoint  : {self.url}")
 
@@ -438,28 +442,8 @@ class AsyncEndpointMixin:
             *(delete_and_log(id, row) for id, row in enumerate(ids))
         )
 
-        # Sort row numbers for easier debugging
-        return {key: sorted(val) for key, val in output_log.items()}
-
-    @staticmethod
-    async def _async_log_response(
-        output_log: dict,
-        idx: int,
-        response: Optional[aiohttp.ClientResponse] = None,
-        message: Optional[Exception] = None
-    ):
-        """
-        Helper for updating response output logs consistently.
-        """
-        if response is not None:
-            if response.ok:
-                message = f"{response.status_code}"
-            else:
-                res_json = await response.json()
-                message = f"{response.status_code} {res_json.get('message')}"
-
-        message = message or str(message)
-        output_log[message].append(idx)
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
 
     ### Async Utilities
