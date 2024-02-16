@@ -162,6 +162,8 @@ class AsyncEndpointMixin:
     url: str
     params: 'EdFiParams'
 
+    LOG_EVERY: int
+
     def async_main(func: Callable) -> Callable:
         """
         This decorator establishes an async session before calling the associated class method, if not defined.
@@ -375,7 +377,7 @@ class AsyncEndpointMixin:
             except Exception as error:
                 output_log.record(idx, message=error)
             finally:
-                output_log.log_progress(100)
+                output_log.log_progress(self.LOG_EVERY)
 
         logging.info(f"[Async Post {self.component}] Endpoint  : {self.url}")
 
@@ -438,7 +440,7 @@ class AsyncEndpointMixin:
             except Exception as error:
                 output_log.record(id, message=error)
             finally:
-                output_log.log_progress(100)
+                output_log.log_progress(self.LOG_EVERY)
 
         logging.info(f"[Async Delete {self.component}] Endpoint  : {self.url}")
 

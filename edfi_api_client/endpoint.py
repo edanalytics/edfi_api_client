@@ -21,6 +21,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
     """
     component: str = None
 
+    LOG_EVERY: int = 500
+
     def __init__(self,
         endpoint_url: str,
         name: str,
@@ -369,7 +371,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             except Exception as error:
                 output_log.record(idx, message=error)
             finally:
-                output_log.log_progress(100)
+                output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
@@ -422,7 +424,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             except Exception as error:
                 output_log.record(id, message=error)
             finally:
-                output_log.log_progress(100)
+                output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
