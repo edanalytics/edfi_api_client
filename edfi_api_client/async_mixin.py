@@ -342,29 +342,16 @@ class AsyncEndpointMixin:
 
     ### POST Methods
     @async_main
-    async def async_post_rows(self,
-        rows: Iterator[dict],
-        *,
-        include: Iterator[int] = None,
-        exclude: Iterator[int] = None,
-        **kwargs
-    ) -> Awaitable[ResponseLog]:
+    async def async_post_rows(self, rows: AsyncIterator[dict], **kwargs) -> Awaitable[ResponseLog]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
         :param rows:
-        :param include:
-        :param exclude:
         :return:
         """
         output_log = ResponseLog()
 
         async def post_and_log(idx: int, row: dict):
-            if include and idx not in include:
-                return
-            elif exclude and idx in exclude:
-                return
-
             try:
                 response = await self.async_session.post_response(self.url, data=row, **kwargs)
                 res_text = await response.text()
@@ -379,7 +366,7 @@ class AsyncEndpointMixin:
 
         await self.iterate_taskpool(
             lambda idx_row: post_and_log(*idx_row),
-            self.aenumerate(rows), pool_size=self.async_session.pool_size
+            self.opt_aenumerate(rows), pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -400,9 +387,14 @@ class AsyncEndpointMixin:
         :param exclude:
         :return:
         """
-        def stream_rows(path_: str):
+        async def stream_filter_rows(path_: str):
             with open(path_, 'rb') as fp:
-                yield from fp
+                for idx, row in enumerate(fp):
+                    if include and idx not in include:
+                        continue
+                    if exclude and idx in exclude:
+                        continue
+                    yield idx, row
 
         logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
 
@@ -410,11 +402,7 @@ class AsyncEndpointMixin:
             logging.critical("JSON file not found: {path}")
             exit(1)
 
-        return await self.async_post_rows(
-            rows=stream_rows(path),
-            include=include, exclude=exclude,
-            **kwargs
-        )
+        return await self.async_post_rows(rows=stream_filter_rows(path), **kwargs)
 
 
     ### DELETE Methods
@@ -451,12 +439,20 @@ class AsyncEndpointMixin:
 
     ### Async Utilities
     @staticmethod
-    async def aenumerate(asequence: AsyncIterator[object], start: int = 0):
-        """Asynchronously enumerate an async iterator from a given start value"""
+    async def opt_aenumerate(asequence: AsyncIterator[object], start: int = 0):
+        """
+        Asynchronously enumerate an async iterator from a given start value
+        If IDs are already defined, yield those instead.
+        """
+
         n = start
         async for elem in asequence:
-            yield n, elem
-            n += 1
+            try:
+                idx, item = elem
+                yield idx, item
+            except:
+                yield n, elem
+                n += 1
 
     @staticmethod
     async def iterate_taskpool(callable: Callable[[object], object], iterator: AsyncIterator[object], pool_size: int = 8):

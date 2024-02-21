@@ -390,14 +390,22 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
+        def stream_filter_rows(path_: str):
+            with open(path_, 'rb') as fp:
+                for idx, row in enumerate(fp):
+                    if include and idx not in include:
+                        continue
+                    if exclude and idx in exclude:
+                        continue
+                    yield idx, row
+
         logging.info(f"[Post from JSON {self.component}] Filepath: `{path}`")
 
         if not os.path.exists(path):
             logging.critical(f"JSON file not found: {path}")
             exit(1)
 
-        with open(path, 'rb') as fp:
-            return self.post_rows(fp, include=include, exclude=exclude, **kwargs)
+        return self.post_rows(rows=stream_filter_rows(path), **kwargs)
 
 
     ### DELETE Methods
