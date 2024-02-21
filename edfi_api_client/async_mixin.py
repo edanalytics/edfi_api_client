@@ -14,7 +14,7 @@ from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.response_log import ResponseLog
 
-from typing import Awaitable, AsyncGenerator, Callable, Dict, Iterator, List, Optional, Set, Union
+from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
@@ -254,7 +254,7 @@ class AsyncEndpointMixin:
         )
 
         async for page in paged_results:
-            for row in page:
+            for row in await page:
                 yield row
 
     @async_main
@@ -289,10 +289,11 @@ class AsyncEndpointMixin:
             **kwargs
         )
 
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         async with aiofiles.open(path, 'wb') as fp:
-            await self._gather_with_concurrency(
-                self.async_session.pool_size,
-                *[write_async_page(page, fp=fp) async for page in paged_results]
+            await self.iterate_taskpool(
+                lambda page: write_async_page(page, fp),
+                paged_results, pool_size=self.async_session.pool_size
             )
 
         return path
@@ -376,10 +377,10 @@ class AsyncEndpointMixin:
 
         logging.info(f"[Async Post {self.component}] Endpoint  : {self.url}")
 
-        await self._gather_with_concurrency(
-            self.async_session.pool_size,
-            *(post_and_log(idx, row) for idx, row in enumerate(rows))
-         )
+        await self.iterate_taskpool(
+            lambda idx_row: post_and_log(*idx_row),
+            self.aenumerate(rows), pool_size=self.async_session.pool_size
+        )
 
         output_log.log_progress()  # Always log on final count.
         return output_log
@@ -426,12 +427,12 @@ class AsyncEndpointMixin:
         """
         output_log = ResponseLog()
 
-        async def delete_and_log(id: int, row: dict):
+        async def delete_and_log(id: int):
             try:
                 response = await self.async_session.delete_response(self.url, id=id, **kwargs)
                 res_text = await response.text()
                 res_json = json.loads(res_text) if res_text else {}
-                output_log.record(idx, status=response.status, message=res_json.get('message'))
+                output_log.record(id, status=response.status, message=res_json.get('message'))
             except Exception as error:
                 output_log.record(id, message=error)
             finally:
@@ -439,9 +440,9 @@ class AsyncEndpointMixin:
 
         logging.info(f"[Async Delete {self.component}] Endpoint  : {self.url}")
 
-        await self._gather_with_concurrency(
-            self.async_session.pool_size,
-            *(delete_and_log(id, row) for id, row in enumerate(ids))
+        await self.iterate_taskpool(
+            lambda id: delete_and_log(id),
+            ids, pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -450,21 +451,23 @@ class AsyncEndpointMixin:
 
     ### Async Utilities
     @staticmethod
-    async def _gather_with_concurrency(n, *tasks, return_exceptions: bool = False) -> Awaitable[List[asyncio.Task]]:
+    async def aenumerate(asequence: AsyncIterator[object], start: int = 0):
+        """Asynchronously enumerate an async iterator from a given start value"""
+        n = start
+        async for elem in asequence:
+            yield n, elem
+            n += 1
+
+    @staticmethod
+    async def iterate_taskpool(callable: Callable[[object], object], iterator: AsyncIterator[object], pool_size: int = 8):
         """
-        Waits for an entire task queue to finish processing
 
-        :param n:
-        :param tasks:
-        :param return_exceptions:
-        :return:
         """
-        semaphore = asyncio.Semaphore(n)
+        pending = set()
 
-        async def sem_task(task):
-            async with semaphore:
-                if not isinstance(task, asyncio.Task):
-                    task = asyncio.create_task(task)
-                return await task
+        async for item in iterator:
+            if len(pending) >= pool_size:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            pending.add(asyncio.create_task(callable(item)))
 
-        return await asyncio.gather(*(sem_task(task) for task in tasks), return_exceptions=return_exceptions)
+        await asyncio.wait(pending)
