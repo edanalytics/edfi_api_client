@@ -347,6 +347,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         def opt_enumerate(sequence: Iterator[object], start: int = 0):
+            """
+            Enumerate an iterator from a given start value
+            If IDs are already defined, yield those instead.
+            """
             n = start
             for elem in sequence:
                 try:

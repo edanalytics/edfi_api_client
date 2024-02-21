@@ -351,6 +351,20 @@ class AsyncEndpointMixin:
         """
         output_log = ResponseLog()
 
+        async def opt_aenumerate(asequence: AsyncIterator[object], start: int = 0):
+            """
+            Asynchronously enumerate an async iterator from a given start value
+            If IDs are already defined, yield those instead.
+            """
+            n = start
+            async for elem in asequence:
+                try:
+                    idx, item = elem
+                    yield idx, item
+                except:
+                    yield n, elem
+                    n += 1
+
         async def post_and_log(idx: int, row: dict):
             try:
                 response = await self.async_session.post_response(self.url, data=row, **kwargs)
@@ -366,7 +380,7 @@ class AsyncEndpointMixin:
 
         await self.iterate_taskpool(
             lambda idx_row: post_and_log(*idx_row),
-            self.opt_aenumerate(rows), pool_size=self.async_session.pool_size
+            opt_aenumerate(rows), pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -438,22 +452,6 @@ class AsyncEndpointMixin:
 
 
     ### Async Utilities
-    @staticmethod
-    async def opt_aenumerate(asequence: AsyncIterator[object], start: int = 0):
-        """
-        Asynchronously enumerate an async iterator from a given start value
-        If IDs are already defined, yield those instead.
-        """
-
-        n = start
-        async for elem in asequence:
-            try:
-                idx, item = elem
-                yield idx, item
-            except:
-                yield n, elem
-                n += 1
-
     @staticmethod
     async def iterate_taskpool(callable: Callable[[object], object], iterator: AsyncIterator[object], pool_size: int = 8):
         """
