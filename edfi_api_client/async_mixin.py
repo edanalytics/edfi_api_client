@@ -433,6 +433,7 @@ class AsyncEndpointMixin:
 
 
     ### DELETE Methods
+    @async_main
     async def async_delete(self, id: int, **kwargs) -> Tuple[Optional[str], Optional[str]]:
         try:
             response = self.async_session.delete_response(self.url, id=id, **kwargs)
@@ -452,7 +453,8 @@ class AsyncEndpointMixin:
         output_log.record(key=id, status=status, message=message)
         output_log.log_progress(self.LOG_EVERY)
 
-    async def async_delete_ids(self, ids: Iterator[int], **kwargs) -> Awaitable[ResponseLog]:
+    @async_main
+    async def async_delete_ids(self, ids: AsyncIterator[int], **kwargs) -> Awaitable[ResponseLog]:
         """
         Delete all records at the endpoint by ID.
 
