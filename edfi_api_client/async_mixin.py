@@ -357,7 +357,7 @@ class AsyncEndpointMixin:
 
         return status, message
 
-    async def _async_post_and_log(self, key: int, row: dict, *, output_log: ResponseLog, **kwargs):
+    async def _async_post_and_log(self, key: int, row: dict, *, output_log: ResponseLog, **kwargs) -> ResponseLog:
         """
         Helper to keep async code DRY
         """
@@ -433,6 +433,25 @@ class AsyncEndpointMixin:
 
 
     ### DELETE Methods
+    async def async_delete(self, id: int, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            response = self.async_session.delete_response(self.url, id=id, **kwargs)
+            res_text = await response.text()
+            res_json = json.loads(res_text) if res_text else {}
+            status, message = response.status, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    async def _async_delete_and_log(self, id: int, *, output_log: ResponseLog, **kwargs) -> ResponseLog:
+        """
+        Helper to keep async code DRY
+        """
+        status, message = await self.async_delete(id, **kwargs)
+        output_log.record(key=id, status=status, message=message)
+        output_log.log_progress(self.LOG_EVERY)
+
     async def async_delete_ids(self, ids: Iterator[int], **kwargs) -> Awaitable[ResponseLog]:
         """
         Delete all records at the endpoint by ID.
@@ -440,23 +459,12 @@ class AsyncEndpointMixin:
         :param ids:
         :return:
         """
-        output_log = ResponseLog()
-
-        async def delete_and_log(id: int):
-            try:
-                response = await self.async_session.delete_response(self.url, id=id, **kwargs)
-                res_text = await response.text()
-                res_json = json.loads(res_text) if res_text else {}
-                output_log.record(id, status=response.status, message=res_json.get('message'))
-            except Exception as error:
-                output_log.record(id, message=error)
-            finally:
-                output_log.log_progress(self.LOG_EVERY)
 
         logging.info(f"[Async Delete {self.component}] Endpoint  : {self.url}")
+        output_log = ResponseLog()
 
         await self.iterate_taskpool(
-            lambda id: delete_and_log(id),
+            lambda id: self._async_delete_and_log(id, output_log=output_log, **kwargs),
             ids, pool_size=self.async_session.pool_size
         )
 

@@ -369,7 +369,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
-    ) -> Dict[str, List[int]]:
+    ) -> ResponseLog:
         """
 
         :param path:
@@ -401,10 +401,15 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### DELETE Methods
-    def delete(self, id: int, **kwargs) -> requests.Response:
-        logging.info(f"[Delete {self.component}] Endpoint  : {self.url}")
-        logging.info(f"[Delete {self.component}] Identifier: {id}")
-        return self.session.delete_response(self.url, id=id, **kwargs)
+    def delete(self, id: int, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            response = self.session.delete_response(self.url, id=id, **kwargs)
+            res_json = response.json() if response.text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
 
     def delete_ids(self, ids: Iterator[int], **kwargs) -> ResponseLog:
         """
@@ -417,14 +422,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
         output_log = ResponseLog()
 
         for id in ids:
-            try:
-                response = self.session.delete_response(self.url, id=id, **kwargs)
-                res_json = response.json() if response.text else {}
-                output_log.record(id, status=response.status_code, message=res_json.get('message'))
-            except Exception as error:
-                output_log.record(id, message=error)
-            finally:
-                output_log.log_progress(self.LOG_EVERY)
+            status, message = self.delete(id, **kwargs)
+            output_log.record(key=idx, status=status, message=message)
+            output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
