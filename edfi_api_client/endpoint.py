@@ -339,30 +339,27 @@ class EdFiEndpoint(AsyncEndpointMixin):
         logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
         return self.session.post_response(self.url, data=data, **kwargs)
 
-    def post_rows(self,
-        rows: Union[Iterator[dict], BinaryIO],
-        *,
-        include: Iterator[int] = None,
-        exclude: Iterator[int] = None,
-        **kwargs
-    ) -> ResponseLog:
+    def post_rows(self, rows: Union[Iterator[dict], BinaryIO], **kwargs) -> ResponseLog:
         """
         This method tries to post all rows from an iterator.
 
         :param rows:
-        :param include:
-        :param exclude:
         :return:
         """
+        def opt_enumerate(sequence: Iterator[object], start: int = 0):
+            n = start
+            for elem in sequence:
+                try:
+                    idx, item = elem
+                    yield idx, item
+                except:
+                    yield n, elem
+                    n += 1
+
         logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
         output_log = ResponseLog()
 
-        for idx, row in enumerate(rows):
-
-            if include and idx not in include:
-                continue
-            elif exclude and idx in exclude:
-                continue
+        for idx, row in opt_enumerate(rows):
 
             try:
                 response = self.session.post_response(self.url, data=row, **kwargs)
