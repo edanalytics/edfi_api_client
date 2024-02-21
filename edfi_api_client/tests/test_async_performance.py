@@ -82,7 +82,8 @@ def test_async(secret: str, verbose: bool = False):
                 runtime, resource_output_path = time_it(endpoint.async_get_to_json, **async_kwargs)
 
                 with open(resource_output_path, 'r') as fp:
-                    assert len(fp.readlines()) == endpoint_count
+                    line_count = sum(1 for _ in fp)
+                    assert line_count == endpoint_count
 
                 print(f"    Runtime: {runtime} seconds")
 
