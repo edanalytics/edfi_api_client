@@ -14,7 +14,7 @@ from edfi_api_client import util
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.response_log import ResponseLog
 
-from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Union
+from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
@@ -342,6 +342,30 @@ class AsyncEndpointMixin:
 
     ### POST Methods
     @async_main
+    async def async_post(self, data: dict, **kwargs) -> Awaitable[Tuple[Optional[str], Optional[str]]]:
+        """
+        Initialize a new response log if none provided.
+        Start index at zero.
+        """
+        try:
+            response = await self.async_session.post_response(self.url, data=data, **kwargs)
+            res_text = await response.text()
+            res_json = json.loads(res_text) if res_text else {}
+            status, message = response.status, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    async def _async_post_and_log(self, key: int, row: dict, *, output_log: ResponseLog, **kwargs):
+        """
+        Helper to keep async code DRY
+        """
+        status, message = await self.async_post(row, **kwargs)
+        output_log.record(key=key, status=status, message=message)
+        output_log.log_progress(self.LOG_EVERY)
+
+    @async_main
     async def async_post_rows(self, rows: AsyncIterator[dict], **kwargs) -> Awaitable[ResponseLog]:
         """
         This method tries to asynchronously post all rows from an iterator.
@@ -349,38 +373,18 @@ class AsyncEndpointMixin:
         :param rows:
         :return:
         """
+        logging.info(f"[Async Post {self.component}] Endpoint  : {self.url}")
         output_log = ResponseLog()
 
-        async def opt_aenumerate(asequence: AsyncIterator[object], start: int = 0):
-            """
-            Asynchronously enumerate an async iterator from a given start value
-            If IDs are already defined, yield those instead.
-            """
+        async def aenumerate(iterable: AsyncIterator, start: int = 0):
             n = start
-            async for elem in asequence:
-                try:
-                    idx, item = elem
-                    yield idx, item
-                except:
-                    yield n, elem
-                    n += 1
-
-        async def post_and_log(idx: int, row: dict):
-            try:
-                response = await self.async_session.post_response(self.url, data=row, **kwargs)
-                res_text = await response.text()
-                res_json = json.loads(res_text) if res_text else {}
-                output_log.record(idx, status=response.status, message=res_json.get('message'))
-            except Exception as error:
-                output_log.record(idx, message=error)
-            finally:
-                output_log.log_progress(self.LOG_EVERY)
-
-        logging.info(f"[Async Post {self.component}] Endpoint  : {self.url}")
+            async for elem in iterable:
+                yield n, elem
+                n += 1
 
         await self.iterate_taskpool(
-            lambda idx_row: post_and_log(*idx_row),
-            opt_aenumerate(rows), pool_size=self.async_session.pool_size
+            lambda idx_row: self._async_post_and_log(*idx_row, output_log=output_log, **kwargs),
+            aenumerate(rows), pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -401,22 +405,31 @@ class AsyncEndpointMixin:
         :param exclude:
         :return:
         """
+        logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
+        output_log = ResponseLog()
+
         async def stream_filter_rows(path_: str):
             with open(path_, 'rb') as fp:
                 for idx, row in enumerate(fp):
+
                     if include and idx not in include:
                         continue
                     if exclude and idx in exclude:
                         continue
-                    yield idx, row
 
-        logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
+                    yield idx, row
 
         if not os.path.exists(path):
             logging.critical("JSON file not found: {path}")
             exit(1)
 
-        return await self.async_post_rows(rows=stream_filter_rows(path), **kwargs)
+        await self.iterate_taskpool(
+            lambda idx_row: self._async_post_and_log(*idx_row, output_log=output_log, **kwargs),
+            stream_filter_rows(path), pool_size=self.async_session.pool_size
+        )
+
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
 
     ### DELETE Methods
@@ -464,4 +477,4 @@ class AsyncEndpointMixin:
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
             pending.add(asyncio.create_task(callable(item)))
 
-        await asyncio.wait(pending)
+        return await asyncio.wait(pending)

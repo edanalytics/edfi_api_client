@@ -11,7 +11,7 @@ from edfi_api_client.swagger import EdFiSwagger
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.response_log import ResponseLog
 
-from typing import BinaryIO, Callable, Dict, Iterator, List, Optional, Union
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 
 class EdFiEndpoint(AsyncEndpointMixin):
@@ -331,48 +331,34 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### POST Methods
-    def post(self, data, **kwargs) -> requests.Response:
+    def post(self, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
         """
         Initialize a new response log if none provided.
-        Start counting at zero.
+        Start index at zero.
         """
-        logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
-        return self.session.post_response(self.url, data=data, **kwargs)
+        try:
+            response = self.session.post_response(self.url, data=data, **kwargs)
+            res_json = response.json() if response.text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
 
-    def post_rows(self, rows: Union[Iterator[dict], BinaryIO], **kwargs) -> ResponseLog:
+        return status, message
+
+    def post_rows(self, rows: Iterator[dict], **kwargs) -> ResponseLog:
         """
         This method tries to post all rows from an iterator.
 
         :param rows:
         :return:
         """
-        def opt_enumerate(sequence: Iterator[object], start: int = 0):
-            """
-            Enumerate an iterator from a given start value
-            If IDs are already defined, yield those instead.
-            """
-            n = start
-            for elem in sequence:
-                try:
-                    idx, item = elem
-                    yield idx, item
-                except:
-                    yield n, elem
-                    n += 1
-
         logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
         output_log = ResponseLog()
 
-        for idx, row in opt_enumerate(rows):
-
-            try:
-                response = self.session.post_response(self.url, data=row, **kwargs)
-                res_json = response.json() if response.text else {}
-                output_log.record(idx, status=response.status_code, message=res_json.get('message'))
-            except Exception as error:
-                output_log.record(idx, message=error)
-            finally:
-                output_log.log_progress(self.LOG_EVERY)
+        for idx, row in enumerate(rows):
+            status, message = self.post(row, **kwargs)
+            output_log.record(key=idx, status=status, message=message)
+            output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
@@ -391,22 +377,27 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        def stream_filter_rows(path_: str):
-            with open(path_, 'rb') as fp:
-                for idx, row in enumerate(fp):
-                    if include and idx not in include:
-                        continue
-                    if exclude and idx in exclude:
-                        continue
-                    yield idx, row
-
         logging.info(f"[Post from JSON {self.component}] Filepath: `{path}`")
+        output_log = ResponseLog()
 
         if not os.path.exists(path):
             logging.critical(f"JSON file not found: {path}")
             exit(1)
 
-        return self.post_rows(rows=stream_filter_rows(path), **kwargs)
+        with open(path_, 'rb') as fp:
+            for idx, row in enumerate(fp):
+
+                if include and idx not in include:
+                    continue
+                if exclude and idx in exclude:
+                    continue
+
+                status_code, message = self.post(row, **kwargs)
+                output_log.record(key=idx, status=status_code, message=message)
+                output_log.log_progress(self.LOG_EVERY)
+
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
 
     ### DELETE Methods
