@@ -223,7 +223,6 @@ class EdFiClient:
             logging.critical(
                 "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
             )
-            exit(1)
 
     def get_newest_change_version(self) -> int:
         """
@@ -257,8 +256,6 @@ class EdFiClient:
         """
 
         """
-        self._require_session()
-
         return EdFiResource(
             self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
             session = self.session, async_session=self.async_session, swagger=self.resources_swagger,
@@ -276,8 +273,6 @@ class EdFiClient:
         Even though descriptors and resources are accessed via the same endpoint,
         this may not be known to users, so a separate method is defined.
         """
-        self._require_session()
-
         return EdFiDescriptor(
             self.resource_url, name, namespace=namespace, params=params,
             session=self.session, async_session=self.async_session, swagger=self.descriptors_swagger,
@@ -297,8 +292,6 @@ class EdFiClient:
         """
 
         """
-        self._require_session()
-
         return EdFiComposite(
             self.composite_url, name, namespace=namespace, params=params,
             composite=composite, filter_type=filter_type, filter_id=filter_id,
