@@ -3,14 +3,7 @@ import pytest
 
 from edfi_api_client import EdFiClient
 
-
-def format_print(text: str):
-    message = (
-        "\n\n#####\n",
-        text,
-        "\n#####\n\n",
-    )
-    print(*message)
+from test_util import format_print
 
 
 ###
@@ -46,16 +39,16 @@ def test_unauthenticated_client(secret: str, verbose: bool = False):
 
     ### Authenticated methods
     format_print("Checking the unauthenticated authenticated methods...")
-    with pytest.raises(ValueError):
+    with pytest.raises(SystemExit):
         _ = edfi.get_newest_change_version()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(SystemExit):
         _ = edfi.resource('students', minChangeVersion=0, maxChangeVersion=100000)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(SystemExit):
         _ = edfi.descriptor('language_use_descriptors')
 
-    with pytest.raises(ValueError):
+    with pytest.raises(SystemExit):
         _ = edfi.composite('students')
 
 

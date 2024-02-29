@@ -9,8 +9,9 @@ from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
 from edfi_api_client.swagger import EdFiSwagger
 from edfi_api_client.session import EdFiSession
+from edfi_api_client.response_log import ResponseLog
 
-from typing import BinaryIO, Dict, Iterator, List, Optional, Union
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 
 class EdFiEndpoint(AsyncEndpointMixin):
@@ -18,7 +19,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
     This is an abstract class for interacting with Ed-Fi resources and descriptors.
     Composites override with custom composite-logic.
     """
-    type: str = None
+    component: str = None
+
+    LOG_EVERY: int = 500
 
     def __init__(self,
         endpoint_url: str,
@@ -55,7 +58,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         deletes_string = " Deletes" if self.get_deletes else ""
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        return f"<{self.type}{deletes_string}{params_string} [{self.raw}]>"
+        return f"<{self.component}{deletes_string}{params_string} [{self.raw}]>"
 
 
     ### Naming and Pathing Methods
@@ -118,7 +121,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        logging.info(f"[Ping {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Ping {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
@@ -139,14 +142,14 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        logging.info(f"[Get Total Count {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Get Total Count {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
         params['totalCount'] = True
         params['limit'] = 0
 
-        logging.info(f"[Get Total Count {self.type}] Parameters: {params}")
+        logging.info(f"[Get Total Count {self.component}] Parameters: {params}")
 
         res = self.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
@@ -161,7 +164,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         :return:
         """
-        logging.info(f"[Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Get {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
@@ -169,7 +172,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         if limit:  # Override limit if passed
             params['limit'] = limit
 
-        logging.info(f"[Get {self.type}] Parameters: {params}")
+        logging.info(f"[Get {self.component}] Parameters: {params}")
 
         return self.session.get_response(self.url, params=params, **kwargs).json()
 
@@ -196,18 +199,18 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param change_version_step_size:
         :return:
         """
-        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
-        logging.info(f"[Paged Get {self.type}] Parameters: {params}")
+        logging.info(f"[Paged Get {self.component}] Parameters: {params}")
 
         if step_change_version and reverse_paging:
-            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
+            logging.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
-            logging.info(f"[Paged Get {self.type}] Pagination Method: Change Version Stepping")
+            logging.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping")
         else:
-            logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+            logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
 
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._get_paged_window_params(
@@ -219,10 +222,10 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Begin pagination-loop
         for paged_params in paged_params_list:
-            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            logging.info(f"[Paged Get {self.component}] Parameters: {paged_params}")
             res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
-            logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+            logging.info(f"[Paged Get {self.component}] Retrieved {len(res.json())} rows.")
             yield res.json()
 
     def get_rows(self,
@@ -280,7 +283,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param reverse_paging:
         :return:
         """
-        logging.info(f"[Get to JSON] Writing rows to disk: `{path}`")
+        logging.info(f"[Get to JSON {self.component}] Filepath: `{path}`")
 
         paged_results = self.get_pages(
             params=params,
@@ -328,38 +331,37 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### POST Methods
-    def post_rows(self,
-        rows: Union[Iterator[dict], BinaryIO],
-        *,
-        include: Iterator[int] = None,
-        exclude: Iterator[int] = None,
-        **kwargs
-    ) -> Dict[str, List[int]]:
+    def post(self, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Initialize a new response log if none provided.
+        Start index at zero.
+        """
+        try:
+            response = self.session.post_response(self.url, data=data, **kwargs)
+            res_json = response.json() if response.text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    def post_rows(self, rows: Iterator[dict], **kwargs) -> ResponseLog:
         """
         This method tries to post all rows from an iterator.
 
         :param rows:
-        :param include:
-        :param exclude:
         :return:
         """
-        logging.info(f"[Post {self.type}] Endpoint  : {self.url}")
-        output_log = defaultdict(list)
+        logging.info(f"[Post {self.component}] Endpoint  : {self.url}")
+        output_log = ResponseLog()
 
         for idx, row in enumerate(rows):
+            status, message = self.post(row, **kwargs)
+            output_log.record(key=idx, status=status, message=message)
+            output_log.log_progress(self.LOG_EVERY)
 
-            if include and idx not in include:
-                continue
-            elif exclude and idx in exclude:
-                continue
-
-            try:
-                response = self.session.post_response(self.url, data=row, **kwargs)
-                self._log_response(output_log, idx, response=response)
-            except Exception as error:
-                self._log_response(output_log, idx, message=error)
-
-        return dict(output_log)
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
     def post_from_json(self,
         path: str,
@@ -367,7 +369,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
-    ) -> Dict[str, List[int]]:
+    ) -> ResponseLog:
         """
 
         :param path:
@@ -375,61 +377,65 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :param exclude:
         :return:
         """
-        logging.info(f"Posting rows from disk: `{path}`")
+        logging.info(f"[Post from JSON {self.component}] Filepath: `{path}`")
+        output_log = ResponseLog()
 
         if not os.path.exists(path):
-            raise FileNotFoundError(f"JSON file not found: {path}")
+            logging.critical(f"JSON file not found: {path}")
+            exit(1)
 
-        with open(path, 'rb') as fp:
-            return self.post_rows(fp, include=include, exclude=exclude, **kwargs)
+        with open(path_, 'rb') as fp:
+            for idx, row in enumerate(fp):
+
+                if include and idx not in include:
+                    continue
+                if exclude and idx in exclude:
+                    continue
+
+                status_code, message = self.post(row, **kwargs)
+                output_log.record(key=idx, status=status_code, message=message)
+                output_log.log_progress(self.LOG_EVERY)
+
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
 
     ### DELETE Methods
-    def delete_ids(self, ids: Iterator[int], **kwargs) -> Dict[str, List[int]]:
+    def delete(self, id: int, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            response = self.session.delete_response(self.url, id=id, **kwargs)
+            res_json = response.json() if response.text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    def delete_ids(self, ids: Iterator[int], **kwargs) -> ResponseLog:
         """
         Delete all records at the endpoint by ID.
 
         :param ids:
         :return:
         """
-        logging.info(f"[Delete {self.type}] Endpoint  : {self.url}")
-        output_log = defaultdict(list)
+        logging.info(f"[Delete {self.component}] Endpoint  : {self.url}")
+        output_log = ResponseLog()
 
         for id in ids:
-            try:
-                response = self.session.delete_response(self.url, id=id, **kwargs)
-                self._log_response(output_log, id, response=response)
-            except Exception as error:
-                self._log_response(output_log, id, message=error)
+            status, message = self.delete(id, **kwargs)
+            output_log.record(key=idx, status=status, message=message)
+            output_log.log_progress(self.LOG_EVERY)
 
-        return dict(output_log)
-
-    @staticmethod
-    def _log_response(
-        output_log: dict,
-        idx: int,
-        response: Optional[requests.Response] = None,
-        message: Optional[Exception] = None
-    ):
-        """
-        Helper for updating response output logs consistently.
-        """
-        if response is not None:
-            if response.ok:
-                message = f"{response.status_code}"
-            else:
-                message = f"{response.status_code} {response.json().get('message')}"
-
-        message = message or str(message)
-        output_log[message].append(idx)
+        output_log.log_progress()  # Always log on final count.
+        return output_log
 
 
 class EdFiResource(EdFiEndpoint):
-    type: str = 'Resource'
+    component: str = 'Resource'
 
 
 class EdFiDescriptor(EdFiEndpoint):
-    type: str = 'Descriptor'
+    component: str = 'Descriptor'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -442,7 +448,7 @@ class EdFiComposite(EdFiEndpoint):
     """
 
     """
-    type: str = 'Composite'
+    component: str = 'Composite'
 
     def __init__(self,
         *args,
@@ -492,9 +498,8 @@ class EdFiComposite(EdFiEndpoint):
                 self.filter_type, self.filter_id, self.name
             )
         else:
-            raise ValueError(
-                "`filter_type` and `filter_id` must both be specified if a filter is being applied!"
-            )
+            logging.critical("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
+            exit(1)
 
     def get_total_count(self):
         """
@@ -518,12 +523,12 @@ class EdFiComposite(EdFiEndpoint):
         :return:
         """
         if kwargs.get('step_change_version'):
-            raise KeyError(
-                "Change versions are not implemented in composites! Remove `step_change_version` from arguments."
-            )
+            logging.critical("Change versions are not implemented in composites! Remove `step_change_version` from arguments.")
+            exit(1)
+                
 
-        logging.info(f"[Paged Get {self.type}] Endpoint  : {self.url}")
-        logging.info(f"[Paged Get {self.type}] Pagination Method: Offset Pagination")
+        logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
+        logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
 
         # Reset pagination parameters
         paged_params = (params or self.params).copy()
@@ -533,20 +538,20 @@ class EdFiComposite(EdFiEndpoint):
         while True:
 
             ### GET from the API and yield the resulting JSON payload
-            logging.info(f"[Paged Get {self.type}] Parameters: {paged_params}")
+            logging.info(f"[Paged Get {self.component}] Parameters: {paged_params}")
             res = self.session.get_response(self.url, params=paged_params, **kwargs)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():
-                logging.info(f"[Paged Get {self.type}] Retrieved {len(res.json())} rows.")
+                logging.info(f"[Paged Get {self.component}] Retrieved {len(res.json())} rows.")
                 yield res.json()
 
-                logging.info(f"@ Paginating offset...")
+                logging.info(f"    @ Paginating offset...")
                 paged_params.page_by_offset(page_size)
 
             # If no rows are returned, end pagination.
             else:
-                logging.info(f"[Paged Get {self.type}] @ Retrieved zero rows. Ending pagination.")
+                logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
                 break
 
     def post_rows(self, *args, **kwargs):

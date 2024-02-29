@@ -14,7 +14,7 @@ from typing import List, Optional
 import logging
 logging.basicConfig(
     level="WARNING",
-    format='[%(asctime)s] %(levelname)-8s: %(message)s',
+    format='[%(asctime)s] %(levelname)s: %(message)s',  # format='[%(asctime)s] %(levelname)-8s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
@@ -74,14 +74,10 @@ class EdFiClient:
         self.async_session: Optional[AsyncEdFiSession] = None
 
         if self.client_key and self.client_secret:
-            # Synchronous client connects immediately on init.
-            self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
-            self.session.connect()
-            logging.info("Connection to ODS successful!")
-
-            # Asynchronous client connects only when called in an async method.
+            # Synchronous client connects immediately; async client connects only when called in an async method.
+            self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl).connect()
             self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
-
+            logging.info("Connection to ODS successful!")
         else:
             logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
 
@@ -169,19 +165,22 @@ class EdFiClient:
 
         elif self.api_mode in ('year_specific',):
             if not self.api_year:
-                raise ValueError("`api_year` required for 'year_specific' mode.")
+                logging.critical("`api_year` required for 'year_specific' mode.")
+                exit(1)
             return str(self.api_year)
 
         elif self.api_mode in ('instance_year_specific',):
             if not self.api_year or not self.instance_code:
-                raise ValueError("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
+                logging.critical("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
+                exit(1)
             return f"{self.instance_code}/{self.api_year}"
 
         else:
-            raise ValueError(
+            logging.critical(
                 "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n"
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
+            exit(1)
 
 
     # URLs
@@ -221,7 +220,7 @@ class EdFiClient:
     ### Methods for accessing ODS endpoints
     def _require_session(self):
         if self.session is None:
-            raise ValueError(
+            logging.critical(
                 "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
             )
 
@@ -257,8 +256,6 @@ class EdFiClient:
         """
 
         """
-        self._require_session()
-
         return EdFiResource(
             self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
             session = self.session, async_session=self.async_session, swagger=self.resources_swagger,
@@ -276,8 +273,6 @@ class EdFiClient:
         Even though descriptors and resources are accessed via the same endpoint,
         this may not be known to users, so a separate method is defined.
         """
-        self._require_session()
-
         return EdFiDescriptor(
             self.resource_url, name, namespace=namespace, params=params,
             session=self.session, async_session=self.async_session, swagger=self.descriptors_swagger,
@@ -297,8 +292,6 @@ class EdFiClient:
         """
 
         """
-        self._require_session()
-
         return EdFiComposite(
             self.composite_url, name, namespace=namespace, params=params,
             composite=composite, filter_type=filter_type, filter_id=filter_id,

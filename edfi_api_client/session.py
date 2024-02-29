@@ -50,7 +50,7 @@ class EdFiSession:
 
         # Update time attributes and auth headers with latest authentication information.
         self.authenticate()
-        return self.session
+        return self
 
     def authenticate(self) -> requests.Response:
         """
@@ -124,7 +124,8 @@ class EdFiSession:
 
             # This block is reached only if max_retries has been reached.
             else:
-                raise RuntimeError("API retry failed: max retries exceeded for URL.")
+                logging.critical("API retry failed: max retries exceeded for URL.")
+                exit(1)
 
         return wrapped
 
