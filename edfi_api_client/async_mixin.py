@@ -306,6 +306,8 @@ class AsyncEndpointMixin:
         :param params:
         :return:
         """
+        logging.info(f"[Async Get Total Count {self.component}] Endpoint  : {self.url}")
+
         params = (params or self.params).copy()
         params['totalCount'] = "true"
         params['limit'] = 0
@@ -478,7 +480,7 @@ class AsyncEndpointMixin:
     @staticmethod
     async def iterate_taskpool(callable: Callable[[object], object], iterator: AsyncIterator[object], pool_size: int = 8):
         """
-
+        Alternative to `asyncio.gather()`. Does not require all awaitables to be defined in memory at once.
         """
         pending = set()
 

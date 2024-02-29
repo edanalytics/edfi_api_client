@@ -96,6 +96,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             self.namespace, self.name, deletes
         )
 
+
     ### Lazy swagger attributes
     @property
     def has_deletes(self) -> bool:
@@ -115,6 +116,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Session API methods
+    # TODO: Use same decorator as EdFiClient to verify an authorized Client.
+
     def ping(self, *, params: Optional[dict] = None, **kwargs) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
@@ -173,7 +176,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
             params['limit'] = limit
 
         logging.info(f"[Get {self.component}] Parameters: {params}")
-
         return self.session.get_response(self.url, params=params, **kwargs).json()
 
 
@@ -307,7 +309,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
         reverse_paging: bool,
         step_change_version: bool,
         change_version_step_size: int,
-
         **kwargs
     ) -> Iterator[EdFiParams]:
         """
@@ -423,7 +424,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         for id in ids:
             status, message = self.delete(id, **kwargs)
-            output_log.record(key=idx, status=status, message=message)
+            output_log.record(key=id, status=status, message=message)
             output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
@@ -501,7 +502,7 @@ class EdFiComposite(EdFiEndpoint):
             logging.critical("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
             exit(1)
 
-    def get_total_count(self):
+    def get_total_count(self, *args, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -525,7 +526,6 @@ class EdFiComposite(EdFiEndpoint):
         if kwargs.get('step_change_version'):
             logging.critical("Change versions are not implemented in composites! Remove `step_change_version` from arguments.")
             exit(1)
-                
 
         logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
         logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
