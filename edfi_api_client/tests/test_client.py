@@ -1,5 +1,6 @@
 import easecret
 import pytest
+import requests
 
 from edfi_api_client import EdFiClient
 
@@ -24,8 +25,7 @@ def test_unauthenticated_client(secret: str, verbose: bool = False):
     payload_keys = ('apiMode', 'version', 'dataModels', 'urls',)
     assert all(key in info_payload for key in payload_keys)
 
-    ### Deprecated getters
-    format_print("Checking the deprecated getters...")
+    format_print("Checking info payload getters...")
     print(edfi.get_api_mode())
     print(edfi.get_ods_version())
     print(edfi.get_data_model_version())
@@ -34,22 +34,22 @@ def test_unauthenticated_client(secret: str, verbose: bool = False):
     ### Swagger
     format_print("Checking Swagger...")
     print(edfi.get_swagger(component='resources'))
-    print(edfi.descriptors_swagger)
+    print(edfi.descriptors_swagger)  # Lazy initialization
     print(edfi.composites_swagger.version_url_string)
 
     ### Authenticated methods
     format_print("Checking the unauthenticated authenticated methods...")
-    with pytest.raises(SystemExit):
+    with pytest.raises(requests.exceptions.ConnectionError):
         _ = edfi.get_newest_change_version()
 
-    with pytest.raises(SystemExit):
-        _ = edfi.resource('students', minChangeVersion=0, maxChangeVersion=100000)
+    with pytest.raises(requests.exceptions.ConnectionError):
+        _ = edfi.resource('students', minChangeVersion=0, maxChangeVersion=100000).get()
 
-    with pytest.raises(SystemExit):
-        _ = edfi.descriptor('language_use_descriptors')
+    with pytest.raises(requests.exceptions.ConnectionError):
+        _ = edfi.descriptor('language_use_descriptors').get_total_count()
 
-    with pytest.raises(SystemExit):
-        _ = edfi.composite('students')
+    with pytest.raises(requests.exceptions.ConnectionError):
+        _ = edfi.composite('students').ping()
 
 
 def test_authenticated_client(secret: str, verbose: bool = False):

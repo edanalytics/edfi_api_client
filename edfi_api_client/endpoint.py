@@ -382,8 +382,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         output_log = ResponseLog()
 
         if not os.path.exists(path):
-            logging.critical(f"JSON file not found: {path}")
-            exit(1)
+            raise FileNotFoundError(f"JSON file not found: {path}")
 
         with open(path_, 'rb') as fp:
             for idx, row in enumerate(fp):
@@ -499,8 +498,7 @@ class EdFiComposite(EdFiEndpoint):
                 self.filter_type, self.filter_id, self.name
             )
         else:
-            logging.critical("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
-            exit(1)
+            raise ValueError("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
 
     def get_total_count(self, *args, **kwargs):
         """
@@ -524,8 +522,7 @@ class EdFiComposite(EdFiEndpoint):
         :return:
         """
         if kwargs.get('step_change_version'):
-            logging.critical("Change versions are not implemented in composites! Remove `step_change_version` from arguments.")
-            exit(1)
+            logging.warning("Change versions are not implemented in composites! Change version stepping arguments are ignored.")
 
         logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
         logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")

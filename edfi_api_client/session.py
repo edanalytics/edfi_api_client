@@ -120,8 +120,7 @@ class EdFiSession:
 
             # This block is reached only if max_retries has been reached.
             else:
-                logging.critical("API retry failed: max retries exceeded for URL.")
-                exit(1)
+                raise requests.exceptions.RetryError("API retry failed: max retries exceeded for URL.")
 
         return wrapped
 

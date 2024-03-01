@@ -168,22 +168,19 @@ class EdFiClient:
 
         elif self.api_mode in ('year_specific',):
             if not self.api_year:
-                logging.critical("`api_year` required for 'year_specific' mode.")
-                exit(1)
+                raise ValueError("`api_year` required for 'year_specific' mode.")
             return str(self.api_year)
 
         elif self.api_mode in ('instance_year_specific',):
             if not self.api_year or not self.instance_code:
-                logging.critical("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
-                exit(1)
+                raise ValueError("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
             return f"{self.instance_code}/{self.api_year}"
 
         else:
-            logging.critical(
-                "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n"
+            raise ValueError(
+                "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n" + \
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
-            exit(1)
 
 
     # URLs
