@@ -43,16 +43,17 @@ class EdFiSession:
 
         :return:
         """
+        # Update time attributes and auth headers with latest authentication information.
+        self.authenticate()
+
         self.session = requests.Session()
         self.session.verify = self.verify_ssl  # Only synchronous session uses `verify` attribute.
 
-        # Update time attributes and auth headers with latest authentication information.
-        self.authenticate()
         return self
 
 
     ### Methods to assist in authentication and retries.
-    def authenticate(self) -> requests.Response:
+    def authenticate(self) -> dict:
         """
         Note: This function is identical in both synchronous and asynchronous sessions.
         """
@@ -85,7 +86,7 @@ class EdFiSession:
         self.auth_headers.update({
             'Authorization': f"Bearer {auth_payload.get('access_token')}",
         })
-        return auth_response
+        return self.auth_headers
 
     def _with_exponential_backoff(func: Callable):
         """

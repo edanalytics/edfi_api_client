@@ -1,6 +1,3 @@
-import aiofiles
-import aiohttp
-import aiohttp_retry
 import asyncio
 import functools
 import itertools
@@ -20,6 +17,17 @@ if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
 
 
+# Attempt to import optional dependencies.
+try:
+    import aiofiles
+    import aiohttp
+    import aiohttp_retry
+except ImportError:
+    _has_async = False
+else:
+    _has_async = True
+
+
 class AsyncEdFiSession(EdFiSession):
     """
 
@@ -32,7 +40,7 @@ class AsyncEdFiSession(EdFiSession):
         Session enters event loop on `async_session.connect(**retry_kwargs)`.
         """
         super().__init__(*args, **kwargs)
-        self.session  : Optional[aiohttp.ClientSession] = None
+        self.session  : Optional['ClientSession'] = None
         self.pool_size: Optional[int] = None
 
     def __bool__(self):
@@ -52,8 +60,11 @@ class AsyncEdFiSession(EdFiSession):
         max_wait: int = 1200,
         **kwargs
     ) -> 'AsyncEdFiSession':
-        self.pool_size = pool_size
+        # Update time attributes and auth headers with latest authentication information.
+        # Run before any methods that reference optional aiohttp and aiofiles packages.
+        self.authenticate()  # Blocking method to make sure authentication happens only once
 
+        self.pool_size = pool_size
         self.session = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(limit=self.pool_size),
             timeout=aiohttp.ClientTimeout(sock_connect=max_wait),
@@ -73,13 +84,21 @@ class AsyncEdFiSession(EdFiSession):
                 retry_options=retry_options
             )
 
-        # Update time attributes and auth headers with latest authentication information.
-        self.authenticate()  # Blocking method to make sure authentication happens only once
         return self
+
+    def authenticate(self) -> dict:
+        """
+        Verify optional async dependencies are installed before authenticating.
+        """
+        if not _has_async:
+            raise ModuleNotFoundError(
+                "Asynchronous functionality requires the `aiohttp` and `aiofiles` libraries to be installed."
+            )
+        return super().authenticate()
 
 
     ### GET Methods
-    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable[aiohttp.ClientResponse]:
+    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['ClientSession']:
         """
         Complete an asynchronous GET request against an endpoint URL.
 
@@ -100,7 +119,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### POST Methods
-    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable[aiohttp.ClientResponse]:
+    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['ClientResponse']:
         """
         Complete an asynchronous POST request against an endpoint URL.
 
@@ -130,7 +149,7 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### DELETE Methods
-    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable[aiohttp.ClientResponse]:
+    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['ClientResponse']:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
 
