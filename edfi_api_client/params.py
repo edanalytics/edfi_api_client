@@ -11,15 +11,12 @@ class EdFiParams(dict):
     This class consistently builds and increments these parameters.
     They can be passed in either via a `params` dictionary, or as kwargs.
     """
-    def __init__(self,
-        params: Optional[dict] = None,
-        **kwargs
-    ):
+    def __init__(self, params: Optional[dict] = None, **kwargs):
         _sanitized = self.sanitize_params(params, **kwargs)
         super().__init__(_sanitized)
 
-        self.min_change_version = self.get('minChangeVersion')
-        self.max_change_version = self.get('maxChangeVersion')
+        self.min_change_version: Optional[int] = self.get('minChangeVersion')
+        self.max_change_version: Optional[int] = self.get('maxChangeVersion')
 
 
     def copy(self) -> 'EdFiParams':

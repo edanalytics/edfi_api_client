@@ -1,7 +1,7 @@
 import collections
 import logging
 
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from typing import TYPE_CHECKING
 
 
@@ -15,7 +15,7 @@ class ResponseLog:
     def __init__(self):
         self.log_dict: Dict[int, str] = {}
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.log_dict)
 
     def record(self, key: str, status: Optional[str] = None, message: Optional[str] = None):
@@ -29,11 +29,11 @@ class ResponseLog:
 
         self.log_dict[key] = (status, message)
 
-    def count_statuses(self):
+    def count_statuses(self) -> Dict[str, int]:
         counts_by_elem1 = collections.Counter(status for status, _ in self.log_dict.values())
         return dict(counts_by_elem1)
 
-    def aggregate_messages(self):
+    def aggregate_messages(self) -> Dict[str, List[str]]:
         message_indexes = collections.defaultdict(list)
 
         for id, (status, message) in self.log_dict.items():

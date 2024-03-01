@@ -43,7 +43,7 @@ class AsyncEdFiSession(EdFiSession):
         self.session  : Optional['ClientSession'] = None
         self.pool_size: Optional[int] = None
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.session)
 
     async def __aenter__(self):
@@ -92,7 +92,7 @@ class AsyncEdFiSession(EdFiSession):
         """
         if not _has_async:
             raise ModuleNotFoundError(
-                "Asynchronous functionality requires the `aiohttp` and `aiofiles` libraries to be installed."
+                "Asynchronous functionality requires additional packages to be installed. Use `pip install edfi_api_client[async]` to install them."
             )
         return super().authenticate()
 

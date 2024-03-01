@@ -21,14 +21,14 @@ class EdFiSession:
     """
     def __init__(self,
         oauth_url: str,
-        client_key: str,
-        client_secret: str,
+        client_key: Optional[str],
+        client_secret: Optional[str],
         verify_ssl: bool = True,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
-        self.client_key: str = client_key
-        self.client_secret: str = client_secret
+        self.client_key: Optional[str] = client_key
+        self.client_secret: Optional[str] = client_secret
         self.verify_ssl: bool = verify_ssl
 
         # Attributes refresh on connect

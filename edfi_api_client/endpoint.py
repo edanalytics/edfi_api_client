@@ -63,7 +63,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     ### Naming and Pathing Methods
     @staticmethod
-    def _parse_names(namespace: str, name: str):
+    def _parse_names(namespace: str, name: str) -> Tuple[str, str]:
         """
         Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         """
@@ -108,7 +108,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     @property
     def required_fields(self) -> List[str]:
-        return self.swagger.get_endpoint_fields_required().get((self.namespace, self.name))
+        return self.swagger.get_required_endpoint_fields().get((self.namespace, self.name))
 
     @property
     def description(self) -> Optional[str]:
@@ -116,8 +116,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
 
     ### Session API methods
-    # TODO: Use same decorator as EdFiClient to verify an authorized Client.
-
     def ping(self, *, params: Optional[dict] = None, **kwargs) -> requests.Response:
         """
         This method pings the endpoint and verifies it is accessible.
@@ -137,7 +135,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return res
 
-    def get_total_count(self, *, params: Optional[dict] = None, **kwargs):
+    def get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> int:
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -157,7 +155,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         res = self.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
-    def total_count(self, *args, **kwargs):
+    def total_count(self, *args, **kwargs) -> int:
         logging.warning("`EdFiEndpoint.total_count()` is deprecated. Use `EdFiEndpoint.get_total_count()` instead.")
         return self.get_total_count(*args, **kwargs)
 

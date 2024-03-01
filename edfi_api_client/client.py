@@ -31,8 +31,6 @@ class EdFiClient:
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
     """
-    is_edfi2: bool = False  # Deprecated method
-
     def __init__(self,
         base_url     : str,
         client_key   : Optional[str] = None,
@@ -60,7 +58,7 @@ class EdFiClient:
         self._info: Optional[dict] = None
 
         self.api_version: int = int(api_version)
-        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
+        self.api_mode: Optional[str] = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
 
@@ -94,6 +92,13 @@ class EdFiClient:
             api_mode += f" {self.api_year}"
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
+
+    @classmethod
+    def is_edfi2(cls) -> bool:
+        """
+        EdFi2 functionality is removed in 0.3.0.
+        """
+        return False
 
 
     ### Unauthenticated base-URL payload methods
@@ -203,9 +208,9 @@ class EdFiClient:
 
 
     ### Unauthenticated Swagger methods
-    def get_swagger(self, component: str = 'resources'):
+    def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
         swagger = EdFiSwagger(self.base_url, component=component)
-        _ = swagger.payload  # Force eager execution
+        _ = swagger.get_json()  # Force eager execution
         return swagger
 
     @property
