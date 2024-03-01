@@ -37,8 +37,6 @@ class EdFiSession:
         self.auth_headers: dict = {}
         self.session: requests.Session = None
 
-
-    ### Methods for connecting to the ODS
     def connect(self) -> requests.Session:
         """
         Create a session with authorization headers.
@@ -52,11 +50,25 @@ class EdFiSession:
         self.authenticate()
         return self
 
+
+    ### Methods to assist in authentication and retries.
     def authenticate(self) -> requests.Response:
         """
-
-        :return:
+        Note: This function is identical in both synchronous and asynchronous sessions.
         """
+        # Ensure the connection has been established before trying to refresh.
+        if not (self.client_key and self.client_secret):
+            raise requests.exceptions.ConnectionError(
+                "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
+            )
+
+        # Only re-authenticate when necessary.
+        if self.authenticated_at:
+            if self.refresh_at < int(time.time()):
+                logging.info("Session authentication is expired. Attempting reconnection...")
+            else:
+                return None
+
         auth_response = requests.post(
             self.oauth_url,
             auth=HTTPBasicAuth(self.client_key, self.client_secret),
@@ -67,29 +79,13 @@ class EdFiSession:
 
         # Track when connection was established and when to refresh the access token.
         auth_payload = auth_response.json()
-
         self.authenticated_at = int(time.time())
         self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
 
         self.auth_headers.update({
             'Authorization': f"Bearer {auth_payload.get('access_token')}",
         })
-
         return auth_response
-
-    def _refresh_if_expired(func: Callable):
-        """
-        Reauthenticate automatically before making a request if expired.
-
-        :return:
-        """
-        @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
-            if self.refresh_at < int(time.time()):
-                logging.info("Session authentication is expired. Attempting reconnection...")
-                self.authenticate()
-            return func(self, *args, **kwargs)
-        return wrapped
 
     def _with_exponential_backoff(func: Callable):
         """
@@ -131,7 +127,6 @@ class EdFiSession:
 
 
     ### GET Methods
-    @_refresh_if_expired
     @_with_exponential_backoff
     def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> requests.Response:
         """
@@ -141,13 +136,14 @@ class EdFiSession:
         :param params:
         :return:
         """
+        self.authenticate()
+
         response = self.session.get(url, headers=self.auth_headers, params=params, verify=self.verify_ssl)
         self._custom_raise_for_status(response)
         return response
 
 
     ### POST Methods
-    @_refresh_if_expired
     @_with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
         """
@@ -158,6 +154,8 @@ class EdFiSession:
         :param data:
         :return:
         """
+        self.authenticate()
+
         post_headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -168,7 +166,6 @@ class EdFiSession:
 
 
     ### DELETE Methods
-    @_refresh_if_expired
     @_with_exponential_backoff
     def delete_response(self, url: str, id: int, **kwargs) -> requests.Response:
         """
@@ -180,6 +177,8 @@ class EdFiSession:
         :param kwargs:
         :return:
         """
+        self.authenticate()
+
         delete_url = util.url_join(url, id)
         response = self.session.get(delete_url, headers=self.auth_headers, verify=self.verify_ssl, **kwargs)
         return response

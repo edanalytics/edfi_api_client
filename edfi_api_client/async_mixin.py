@@ -35,10 +35,6 @@ class AsyncEdFiSession(EdFiSession):
         self.session  : Optional[aiohttp.ClientSession] = None
         self.pool_size: Optional[int] = None
 
-        if not (self.client_key and self.client_secret):
-            logging.critical("Client key and secret not provided. Async connection with ODS will not be attempted.")
-            exit(1)
-
     def __bool__(self):
         return bool(self.session)
 
@@ -83,7 +79,6 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### GET Methods
-    @EdFiSession._refresh_if_expired
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable[aiohttp.ClientResponse]:
         """
         Complete an asynchronous GET request against an endpoint URL.
@@ -92,6 +87,8 @@ class AsyncEdFiSession(EdFiSession):
         :param params:
         :return:
         """
+        self.authenticate()
+
         async with self.session.get(
             url, headers=self.auth_headers, params=params,
             verify_ssl=self.verify_ssl, raise_for_status=False
@@ -103,7 +100,6 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### POST Methods
-    @EdFiSession._refresh_if_expired
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable[aiohttp.ClientResponse]:
         """
         Complete an asynchronous POST request against an endpoint URL.
@@ -115,6 +111,8 @@ class AsyncEdFiSession(EdFiSession):
         :param kwargs:
         :return:
         """
+        self.authenticate()
+
         post_headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -132,7 +130,6 @@ class AsyncEdFiSession(EdFiSession):
 
 
     ### DELETE Methods
-    @EdFiSession._refresh_if_expired
     async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable[aiohttp.ClientResponse]:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
@@ -142,6 +139,8 @@ class AsyncEdFiSession(EdFiSession):
         :param kwargs:
         :return:
         """
+        self.authenticate()
+
         delete_url = util.url_join(url, id)
 
         async with self.session.delete(
@@ -422,8 +421,7 @@ class AsyncEndpointMixin:
                     yield idx, row
 
         if not os.path.exists(path):
-            logging.critical("JSON file not found: {path}")
-            exit(1)
+            raise FileNotFoundError("JSON file not found: {path}")
 
         await self.iterate_taskpool(
             lambda idx_row: self._async_post_and_log(*idx_row, output_log=output_log, **kwargs),

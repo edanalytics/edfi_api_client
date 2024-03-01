@@ -73,10 +73,13 @@ class EdFiClient:
         self.session: Optional[EdFiSession] = None
         self.async_session: Optional[AsyncEdFiSession] = None
 
+        # Initialize lazy session objects.
+        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+        self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+
+        # Synchronous client connects immediately; async client connects only when called in an async method.
         if self.client_key and self.client_secret:
-            # Synchronous client connects immediately; async client connects only when called in an async method.
-            self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl).connect()
-            self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+            self.session.connect()
             logging.info("Connection to ODS successful!")
         else:
             logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
@@ -218,20 +221,12 @@ class EdFiClient:
 
 
     ### Methods for accessing ODS endpoints
-    def _require_session(self):
-        if self.session is None:
-            logging.critical(
-                "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
-            )
-
     def get_newest_change_version(self) -> int:
         """
         Return the newest change version marked in the ODS (Ed-Fi3 only).
 
         :return:
         """
-        self._require_session()
-
         res = self.session.get_response(self.change_version_url)
         if not res.ok:
             http_error_msg = (
