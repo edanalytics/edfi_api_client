@@ -1,6 +1,3 @@
-import aiofiles
-import aiohttp
-import aiohttp_retry
 import asyncio
 import functools
 import itertools
@@ -11,7 +8,7 @@ import os
 from collections import defaultdict
 
 from edfi_api_client import util
-from edfi_api_client.session import EdFiSession
+from edfi_api_client.session import AsyncEdFiSession
 from edfi_api_client.response_log import ResponseLog
 
 from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
@@ -20,137 +17,15 @@ if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
 
 
-class AsyncEdFiSession(EdFiSession):
-    """
-
-    """
-    retry_status_codes: Set[int] = {401, 429, 500, 501, 503, 504}
-
-    def __init__(self, *args, **kwargs):
-        """
-        EdFiSession initialization sets auth attributes, but does not start a session.
-        Session enters event loop on `async_session.connect(**retry_kwargs)`.
-        """
-        super().__init__(*args, **kwargs)
-        self.session  : Optional[aiohttp.ClientSession] = None
-        self.pool_size: Optional[int] = None
-
-        if not (self.client_key and self.client_secret):
-            logging.critical("Client key and secret not provided. Async connection with ODS will not be attempted.")
-            exit(1)
-
-    def __bool__(self):
-        return bool(self.session)
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        await self.session.close()
-        self.session = None  # Force session to reset between context loops.
-
-    def connect(self,
-        pool_size: int = 8,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 1200,
-        **kwargs
-    ) -> 'AsyncEdFiSession':
-        self.pool_size = pool_size
-
-        self.session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(limit=self.pool_size),
-            timeout=aiohttp.ClientTimeout(sock_connect=max_wait),
-        )
-
-        if retry_on_failure:
-            retry_options = aiohttp_retry.ExponentialRetry(
-                attempts=max_retries,
-                start_timeout=4.0,  # Note: this logic differs from that of EdFiSession.
-                max_timeout=max_wait,
-                factor=4.0,
-                statuses=self.retry_status_codes,
-            )
-
-            self.session = aiohttp_retry.RetryClient(
-                client_session=self.session,
-                retry_options=retry_options
-            )
-
-        # Update time attributes and auth headers with latest authentication information.
-        self.authenticate()  # Blocking method to make sure authentication happens only once
-        return self
-
-
-    ### GET Methods
-    @EdFiSession._refresh_if_expired
-    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable[aiohttp.ClientResponse]:
-        """
-        Complete an asynchronous GET request against an endpoint URL.
-
-        :param url:
-        :param params:
-        :return:
-        """
-        async with self.session.get(
-            url, headers=self.auth_headers, params=params,
-            verify_ssl=self.verify_ssl, raise_for_status=False
-        ) as response:
-            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            self._custom_raise_for_status(response)
-            text = await response.text()
-            return response
-
-
-    ### POST Methods
-    @EdFiSession._refresh_if_expired
-    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable[aiohttp.ClientResponse]:
-        """
-        Complete an asynchronous POST request against an endpoint URL.
-
-        Note: Responses are returned regardless of status.
-
-        :param url:
-        :param data:
-        :param kwargs:
-        :return:
-        """
-        post_headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json",
-            **self.auth_headers
-        }
-        data = util.clean_post_row(data)
-
-        async with self.session.post(
-            url, headers=post_headers, data=data,
-            verify_ssl=self.verify_ssl, raise_for_status=False
-        ) as response:
-            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            text = await response.text()
-            return response
-
-
-    ### DELETE Methods
-    @EdFiSession._refresh_if_expired
-    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable[aiohttp.ClientResponse]:
-        """
-        Complete an asynchronous DELETE request against an endpoint URL.
-
-        :param url:
-        :param id:
-        :param kwargs:
-        :return:
-        """
-        delete_url = util.url_join(url, id)
-
-        async with self.session.delete(
-            delete_url, headers=self.auth_headers,
-            verify_ssl=self.verify_ssl, raise_for_status=False
-        ) as response:
-            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            text = await response.text()
-            return response
+# Attempt to import optional dependencies.
+try:
+    import aiofiles
+    import aiohttp
+    import aiohttp_retry
+except ImportError:
+    _has_async = False
+else:
+    _has_async = True
 
 
 class AsyncEndpointMixin:
@@ -306,6 +181,8 @@ class AsyncEndpointMixin:
         :param params:
         :return:
         """
+        logging.info(f"[Async Get Total Count {self.component}] Endpoint  : {self.url}")
+
         params = (params or self.params).copy()
         params['totalCount'] = "true"
         params['limit'] = 0
@@ -420,8 +297,7 @@ class AsyncEndpointMixin:
                     yield idx, row
 
         if not os.path.exists(path):
-            logging.critical("JSON file not found: {path}")
-            exit(1)
+            raise FileNotFoundError("JSON file not found: {path}")
 
         await self.iterate_taskpool(
             lambda idx_row: self._async_post_and_log(*idx_row, output_log=output_log, **kwargs),
@@ -478,7 +354,7 @@ class AsyncEndpointMixin:
     @staticmethod
     async def iterate_taskpool(callable: Callable[[object], object], iterator: AsyncIterator[object], pool_size: int = 8):
         """
-
+        Alternative to `asyncio.gather()`. Does not require all awaitables to be defined in memory at once.
         """
         pending = set()
 

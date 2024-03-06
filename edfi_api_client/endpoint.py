@@ -63,7 +63,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     ### Naming and Pathing Methods
     @staticmethod
-    def _parse_names(namespace: str, name: str):
+    def _parse_names(namespace: str, name: str) -> Tuple[str, str]:
         """
         Name and namespace can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         """
@@ -96,6 +96,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             self.namespace, self.name, deletes
         )
 
+
     ### Lazy swagger attributes
     @property
     def has_deletes(self) -> bool:
@@ -107,7 +108,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     @property
     def required_fields(self) -> List[str]:
-        return self.swagger.get_endpoint_fields_required().get((self.namespace, self.name))
+        return self.swagger.get_required_endpoint_fields().get((self.namespace, self.name))
 
     @property
     def description(self) -> Optional[str]:
@@ -134,7 +135,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return res
 
-    def get_total_count(self, *, params: Optional[dict] = None, **kwargs):
+    def get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> int:
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -154,7 +155,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         res = self.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
-    def total_count(self, *args, **kwargs):
+    def total_count(self, *args, **kwargs) -> int:
         logging.warning("`EdFiEndpoint.total_count()` is deprecated. Use `EdFiEndpoint.get_total_count()` instead.")
         return self.get_total_count(*args, **kwargs)
 
@@ -173,7 +174,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
             params['limit'] = limit
 
         logging.info(f"[Get {self.component}] Parameters: {params}")
-
         return self.session.get_response(self.url, params=params, **kwargs).json()
 
 
@@ -307,7 +307,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
         reverse_paging: bool,
         step_change_version: bool,
         change_version_step_size: int,
-
         **kwargs
     ) -> Iterator[EdFiParams]:
         """
@@ -381,8 +380,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         output_log = ResponseLog()
 
         if not os.path.exists(path):
-            logging.critical(f"JSON file not found: {path}")
-            exit(1)
+            raise FileNotFoundError(f"JSON file not found: {path}")
 
         with open(path_, 'rb') as fp:
             for idx, row in enumerate(fp):
@@ -423,7 +421,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         for id in ids:
             status, message = self.delete(id, **kwargs)
-            output_log.record(key=idx, status=status, message=message)
+            output_log.record(key=id, status=status, message=message)
             output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
@@ -498,10 +496,9 @@ class EdFiComposite(EdFiEndpoint):
                 self.filter_type, self.filter_id, self.name
             )
         else:
-            logging.critical("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
-            exit(1)
+            raise ValueError("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
 
-    def get_total_count(self):
+    def get_total_count(self, *args, **kwargs):
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
@@ -523,9 +520,7 @@ class EdFiComposite(EdFiEndpoint):
         :return:
         """
         if kwargs.get('step_change_version'):
-            logging.critical("Change versions are not implemented in composites! Remove `step_change_version` from arguments.")
-            exit(1)
-                
+            logging.warning("Change versions are not implemented in composites! Change version stepping arguments are ignored.")
 
         logging.info(f"[Paged Get {self.component}] Endpoint  : {self.url}")
         logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")

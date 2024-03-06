@@ -3,9 +3,8 @@ import requests
 from requests.exceptions import HTTPError
 
 from edfi_api_client import util
-from edfi_api_client.async_mixin import AsyncEdFiSession
 from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
-from edfi_api_client.session import EdFiSession
+from edfi_api_client.session import EdFiSession, AsyncEdFiSession
 from edfi_api_client.swagger import EdFiSwagger
 
 from typing import List, Optional
@@ -31,8 +30,6 @@ class EdFiClient:
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
     """
-    is_edfi2: bool = False  # Deprecated method
-
     def __init__(self,
         base_url     : str,
         client_key   : Optional[str] = None,
@@ -60,7 +57,7 @@ class EdFiClient:
         self._info: Optional[dict] = None
 
         self.api_version: int = int(api_version)
-        self.api_mode: str = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
+        self.api_mode: Optional[str] = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
 
@@ -73,10 +70,13 @@ class EdFiClient:
         self.session: Optional[EdFiSession] = None
         self.async_session: Optional[AsyncEdFiSession] = None
 
+        # Initialize lazy session objects.
+        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+        self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+
+        # Synchronous client connects immediately; async client connects only when called in an async method.
         if self.client_key and self.client_secret:
-            # Synchronous client connects immediately; async client connects only when called in an async method.
-            self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl).connect()
-            self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+            self.session.connect()
             logging.info("Connection to ODS successful!")
         else:
             logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
@@ -91,6 +91,21 @@ class EdFiClient:
             api_mode += f" {self.api_year}"
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
+
+    @classmethod
+    def is_edfi2(cls) -> bool:
+        """
+        EdFi2 functionality is removed in 0.3.0.
+        """
+        return False
+
+
+    # Session-connection helpers
+    def connect(self, **kwargs):
+        return self.session.connect(**kwargs)
+
+    async def async_connect(self, **kwargs):
+        return self.async_session.connect(**kwargs)
 
 
     ### Unauthenticated base-URL payload methods
@@ -165,22 +180,19 @@ class EdFiClient:
 
         elif self.api_mode in ('year_specific',):
             if not self.api_year:
-                logging.critical("`api_year` required for 'year_specific' mode.")
-                exit(1)
+                raise ValueError("`api_year` required for 'year_specific' mode.")
             return str(self.api_year)
 
         elif self.api_mode in ('instance_year_specific',):
             if not self.api_year or not self.instance_code:
-                logging.critical("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
-                exit(1)
+                raise ValueError("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
             return f"{self.instance_code}/{self.api_year}"
 
         else:
-            logging.critical(
-                "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n"
+            raise ValueError(
+                "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n" + \
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
-            exit(1)
 
 
     # URLs
@@ -203,9 +215,9 @@ class EdFiClient:
 
 
     ### Unauthenticated Swagger methods
-    def get_swagger(self, component: str = 'resources'):
+    def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
         swagger = EdFiSwagger(self.base_url, component=component)
-        _ = swagger.payload  # Force eager execution
+        _ = swagger.get_json()  # Force eager execution
         return swagger
 
     @property
@@ -218,20 +230,12 @@ class EdFiClient:
 
 
     ### Methods for accessing ODS endpoints
-    def _require_session(self):
-        if self.session is None:
-            logging.critical(
-                "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
-            )
-
     def get_newest_change_version(self) -> int:
         """
         Return the newest change version marked in the ODS (Ed-Fi3 only).
 
         :return:
         """
-        self._require_session()
-
         res = self.session.get_response(self.change_version_url)
         if not res.ok:
             http_error_msg = (
@@ -258,7 +262,7 @@ class EdFiClient:
         """
         return EdFiResource(
             self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
-            session = self.session, async_session=self.async_session, swagger=self.resources_swagger,
+            session=self.session, async_session=self.async_session, swagger=self.resources_swagger,
             **kwargs
         )
 
