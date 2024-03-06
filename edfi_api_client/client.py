@@ -3,9 +3,8 @@ import requests
 from requests.exceptions import HTTPError
 
 from edfi_api_client import util
-from edfi_api_client.async_mixin import AsyncEdFiSession
 from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
-from edfi_api_client.session import EdFiSession
+from edfi_api_client.session import EdFiSession, AsyncEdFiSession
 from edfi_api_client.swagger import EdFiSwagger
 
 from typing import List, Optional
@@ -99,6 +98,14 @@ class EdFiClient:
         EdFi2 functionality is removed in 0.3.0.
         """
         return False
+
+
+    # Session-connection helpers
+    def connect(self, **kwargs):
+        return self.session.connect(**kwargs)
+
+    async def async_connect(self, **kwargs):
+        return self.async_session.connect(**kwargs)
 
 
     ### Unauthenticated base-URL payload methods
@@ -255,7 +262,7 @@ class EdFiClient:
         """
         return EdFiResource(
             self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
-            session = self.session, async_session=self.async_session, swagger=self.resources_swagger,
+            session=self.session, async_session=self.async_session, swagger=self.resources_swagger,
             **kwargs
         )
 
