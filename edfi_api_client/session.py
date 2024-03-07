@@ -36,24 +36,28 @@ class EdFiSession:
         oauth_url: str,
         client_key: Optional[str],
         client_secret: Optional[str],
+
         verify_ssl: bool = True,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 1200,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
         self.client_key: Optional[str] = client_key
         self.client_secret: Optional[str] = client_secret
+
+        # Session configuration attributes
         self.verify_ssl: bool = verify_ssl
+        self.retry_on_failure: bool = retry_on_failure
+        self.max_retries: int = max_retries
+        self.max_wait: int = max_wait
 
         # Attributes refresh on connect
         self.authenticated_at: int = None
         self.refresh_at: int = None
         self.auth_headers: dict = {}
         self.session: requests.Session = None
-
-        # Optional retry attributes
-        self.retry_on_failure: bool = False
-        self.max_retries: int = 5
-        self.max_wait: int = 1200
 
     def __bool__(self) -> bool:
         return bool(self.session)
@@ -252,7 +256,7 @@ class EdFiSession:
             logging.warning(f"API Error: {response.status_code} {response.reason}")
             message = error_messages.get(response.status_code, response.reason)  # Default to built-in response message
 
-            if rseponse.status_code in self.retry_status_codes:
+            if response.status_code in self.retry_status_codes:
                 raise RequestsWarning(message)  # Exponential backoff expects a RequestsWarning
             else:
                 raise HTTPError(message, response=response)
@@ -279,10 +283,10 @@ class AsyncEdFiSession(EdFiSession):
         self.session = None  # Force session to reset between context loops.
 
     def connect(self,
-        pool_size: Optional[int] = None,
         retry_on_failure: bool = False,
         max_retries: Optional[int] = None,
         max_wait: Optional[int] = None,
+        pool_size: Optional[int] = None,
         **kwargs
     ) -> 'AsyncEdFiSession':
         # Overwrite retry-configs if passed.
@@ -319,7 +323,8 @@ class AsyncEdFiSession(EdFiSession):
         """
         if not _has_async:
             raise ModuleNotFoundError(
-                "Asynchronous functionality requires additional packages to be installed. Use `pip install edfi_api_client[async]` to install them."
+                "Asynchronous functionality requires additional packages to be installed."
+                "Use `pip install edfi_api_client[async]` to install them."
             )
         return super().authenticate()
 

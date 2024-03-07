@@ -17,11 +17,9 @@ if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
 
 
-# Attempt to import optional dependencies.
+# Attempt to import optional dependencies. AsyncEdFiSession.connect() assures all optional libraries are installed.
 try:
     import aiofiles
-    import aiohttp
-    import aiohttp_retry
 except ImportError:
     _has_async = False
 else:
@@ -70,7 +68,7 @@ class AsyncEndpointMixin:
         :param params:
         :return:
         """
-        logging.info(f"[Async Get Total Count {self.component}] Endpoint  : {self.url}")
+        logging.info(f"[Async Get Total Count {self.component}] Endpoint: {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
@@ -90,7 +88,7 @@ class AsyncEndpointMixin:
         """
 
         """
-        logging.info(f"[Async Get {self.component}] Endpoint  : {self.url}")
+        logging.info(f"[Async Get {self.component}] Endpoint: {self.url}")
 
         # Override init params if passed
         params = (params or self.params).copy()
@@ -121,8 +119,6 @@ class AsyncEndpointMixin:
         :param change_version_step_size:
         :return:
         """
-        logging.info(f"[Async Paged Get {self.component}] Endpoint  : {self.url}")
-
         if step_change_version and reverse_paging:
             logging.info(f"[Async Paged Get {self.component}] Pagination Method: Change Version Stepping with Reverse-Offset Pagination")
         elif step_change_version:
@@ -281,7 +277,7 @@ class AsyncEndpointMixin:
         :param rows:
         :return:
         """
-        logging.info(f"[Async Post {self.component}] Endpoint  : {self.url}")
+        logging.info(f"[Async Post {self.component}] Endpoint: {self.url}")
         output_log = ResponseLog()
 
         async def aenumerate(iterable: AsyncIterator, start: int = 0):
@@ -328,7 +324,7 @@ class AsyncEndpointMixin:
                     yield idx, row
 
         if not os.path.exists(path):
-            raise FileNotFoundError("JSON file not found: {path}")
+            raise FileNotFoundError(f"JSON file not found: {path}")
 
         await self.iterate_taskpool(
             lambda idx_row: self._async_post_and_log(*idx_row, output_log=output_log, **kwargs),
@@ -368,8 +364,7 @@ class AsyncEndpointMixin:
         :param ids:
         :return:
         """
-
-        logging.info(f"[Async Delete {self.component}] Endpoint  : {self.url}")
+        logging.info(f"[Async Delete {self.component}] Endpoint: {self.url}")
         output_log = ResponseLog()
 
         await self.iterate_taskpool(
