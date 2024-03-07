@@ -21,8 +21,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
     """
     component: str = None
 
-    LOG_EVERY: int = 500
-
     def __init__(self,
         endpoint_url: str,
         name: str,
@@ -155,6 +153,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         logging.warning("`EdFiEndpoint.total_count()` is deprecated. Use `EdFiEndpoint.get_total_count()` instead.")
         return self.get_total_count(*args, **kwargs)
 
+
+    ### GET Methods
     def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
@@ -171,8 +171,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
         logging.info(f"[Get {self.component}] Parameters: {params}")
         return self.session.get_response(self.url, params=params, **kwargs).json()
 
-
-    ### GET Methods
     def get_pages(self,
         *,
         params: Optional[dict] = None,  # Optional alternative params
@@ -200,18 +198,14 @@ class EdFiEndpoint(AsyncEndpointMixin):
         else:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
 
-        # Override init params if passed
-        params = (params or self.params).copy()
-
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._get_paged_window_params(
-            params=params,
+            params=(params or self.params).copy(),
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
         )
 
-        # Begin pagination-loop
         for paged_params in paged_params_list:
             paged_rows = self.get(params=paged_params, **kwargs)
             logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
@@ -327,20 +321,20 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return status, message
 
-    def post_rows(self, rows: Iterator[dict], **kwargs) -> ResponseLog:
+    def post_rows(self, rows: Iterator[dict], *, log_every: int = 500, **kwargs) -> ResponseLog:
         """
         This method tries to post all rows from an iterator.
 
         :param rows:
+        :param log_every:
         :return:
         """
         logging.info(f"[Post {self.component}] Endpoint: {self.url}")
-        output_log = ResponseLog()
+        output_log = ResponseLog(log_every)
 
         for idx, row in enumerate(rows):
             status, message = self.post(row, **kwargs)
             output_log.record(key=idx, status=status, message=message)
-            output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
@@ -348,6 +342,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def post_from_json(self,
         path: str,
         *,
+        log_every: int = 500,
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
@@ -355,12 +350,13 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
 
         :param path:
+        :param log_every:
         :param include:
         :param exclude:
         :return:
         """
         logging.info(f"[Post from JSON {self.component}] Filepath: `{path}`")
-        output_log = ResponseLog()
+        output_log = ResponseLog(log_every)
 
         if not os.path.exists(path):
             raise FileNotFoundError(f"JSON file not found: {path}")
@@ -375,7 +371,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
                 status_code, message = self.post(row, **kwargs)
                 output_log.record(key=idx, status=status_code, message=message)
-                output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
@@ -392,20 +387,20 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return status, message
 
-    def delete_ids(self, ids: Iterator[int], **kwargs) -> ResponseLog:
+    def delete_ids(self, ids: Iterator[int], *, log_every: int = 500, **kwargs) -> ResponseLog:
         """
         Delete all records at the endpoint by ID.
 
         :param ids:
+        :param log_every:
         :return:
         """
         logging.info(f"[Delete {self.component}] Endpoint: {self.url}")
-        output_log = ResponseLog()
+        output_log = ResponseLog(log_every)
 
         for id in ids:
             status, message = self.delete(id, **kwargs)
             output_log.record(key=id, status=status, message=message)
-            output_log.log_progress(self.LOG_EVERY)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
@@ -494,6 +489,7 @@ class EdFiComposite(EdFiEndpoint):
     def get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
         """
         This method completes a series of GET requests, paginating params as necessary based on endpoint.
+        This is the original logic used before total-count paged-param stepping.
         Rows are returned as a generator.
 
         :param params:
@@ -530,5 +526,8 @@ class EdFiComposite(EdFiEndpoint):
                 logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
                 break
 
-    def post_rows(self, *args, **kwargs):
+    def post(self, *args, **kwargs):
         raise NotImplementedError("Rows cannot be posted to a composite directly!")
+
+    def delete(self, *args, **kwargs):
+        raise NotImplementedError("Rows cannot be deleted from a composite directly!")

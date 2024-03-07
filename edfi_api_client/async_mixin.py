@@ -35,8 +35,6 @@ class AsyncEndpointMixin:
     url: str
     params: 'EdFiParams'
 
-    LOG_EVERY: int
-
     def async_main(func: Callable) -> Callable:
         """
         This decorator establishes an async session before calling the associated class method, if not defined.
@@ -126,12 +124,9 @@ class AsyncEndpointMixin:
         else:
             logging.info(f"[Async Paged Get {self.component}] Pagination Method: Offset Pagination")
 
-        # Override init params if passed
-        params = (params or self.params).copy()
-
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._async_get_paged_window_params(
-            params=params,
+            params=(params or self.params).copy(),
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -267,18 +262,18 @@ class AsyncEndpointMixin:
         """
         status, message = await self.async_post(row, **kwargs)
         output_log.record(key=key, status=status, message=message)
-        output_log.log_progress(self.LOG_EVERY)
 
     @async_main
-    async def async_post_rows(self, rows: AsyncIterator[dict], **kwargs) -> Awaitable[ResponseLog]:
+    async def async_post_rows(self, rows: AsyncIterator[dict], *, log_every: int = 500, **kwargs) -> Awaitable[ResponseLog]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
         :param rows:
+        :param log_every:
         :return:
         """
         logging.info(f"[Async Post {self.component}] Endpoint: {self.url}")
-        output_log = ResponseLog()
+        output_log = ResponseLog(log_every)
 
         async def aenumerate(iterable: AsyncIterator, start: int = 0):
             n = start
@@ -298,6 +293,7 @@ class AsyncEndpointMixin:
     async def async_post_from_json(self,
         path: str,
         *,
+        log_every: int = 500,
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
@@ -305,12 +301,13 @@ class AsyncEndpointMixin:
         """
 
         :param path:
+        :param log_every:
         :param include:
         :param exclude:
         :return:
         """
         logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
-        output_log = ResponseLog()
+        output_log = ResponseLog(log_every)
 
         async def stream_filter_rows(path_: str):
             with open(path_, 'rb') as fp:
@@ -354,18 +351,18 @@ class AsyncEndpointMixin:
         """
         status, message = await self.async_delete(id, **kwargs)
         output_log.record(key=id, status=status, message=message)
-        output_log.log_progress(self.LOG_EVERY)
 
     @async_main
-    async def async_delete_ids(self, ids: AsyncIterator[int], **kwargs) -> Awaitable[ResponseLog]:
+    async def async_delete_ids(self, ids: AsyncIterator[int], *, log_every: int = 500, **kwargs) -> Awaitable[ResponseLog]:
         """
         Delete all records at the endpoint by ID.
 
         :param ids:
+        :param log_every:
         :return:
         """
         logging.info(f"[Async Delete {self.component}] Endpoint: {self.url}")
-        output_log = ResponseLog()
+        output_log = ResponseLog(log_every)
 
         await self.iterate_taskpool(
             lambda id: self._async_delete_and_log(id, output_log=output_log, **kwargs),
