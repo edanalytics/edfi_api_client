@@ -169,7 +169,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         # Override init params if passed
         params = (params or self.params).copy()
-
         if limit:  # Override limit if passed
             params['limit'] = limit
 
@@ -181,7 +180,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def get_pages(self,
         *,
         params: Optional[dict] = None,  # Optional additional params
-
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -231,7 +229,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def get_rows(self,
         *,
         params: Optional[dict] = None,  # Optional additional params
-
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -264,7 +261,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         *,
         params: Optional[dict] = None,  # Optional additional params
-
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -302,7 +298,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
     def _get_paged_window_params(self,
         *,
         params: EdFiParams,
-
         page_size: int,
         reverse_paging: bool,
         step_change_version: bool,

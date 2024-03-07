@@ -62,8 +62,43 @@ class AsyncEndpointMixin:
 
 
     ### GET Methods
+    @async_main
+    async def async_get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> Awaitable[int]:
+        """
+        This internal helper method is used during pagination.
+
+        :param params:
+        :return:
+        """
+        logging.info(f"[Async Get Total Count {self.component}] Endpoint  : {self.url}")
+
+        # Override init params if passed
+        params = (params or self.params).copy()
+        params['totalCount'] = "true"
+        params['limit'] = 0
+
+        res = await self.async_session.get_response(self.url, params, **kwargs)
+        return int(res.headers.get('Total-Count'))
+
+    @async_main
+    async def async_get(self, limit: Optional[int] = None, *, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable[List[dict]]:
+        """
+
+        """
+        logging.info(f"[Async Get {self.component}] Endpoint  : {self.url}")
+
+        # Override init params if passed
+        params = (params or self.params).copy()
+        if limit:  # Override limit if passed
+            params['limit'] = limit
+
+        logging.info(f"[Async Get {self.component}] Parameters: {params}")
+        res = await self.async_session.get_response(self.url, params=params, **kwargs)
+        return await res.json()
+
     async def async_get_pages(self,
         *,
+        params: Optional['EdFiParams'] = None,
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -74,17 +109,13 @@ class AsyncEndpointMixin:
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are returned in pages as a coroutine.
 
+        :param params:
         :param page_size:
         :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
         :return:
         """
-        async def verbose_get_page(param: 'EdFiParams'):
-            logging.info(f"[Async Paged Get {self.component}] Parameters: {param}")
-            res = await self.async_session.get_response(self.url, params=param)
-            return await res.json()
-
         logging.info(f"[Async Paged Get {self.component}] Endpoint  : {self.url}")
 
         if step_change_version and reverse_paging:
@@ -94,18 +125,23 @@ class AsyncEndpointMixin:
         else:
             logging.info(f"[Async Paged Get {self.component}] Pagination Method: Offset Pagination")
 
+        # Override init params if passed
+        params = (params or self.params).copy()
+
         # Build a list of pagination params to iterate during ingestion.
         paged_params_list = self._async_get_paged_window_params(
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
         )
 
         async for paged_param in paged_params_list:
-            yield verbose_get_page(paged_param)
+            yield self.async_get(params=paged_param)
 
     async def async_get_rows(self,
         *,
+        params: Optional['EdFiParams'] = None,
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -116,6 +152,7 @@ class AsyncEndpointMixin:
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are returned as a list in-memory.
 
+        :param params:
         :param page_size:
         :param reverse_paging:
         :param step_change_version:
@@ -123,6 +160,7 @@ class AsyncEndpointMixin:
         :return:
         """
         paged_results = self.async_get_pages(
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -136,6 +174,7 @@ class AsyncEndpointMixin:
     async def async_get_to_json(self,
         path: str,
         *,
+        params: Optional['EdFiParams'] = None,
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -146,6 +185,7 @@ class AsyncEndpointMixin:
         This method completes a series of asynchronous GET requests, paginating params as necessary based on endpoint.
         Rows are written to a file as JSON lines.
 
+        :param params:
         :param path:
         :param page_size:
         :param reverse_paging:
@@ -159,6 +199,7 @@ class AsyncEndpointMixin:
         logging.info(f"[Async Get to JSON {self.component}] Filepath: `{path}`")
 
         paged_results = self.async_get_pages(
+            params=params,
             page_size=page_size, reverse_paging=reverse_paging,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
@@ -173,25 +214,9 @@ class AsyncEndpointMixin:
 
         return path
 
-    @async_main
-    async def async_get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> Awaitable[int]:
-        """
-        This internal helper method is used during pagination.
-
-        :param params:
-        :return:
-        """
-        logging.info(f"[Async Get Total Count {self.component}] Endpoint  : {self.url}")
-
-        params = (params or self.params).copy()
-        params['totalCount'] = "true"
-        params['limit'] = 0
-
-        res = await self.async_session.get_response(self.url, params, **kwargs)
-        return int(res.headers.get('Total-Count'))
-
     async def _async_get_paged_window_params(self,
         *,
+        params: 'EdFiParams',
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -200,6 +225,7 @@ class AsyncEndpointMixin:
     ) -> AsyncIterator['EdFiParams']:
         """
 
+        :param params:
         :param page_size:
         :param reverse_paging:
         :param step_change_version:
@@ -207,13 +233,13 @@ class AsyncEndpointMixin:
         :return:
         """
         if step_change_version:
-            top_level_params = self.params.build_change_version_window_params(change_version_step_size)
+            top_level_params = params.build_change_version_window_params(change_version_step_size)
         else:
-            top_level_params = [self.params]
+            top_level_params = [params]
 
-        for params in top_level_params:
-            total_count = await self.async_get_total_count(params=params, **kwargs)
-            for window_params in params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging):
+        for top_level_param in top_level_params:
+            total_count = await self.async_get_total_count(params=top_level_param, **kwargs)
+            for window_params in top_level_param.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging):
                 yield window_params
 
 
