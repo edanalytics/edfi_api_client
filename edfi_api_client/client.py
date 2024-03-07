@@ -92,20 +92,18 @@ class EdFiClient:
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
 
+    def connect(self, use_async: bool = False, **kwargs):
+        if use_async:
+            return self.async_session.connect(**kwargs)
+        else:
+            return self.session.connect(**kwargs)
+
     @classmethod
     def is_edfi2(cls) -> bool:
         """
         EdFi2 functionality is removed in 0.3.0.
         """
         return False
-
-
-    # Session-connection helpers
-    def connect(self, **kwargs):
-        return self.session.connect(**kwargs)
-
-    async def async_connect(self, **kwargs):
-        return self.async_session.connect(**kwargs)
 
 
     ### Unauthenticated base-URL payload methods

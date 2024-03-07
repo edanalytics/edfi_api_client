@@ -34,8 +34,8 @@ async def test_async_post(output_secret: str, input_secret: str, verbose: bool =
     input_edfi = EdFiClient(**easecret.get_secret(input_secret), verbose=verbose)
 
     async with \
-        output_edfi.async_session.connect(retry_on_failure=True, pool_size=8), \
-        input_edfi.async_session.connect(retry_on_failure=True, pool_size=8):
+        output_edfi.connect(use_async=True, retry_on_failure=True, pool_size=8), \
+        input_edfi.connect(use_async=True, retry_on_failure=True, pool_size=8):
 
         for namespace, rr in [
             # *output_edfi.descriptors,
