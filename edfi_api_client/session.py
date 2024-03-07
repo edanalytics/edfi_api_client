@@ -180,7 +180,7 @@ class EdFiSession:
         :param params:
         :return:
         """
-        self.authenticate()
+        self.authenticate()  # Always try to re-authenticate
 
         response = self.session.get(url, headers=self.auth_headers, params=params)
         self._custom_raise_for_status(response)
@@ -198,7 +198,7 @@ class EdFiSession:
         :param data:
         :return:
         """
-        self.authenticate()
+        self.authenticate()  # Always try to re-authenticate
 
         post_headers = {
             "accept": "application/json",
@@ -221,7 +221,7 @@ class EdFiSession:
         :param kwargs:
         :return:
         """
-        self.authenticate()
+        self.authenticate()  # Always try to re-authenticate
 
         delete_url = util.url_join(url, id)
         response = self.session.get(delete_url, headers=self.auth_headers, **kwargs)
@@ -250,10 +250,10 @@ class EdFiSession:
 
         if 400 <= response.status_code < 600:
             logging.warning(f"API Error: {response.status_code} {response.reason}")
-            message = error_messages.get(response.status_code, response.reason)
+            message = error_messages.get(response.status_code, response.reason)  # Default to built-in response message
 
             if rseponse.status_code in self.retry_status_codes:
-                raise RequestsWarning(message)
+                raise RequestsWarning(message)  # Exponential backoff expects a RequestsWarning
             else:
                 raise HTTPError(message, response=response)
 
@@ -262,14 +262,14 @@ class AsyncEdFiSession(EdFiSession):
     """
 
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, pool_size: int = 8, **kwargs):
         """
         EdFiSession initialization sets auth attributes, but does not start a session.
         Session enters event loop on `async_session.connect(**retry_kwargs)`.
         """
         super().__init__(*args, **kwargs)
         self.session  : Optional['ClientSession'] = None
-        self.pool_size: int = 8
+        self.pool_size: int = pool_size
 
     async def __aenter__(self):
         return self
@@ -309,10 +309,7 @@ class AsyncEdFiSession(EdFiSession):
                 statuses=self.retry_status_codes,
             )
 
-            self.session = aiohttp_retry.RetryClient(
-                client_session=self.session,
-                retry_options=retry_options
-            )
+            self.session = aiohttp_retry.RetryClient(client_session=self.session, retry_options=retry_options)
 
         return self
 
@@ -336,7 +333,7 @@ class AsyncEdFiSession(EdFiSession):
         :param params:
         :return:
         """
-        self.authenticate()
+        self.authenticate()  # Always try to re-authenticate
 
         async with self.session.get(
             url, headers=self.auth_headers, params=params,
@@ -360,7 +357,7 @@ class AsyncEdFiSession(EdFiSession):
         :param kwargs:
         :return:
         """
-        self.authenticate()
+        self.authenticate()  # Always try to re-authenticate
 
         post_headers = {
             "accept": "application/json",
@@ -388,7 +385,7 @@ class AsyncEdFiSession(EdFiSession):
         :param kwargs:
         :return:
         """
-        self.authenticate()
+        self.authenticate()  # Always try to re-authenticate
 
         delete_url = util.url_join(url, id)
 

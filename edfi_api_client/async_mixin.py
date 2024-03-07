@@ -81,7 +81,12 @@ class AsyncEndpointMixin:
         return int(res.headers.get('Total-Count'))
 
     @async_main
-    async def async_get(self, limit: Optional[int] = None, *, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable[List[dict]]:
+    async def async_get(self,
+        limit: Optional[int] = None,
+        *,
+        params: Optional['EdFiParams'] = None,  # Optional alternative params
+        **kwargs
+    ) -> Union[Awaitable[List[dict]], List[dict]]:
         """
 
         """
@@ -98,7 +103,7 @@ class AsyncEndpointMixin:
 
     async def async_get_pages(self,
         *,
-        params: Optional['EdFiParams'] = None,
+        params: Optional['EdFiParams'] = None,  # Optional alternative params
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -141,7 +146,7 @@ class AsyncEndpointMixin:
 
     async def async_get_rows(self,
         *,
-        params: Optional['EdFiParams'] = None,
+        params: Optional['EdFiParams'] = None,  # Optional alternative params
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -174,7 +179,7 @@ class AsyncEndpointMixin:
     async def async_get_to_json(self,
         path: str,
         *,
-        params: Optional['EdFiParams'] = None,
+        params: Optional['EdFiParams'] = None,  # Optional alternative params
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -260,7 +265,7 @@ class AsyncEndpointMixin:
 
         return status, message
 
-    async def _async_post_and_log(self, key: int, row: dict, *, output_log: ResponseLog, **kwargs) -> ResponseLog:
+    async def _async_post_and_log(self, key: int, row: dict, *, output_log: ResponseLog, **kwargs) -> Awaitable[ResponseLog]:
         """
         Helper to keep async code DRY
         """
@@ -300,7 +305,7 @@ class AsyncEndpointMixin:
         include: Iterator[int] = None,
         exclude: Iterator[int] = None,
         **kwargs
-    ) -> Union[ResponseLog, Awaitable[ResponseLog]]:
+    ) -> Union[Awaitable[ResponseLog], ResponseLog]:
         """
 
         :param path:
@@ -336,7 +341,7 @@ class AsyncEndpointMixin:
 
     ### DELETE Methods
     @async_main
-    async def async_delete(self, id: int, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+    async def async_delete(self, id: int, **kwargs) -> Awaitable[Tuple[Optional[str], Optional[str]]]:
         try:
             response = self.async_session.delete_response(self.url, id=id, **kwargs)
             res_text = await response.text()
@@ -347,7 +352,7 @@ class AsyncEndpointMixin:
 
         return status, message
 
-    async def _async_delete_and_log(self, id: int, *, output_log: ResponseLog, **kwargs) -> ResponseLog:
+    async def _async_delete_and_log(self, id: int, *, output_log: ResponseLog, **kwargs) -> Awaitable[ResponseLog]:
         """
         Helper to keep async code DRY
         """

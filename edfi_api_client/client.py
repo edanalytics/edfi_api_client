@@ -13,7 +13,7 @@ from typing import List, Optional
 import logging
 logging.basicConfig(
     level="WARNING",
-    format='[%(asctime)s] %(levelname)s: %(message)s',  # format='[%(asctime)s] %(levelname)-8s: %(message)s',
+    format='[%(asctime)s] %(levelname)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
@@ -65,10 +65,6 @@ class EdFiClient:
         self.resources_swagger  : EdFiSwagger = EdFiSwagger(self.base_url, 'resources')
         self.descriptors_swagger: EdFiSwagger = EdFiSwagger(self.base_url, 'descriptors')
         self.composites_swagger : EdFiSwagger = EdFiSwagger(self.base_url, 'composites')
-
-        # If ID and secret are passed, prepare synchronous and asynchronous sessions.
-        self.session: Optional[EdFiSession] = None
-        self.async_session: Optional[AsyncEdFiSession] = None
 
         # Initialize lazy session objects.
         self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)

@@ -69,11 +69,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         """
         if isinstance(name, str):
             return namespace, util.snake_to_camel(name)
-
-        # Or as a `(namespace, name)` tuple as output from Swagger
         elif len(name) == 2:
             return name
-
         else:
             logging.error("Arguments `namespace` and `name` must be passed explicitly, or as a `(namespace, name)` tuple.")
 
@@ -151,7 +148,6 @@ class EdFiEndpoint(AsyncEndpointMixin):
         params['limit'] = 0
 
         logging.info(f"[Get Total Count {self.component}] Parameters: {params}")
-
         res = self.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
@@ -179,7 +175,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     ### GET Methods
     def get_pages(self,
         *,
-        params: Optional[dict] = None,  # Optional additional params
+        params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -228,7 +224,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     def get_rows(self,
         *,
-        params: Optional[dict] = None,  # Optional additional params
+        params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -258,9 +254,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
     def get_to_json(self,
         path: str,
-
         *,
-        params: Optional[dict] = None,  # Optional additional params
+        params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -315,10 +310,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         if step_change_version:
             for cv_window_params in params.build_change_version_window_params(change_version_step_size):
                 total_count = self.get_total_count(params=cv_window_params, **kwargs)
-
                 cv_offset_params_list = cv_window_params.build_offset_window_params(page_size, total_count=total_count, reverse=reverse_paging)
                 yield from cv_offset_params_list
-
         else:
             total_count = self.get_total_count(params=params, **kwargs)
             yield from params.build_offset_window_params(page_size, total_count=total_count)
@@ -501,9 +494,7 @@ class EdFiComposite(EdFiEndpoint):
 
         :return:
         """
-        raise NotImplementedError(
-            "Total counts have not yet been implemented in Ed-Fi composites!"
-        )
+        raise NotImplementedError("Total counts have not been implemented in Ed-Fi composites!")
 
     def get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
         """
@@ -545,6 +536,4 @@ class EdFiComposite(EdFiEndpoint):
                 break
 
     def post_rows(self, *args, **kwargs):
-        raise NotImplementedError(
-            "Rows cannot be posted to a composite directly!"
-        )
+        raise NotImplementedError("Rows cannot be posted to a composite directly!")
