@@ -17,15 +17,6 @@ if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
 
 
-# Attempt to import optional dependencies. AsyncEdFiSession.connect() assures all optional libraries are installed.
-try:
-    import aiofiles
-except ImportError:
-    _has_async = False
-else:
-    _has_async = True
-
-
 class AsyncEndpointMixin:
     """
 
@@ -189,7 +180,11 @@ class AsyncEndpointMixin:
         :param change_version_step_size:
         :return:
         """
+        # AsyncEdFiSession.connect() makes sure all required async libraries are installed.
+        import aiofiles
+
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
+            """ There are no asynchronous lambdas in Python. """
             await fp.write(util.page_to_bytes(await page))
 
         logging.info(f"[Async Get to JSON {self.component}] Filepath: `{path}`")
@@ -256,13 +251,6 @@ class AsyncEndpointMixin:
 
         return status, message
 
-    async def _async_post_and_log(self, key: int, row: dict, *, output_log: ResponseLog, **kwargs) -> Awaitable[ResponseLog]:
-        """
-        Helper to keep async code DRY
-        """
-        status, message = await self.async_post(row, **kwargs)
-        output_log.record(key=key, status=status, message=message)
-
     @async_main
     async def async_post_rows(self, rows: AsyncIterator[dict], *, log_every: int = 500, **kwargs) -> Awaitable[ResponseLog]:
         """
@@ -275,15 +263,13 @@ class AsyncEndpointMixin:
         logging.info(f"[Async Post {self.component}] Endpoint: {self.url}")
         output_log = ResponseLog(log_every)
 
-        async def aenumerate(iterable: AsyncIterator, start: int = 0):
-            n = start
-            async for elem in iterable:
-                yield n, elem
-                n += 1
+        async def post_and_log(key: int, row: dict):
+            status, message = await self.async_post(row, **kwargs)
+            output_log.record(key=key, status=status, message=message)
 
         await self.iterate_taskpool(
-            lambda idx_row: self._async_post_and_log(*idx_row, output_log=output_log, **kwargs),
-            aenumerate(rows), pool_size=self.async_session.pool_size
+            lambda idx_row: post_and_log(*idx_row),
+            self.aenumerate(rows), pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -309,6 +295,10 @@ class AsyncEndpointMixin:
         logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
         output_log = ResponseLog(log_every)
 
+        async def post_and_log(key: int, row: dict):
+            status, message = await self.async_post(row, **kwargs)
+            output_log.record(key=key, status=status, message=message)
+
         async def stream_filter_rows(path_: str):
             with open(path_, 'rb') as fp:
                 for idx, row in enumerate(fp):
@@ -324,7 +314,7 @@ class AsyncEndpointMixin:
             raise FileNotFoundError(f"JSON file not found: {path}")
 
         await self.iterate_taskpool(
-            lambda idx_row: self._async_post_and_log(*idx_row, output_log=output_log, **kwargs),
+            lambda idx_row: post_and_log(*idx_row),
             stream_filter_rows(path), pool_size=self.async_session.pool_size
         )
 
@@ -345,13 +335,6 @@ class AsyncEndpointMixin:
 
         return status, message
 
-    async def _async_delete_and_log(self, id: int, *, output_log: ResponseLog, **kwargs) -> Awaitable[ResponseLog]:
-        """
-        Helper to keep async code DRY
-        """
-        status, message = await self.async_delete(id, **kwargs)
-        output_log.record(key=id, status=status, message=message)
-
     @async_main
     async def async_delete_ids(self, ids: AsyncIterator[int], *, log_every: int = 500, **kwargs) -> Awaitable[ResponseLog]:
         """
@@ -364,9 +347,12 @@ class AsyncEndpointMixin:
         logging.info(f"[Async Delete {self.component}] Endpoint: {self.url}")
         output_log = ResponseLog(log_every)
 
+        async def delete_and_log(id: int):
+            status, message = await self.async_delete(id, **kwargs)
+            output_log.record(key=id, status=status, message=message)
+
         await self.iterate_taskpool(
-            lambda id: self._async_delete_and_log(id, output_log=output_log, **kwargs),
-            ids, pool_size=self.async_session.pool_size
+            delete_and_log, ids, pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -387,3 +373,10 @@ class AsyncEndpointMixin:
             pending.add(asyncio.create_task(callable(item)))
 
         return await asyncio.wait(pending)
+
+    @staticmethod
+    async def aenumerate(iterable: AsyncIterator, start: int = 0):
+        n = start
+        async for elem in iterable:
+            yield n, elem
+            n += 1
