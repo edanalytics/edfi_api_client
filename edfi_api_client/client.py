@@ -2,7 +2,7 @@ import requests
 from requests.exceptions import HTTPError
 
 from edfi_api_client import util
-from edfi_api_client.async_mixin import AsyncEdFiSession
+from edfi_api_client.async_mixin import AsyncEdFiClientMixin
 from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.swagger import EdFiSwagger
@@ -17,7 +17,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
-class EdFiClient:
+class EdFiClient(AsyncEdFiClientMixin):
     """
     Client for interacting with the Ed-Fi API.
     Includes methods for authentication, ODS info, Swagger parsing, and endpoint initialization.
@@ -52,6 +52,7 @@ class EdFiClient:
         self.client_key: Optional[str] = client_key
         self.client_secret: Optional[str] = client_secret
         self.verify_ssl: bool = verify_ssl
+        super().__init__()  # Call super init to ensure any mixins are initialized.
 
         # Information from base URL get (retrieved lazily)
         self._info: Optional[dict] = None
@@ -66,11 +67,9 @@ class EdFiClient:
         self.descriptors_swagger: EdFiSwagger = EdFiSwagger(self.base_url, 'descriptors')
         self.composites_swagger : EdFiSwagger = EdFiSwagger(self.base_url, 'composites')
 
-        # Initialize lazy session objects.
+        # Initialize lazy session object; synchronous client connects immediately.
         self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
-        self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
 
-        # Synchronous client connects immediately; async client connects only when called in an async method.
         if self.client_key and self.client_secret:
             self.session.connect()
             logging.info("Connection to ODS successful!")
@@ -88,11 +87,8 @@ class EdFiClient:
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
 
-    def connect(self, use_async: bool = False, **kwargs):
-        if use_async:
-            return self.async_session.connect(**kwargs)
-        else:
-            return self.session.connect(**kwargs)
+    def connect(self, **kwargs):
+        return self.session.connect(**kwargs)
 
     @classmethod
     def is_edfi2(cls) -> bool:
@@ -256,8 +252,7 @@ class EdFiClient:
         """
         return EdFiResource(
             self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
-            session=self.session, async_session=self.async_session, swagger=self.resources_swagger,
-            **kwargs
+            client=self, swagger=self.resources_swagger, **kwargs
         )
 
     def descriptor(self,
@@ -273,8 +268,7 @@ class EdFiClient:
         """
         return EdFiDescriptor(
             self.resource_url, name, namespace=namespace, params=params,
-            session=self.session, async_session=self.async_session, swagger=self.descriptors_swagger,
-            **kwargs
+            client=self, swagger=self.descriptors_swagger, **kwargs
         )
 
     def composite(self,
@@ -293,6 +287,5 @@ class EdFiClient:
         return EdFiComposite(
             self.composite_url, name, namespace=namespace, params=params,
             composite=composite, filter_type=filter_type, filter_id=filter_id,
-            session=self.session, async_session=self.async_session, swagger=self.composites_swagger,
-            **kwargs
+            client=self, swagger=self.composites_swagger, **kwargs
         )
