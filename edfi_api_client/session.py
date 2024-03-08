@@ -25,28 +25,23 @@ class EdFiSession:
         oauth_url: str,
         client_key: Optional[str],
         client_secret: Optional[str],
-
-        verify_ssl: bool = True,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 1200,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
         self.client_key: Optional[str] = client_key
         self.client_secret: Optional[str] = client_secret
 
-        # Session configuration attributes
-        self.verify_ssl: bool = verify_ssl
-        self.retry_on_failure: bool = retry_on_failure
-        self.max_retries: int = max_retries
-        self.max_wait: int = max_wait
+        # Session attributes refresh on EdFiSession.connect().
+        self.session: requests.Session = None
+        self.verify_ssl: bool = None
+        self.retry_on_failure: bool = None
+        self.max_retries: int = None
+        self.max_wait: int = None
 
-        # Attributes refresh on connect
+        # Authentication attributes refresh on EdFiSession.connect().
         self.authenticated_at: int = None
         self.refresh_at: int = None
         self.auth_headers: dict = {}
-        self.session: requests.Session = None
 
     def __bool__(self) -> bool:
         return bool(self.session)
@@ -58,10 +53,11 @@ class EdFiSession:
         self.session.close()
         self.session = None  # Force session to reset between context loops.
 
-    def connect(self,
-        retry_on_failure: bool = False,
-        max_retries: Optional[int] = None,
-        max_wait: Optional[int] = None,
+    def connect(self, *,
+        retry_on_failure: bool,
+        max_retries: int,
+        max_wait: int,
+        verify_ssl: bool,
         **kwargs
     ) -> requests.Session:
         """
@@ -69,10 +65,11 @@ class EdFiSession:
 
         :return:
         """
-        # Overwrite retry-configs if passed.
+        # Overwrite session attributes.
         self.retry_on_failure = retry_on_failure
-        self.max_retries = max_retries or self.max_retries
-        self.max_wait = max_wait or self.max_wait
+        self.max_retries = max_retries
+        self.max_wait = max_wait
+        self.verify_ssl = verify_ssl
 
         # Update time attributes and auth headers with latest authentication information.
         self.authenticate()

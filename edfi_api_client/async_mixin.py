@@ -31,14 +31,14 @@ class AsyncEdFiSession(EdFiSession):
     """
 
     """
-    def __init__(self, *args, pool_size: int = 8, **kwargs):
+    def __init__(self, *args, **kwargs):
         """
         EdFiSession initialization sets auth attributes, but does not start a session.
         Session enters event loop on `async_session.connect(**retry_kwargs)`.
         """
         super().__init__(*args, **kwargs)
-        self.session  : Optional['aiohttp.ClientSession'] = None
-        self.pool_size: int = pool_size
+        self.session: 'aiohttp.ClientSession' = None
+        self.pool_size: int = None
 
     async def __aenter__(self):
         return self
@@ -47,18 +47,20 @@ class AsyncEdFiSession(EdFiSession):
         await self.session.close()
         self.session = None  # Force session to reset between context loops.
 
-    def connect(self,
-        retry_on_failure: bool = False,
-        max_retries: Optional[int] = None,
-        max_wait: Optional[int] = None,
-        pool_size: Optional[int] = None,
+    def connect(self, *,
+        retry_on_failure: bool,
+        max_retries: int,
+        max_wait: int,
+        verify_ssl: bool,
+        pool_size: int,
         **kwargs
     ) -> 'AsyncEdFiSession':
-        # Overwrite retry-configs if passed.
+        # Overwrite session attributes.
         self.retry_on_failure = retry_on_failure
-        self.max_retries = max_retries or self.max_retries
-        self.max_wait = max_wait or self.max_wait
-        self.pool_size = pool_size or self.pool_size
+        self.max_retries = max_retries
+        self.max_wait = max_wait
+        self.verify_ssl = verify_ssl
+        self.pool_size = pool_size
 
         # Update time attributes and auth headers with latest authentication information.
         # Run before any methods that reference optional aiohttp and aiofiles packages.
@@ -195,10 +197,19 @@ class AsyncEdFiClientMixin:
 
     def __init__(self):
         # Async client connects only when called in an async method.
-        self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=self.verify_ssl)
+        self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret)
 
-    def async_connect(self, **kwargs):
-        return self.async_session.connect(**kwargs)
+    def async_connect(self,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 1200,
+        pool_size: int = 8,
+        **kwargs
+    ) -> AsyncEdFiSession:
+        return self.async_session.connect(
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            verify_ssl=self.verify_ssl, pool_size=pool_size, **kwargs
+        )
 
 
 class AsyncEdFiEndpointMixin:
@@ -221,7 +232,7 @@ class AsyncEdFiEndpointMixin:
         @functools.wraps(func)
         def wrapped(self, *args, **kwargs) -> Union[object, Awaitable[object]]:
             async def main():
-                async with self.client.async_session.connect(**kwargs):
+                async with self.client.async_connect(**kwargs):
                     return await func(self, *args, **kwargs)
 
             if not self.client.async_session:

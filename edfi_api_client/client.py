@@ -67,11 +67,11 @@ class EdFiClient(AsyncEdFiClientMixin):
         self.descriptors_swagger: EdFiSwagger = EdFiSwagger(self.base_url, 'descriptors')
         self.composites_swagger : EdFiSwagger = EdFiSwagger(self.base_url, 'composites')
 
-        # Initialize lazy session object; synchronous client connects immediately.
-        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=verify_ssl)
+        # Initialize lazy session object; synchronous client connects immediately if credentials are passed.
+        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret)
 
         if self.client_key and self.client_secret:
-            self.session.connect()
+            self.connect()
             logging.info("Connection to ODS successful!")
         else:
             logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
@@ -87,8 +87,16 @@ class EdFiClient(AsyncEdFiClientMixin):
 
         return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
 
-    def connect(self, **kwargs):
-        return self.session.connect(**kwargs)
+    def connect(self,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 1200,
+        **kwargs
+    ) -> EdFiSession:
+        return self.session.connect(
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            verify_ssl=self.verify_ssl, **kwargs
+        )
 
     @classmethod
     def is_edfi2(cls) -> bool:
