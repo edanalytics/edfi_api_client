@@ -51,15 +51,17 @@ async def test_async_post(output_secret: str, input_secret: str, verbose: bool =
 
                 format_print(f"{namespace}/{rr}: {output_endpoint.get_total_count()}")
 
-                # # post_rows()
-                # if rr in sync_resources:
-                #     print("Testing a synchronous post")
-                #     row_generator = output_endpoint.get_rows(retry_on_failure=True, page_size=500)
-                #     error_log = input_endpoint.post_rows(row_generator)
-                #
-                # print("Testing an asynchronous post")
-                # row_generator = output_endpoint.async_get_rows(page_size=500)
-                # error_log = await input_endpoint.async_post_rows(row_generator)
+                # post_rows()
+                if rr in sync_resources:
+                    print("Testing a synchronous post")
+                    row_generator = output_endpoint.get_rows(retry_on_failure=True, page_size=500)
+                    error_log = input_endpoint.post_rows(row_generator)
+                    print(error_log.count_statuses())
+
+                print("Testing an asynchronous post")
+                row_generator = output_endpoint.async_get_rows(page_size=500)
+                error_log = await input_endpoint.async_post_rows(row_generator)
+                print(error_log.count_statuses())
 
                 # post_from_json()
                 if rr in sync_resources:
