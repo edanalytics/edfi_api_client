@@ -253,7 +253,7 @@ class AsyncEndpointMixin:
 
     @async_main
     async def async_post_rows(self,
-        rows: AsyncIterator[dict],
+        rows: Optional[AsyncIterator[dict]] = None,
         *,
         log_every: int = 500,
         id_rows: Optional[Union[Dict[int, dict], Iterator[Tuple[int, dict]]]] = None,
@@ -264,7 +264,7 @@ class AsyncEndpointMixin:
 
         :param rows:
         :param log_every:
-        :param id_rows:
+        :param id_rows: Alternative input iterator argument
         :return:
         """
         logging.info(f"[Async Post {self.component}] Endpoint: {self.url}")
@@ -308,33 +308,11 @@ class AsyncEndpointMixin:
         :return:
         """
         logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
-        output_log = ResponseLog(log_every)
 
-        async def post_and_log(key: int, row: dict):
-            status, message = await self.async_post(row, **kwargs)
-            output_log.record(key=key, status=status, message=message)
-
-        async def stream_filter_rows(path_: str):
-            with open(path_, 'rb') as fp:
-                for idx, row in enumerate(fp):
-
-                    if include and idx not in include:
-                        continue
-                    if exclude and idx in exclude:
-                        continue
-
-                    yield idx, row
-
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"JSON file not found: {path}")
-
-        await self.iterate_taskpool(
-            lambda idx_row: post_and_log(*idx_row),
-            stream_filter_rows(path), pool_size=self.async_session.pool_size
+        return await self.async_post_rows(
+            id_rows=util.stream_filter_rows(path, include=include, exclude=exclude),
+            log_every=log_every
         )
-
-        output_log.log_progress()  # Always log on final count.
-        return output_log
 
 
     ### DELETE Methods

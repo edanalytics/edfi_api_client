@@ -1,7 +1,7 @@
 import json
 import re
 
-from typing import List, Optional, Union
+from typing import Iterator, Optional, Tuple, Union
 
 
 def camel_to_snake(name: str) -> str:
@@ -47,7 +47,7 @@ def plural_to_singular(name: str) -> str:
 
     raise Exception(f"Name has irregular plural form: {name}")
 
-def page_to_bytes(page: List[dict]) -> bytes:
+def page_to_bytes(page: Iterator[dict]) -> bytes:
     return b''.join(map(lambda row: json.dumps(row).encode('utf-8') + b'\n', page))
 
 def clean_post_row(row: Union[str, dict]) -> str:
@@ -62,8 +62,22 @@ def clean_post_row(row: Union[str, dict]) -> str:
     # "Resource identifiers cannot be assigned by the client."
     # "Value for the auto-assigned identifier property 'DescriptorId' cannot be assigned by the client"
     row = {col: val for col, val in row.items() if not (col == 'id' or col.endswith("DescriptorId"))}
-
     return json.dumps(row)
+
+def stream_filter_rows(path: str, *, include: Iterator[int] = None, exclude: Iterator[int] = None) -> Iterator[Tuple[int, dict]]:
+    """
+    Helper method to open a file and filter based on line number.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File not found: {path}")
+
+    with open(path_, 'rb') as fp:
+        for idx, row in enumerate(fp):
+            if include and idx not in include:
+                continue
+            if exclude and idx in exclude:
+                continue
+            yield idx, row
 
 def url_join(*args) -> str:
     return '/'.join(
