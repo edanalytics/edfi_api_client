@@ -29,6 +29,9 @@ async def test_async_post(output_secret: str, input_secret: str, verbose: bool =
         # ('ed-fi', 'studentSectionAttendanceEvents'),
     ]
 
+    scratch_dir = "./.scratch"
+    os.makedirs(scratch_dir, exist_ok=True)
+
     #
     output_edfi = EdFiClient(**easecret.get_secret(output_secret), verbose=verbose)
     input_edfi = EdFiClient(**easecret.get_secret(input_secret), verbose=verbose)
@@ -48,13 +51,28 @@ async def test_async_post(output_secret: str, input_secret: str, verbose: bool =
 
                 format_print(f"{namespace}/{rr}: {output_endpoint.get_total_count()}")
 
-                if rr in sync_resources:
-                    print("Testing a synchronous post")
-                    row_generator = output_endpoint.get_rows(retry_on_failure=True, page_size=500)
-                    error_log = input_endpoint.post_rows(row_generator)
+                # # post_rows()
+                # if rr in sync_resources:
+                #     print("Testing a synchronous post")
+                #     row_generator = output_endpoint.get_rows(retry_on_failure=True, page_size=500)
+                #     error_log = input_endpoint.post_rows(row_generator)
+                #
+                # print("Testing an asynchronous post")
+                # row_generator = output_endpoint.async_get_rows(page_size=500)
+                # error_log = await input_endpoint.async_post_rows(row_generator)
 
-                row_generator = output_endpoint.async_get_rows(page_size=500)
-                error_log = await input_endpoint.async_post_rows(row_generator)
+                # post_from_json()
+                if rr in sync_resources:
+                    print("Testing a synchronous get and post from json")
+                    output_path = os.path.join(scratch_dir, f"{rr}_sync.jsonl")
+                    output_endpoint.get_to_json(output_path, retry_on_failure=True, page_size=500)
+                    error_log = input_endpoint.post_from_json(output_path)
+                    print(error_log.count_statuses())
+
+                print("Testing an asynchronous get and post from json")
+                output_path = os.path.join(scratch_dir, f"{rr}_async.jsonl")
+                await output_endpoint.async_get_to_json(output_path, page_size=500)
+                error_log = await input_endpoint.async_post_from_json(output_path)
 
                 print(error_log.count_statuses())
 
