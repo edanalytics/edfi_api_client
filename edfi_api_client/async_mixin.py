@@ -278,9 +278,9 @@ class AsyncEndpointMixin:
         if rows and id_rows:
             raise ValueError("Arguments `rows` and `id_rows` are mutually-exclusive.")
         elif rows:
-            id_rows = self.aenumerate(rows)
+            id_rows = self.aenumerate(self.aiterate(rows))
         elif isinstance(id_rows, dict):  # If a dict, the object is already in memory.
-            id_rows = list(id_rows.items())
+            id_rows = self.aiterate(id_rows.items())
 
         await self.iterate_taskpool(
             lambda idx_row: post_and_log(*idx_row),
@@ -345,7 +345,8 @@ class AsyncEndpointMixin:
             output_log.record(key=id, status=status, message=message)
 
         await self.iterate_taskpool(
-            delete_and_log, ids, pool_size=self.async_session.pool_size
+            delete_and_log, self.aiterate(ids),
+            pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -372,8 +373,6 @@ class AsyncEndpointMixin:
         """
         Delete all records at the endpoint by ID.
 
-        :param ids:
-        :param rows:
         :param id_rows:
         :param log_every:
         :return:
@@ -411,6 +410,16 @@ class AsyncEndpointMixin:
             pending.add(asyncio.create_task(callable(item)))
 
         return await asyncio.wait(pending)
+
+    @staticmethod
+    async def aiterate(iterable: Iterator):
+        """ Iterator wrapper that accepts both sync and async iterators. """
+        try:
+            async for elem in iterable:
+                yield elem
+        except Exception:
+            for elem in iterable:
+                yield elem
 
     @staticmethod
     async def aenumerate(iterable: AsyncIterator, start: int = 0):
