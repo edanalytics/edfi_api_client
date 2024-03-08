@@ -3,19 +3,18 @@ import os
 import requests
 
 from edfi_api_client import util
-from edfi_api_client.async_mixin import AsyncEndpointMixin
+from edfi_api_client.async_mixin import AsyncEdFiEndpointMixin
 from edfi_api_client.params import EdFiParams
-from edfi_api_client.swagger import EdFiSwagger
-from edfi_api_client.session import EdFiSession
 from edfi_api_client.response_log import ResponseLog
 
 from typing import Dict, Iterator, List, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from edfi_api_client.async_mixin import AsyncEdFiSession
+    from edfi_api_client.client import EdFiClient
+    from edfi_api_client.swagger import EdFiSwagger
 
 
-class EdFiEndpoint(AsyncEndpointMixin):
+class EdFiEndpoint(AsyncEdFiEndpointMixin):
     """
     This is an abstract class for interacting with Ed-Fi resources and descriptors.
     Composites override with custom composite-logic.
@@ -31,9 +30,9 @@ class EdFiEndpoint(AsyncEndpointMixin):
         get_deletes: bool = False,
         params: Optional[dict] = None,
 
-        session: Optional[EdFiSession] = None,
-        async_session: Optional['AsyncEdFiSession'] = None,
-        swagger: Optional[EdFiSwagger] = None,
+        # Import the client directly to ensure we use the latest sessions when making requests.
+        client: Optional['EdFiClient'] = None,
+        swagger: Optional['EdFiSwagger'] = None,
         **kwargs
     ):
         # Hide the intermediate endpoint-URL to prevent confusion
@@ -47,9 +46,8 @@ class EdFiEndpoint(AsyncEndpointMixin):
         self.params = EdFiParams(params, **kwargs)
 
         # Optional helper classes with lazy attributes
-        self.session: Optional[EdFiSession] = session
-        self.async_session: Optional['AsyncEdFiSession'] = async_session
-        self.swagger: Optional[EdFiSwagger] = swagger
+        self.client: 'EdFiClient' = client
+        self.swagger: 'EdFiSwagger' = swagger
 
     def __repr__(self):
         """
@@ -125,7 +123,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         params['limit'] = 1  # To ping a composite, a limit of at least one is required.
 
         # We do not want to surface student-level data during ODS-checks.
-        res = self.session.get_response(self.url, params=params, **kwargs)
+        res = self.client.session.get_response(self.url, params=params, **kwargs)
         if res.ok:
             res._content = b'{"message": "Ping was successful! ODS data has been intentionally scrubbed from this response."}'
 
@@ -147,7 +145,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         params['limit'] = 0
 
         logging.info(f"[Get Total Count {self.component}] Parameters: {params}")
-        res = self.session.get_response(self.url, params, **kwargs)
+        res = self.client.session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
     def total_count(self, *args, **kwargs) -> int:
@@ -170,7 +168,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
             params['limit'] = limit
 
         logging.info(f"[Get {self.component}] Parameters: {params}")
-        return self.session.get_response(self.url, params=params, **kwargs).json()
+        return self.client.session.get_response(self.url, params=params, **kwargs).json()
 
     def get_pages(self,
         *,
@@ -314,7 +312,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         Start index at zero.
         """
         try:
-            response = self.session.post_response(self.url, data=data, **kwargs)
+            response = self.client.session.post_response(self.url, data=data, **kwargs)
             res_json = response.json() if response.text else {}
             status, message = response.status_code, res_json.get('message')
         except Exception as error:
@@ -382,7 +380,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     ### DELETE Methods
     def delete(self, id: int, **kwargs) -> Tuple[Optional[str], Optional[str]]:
         try:
-            response = self.session.delete_response(self.url, id=id, **kwargs)
+            response = self.client.session.delete_response(self.url, id=id, **kwargs)
             res_json = response.json() if response.text else {}
             status, message = response.status_code, res_json.get('message')
         except Exception as error:
@@ -412,7 +410,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
     ### PUT Methods
     def put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
         try:
-            response = self.session.put_response(self.url, id=id, data=data, **kwargs)
+            response = self.client.session.put_response(self.url, id=id, data=data, **kwargs)
             res_json = response.json() if response.text else {}
             status, message = response.status_code, res_json.get('message')
         except Exception as error:
@@ -551,7 +549,7 @@ class EdFiComposite(EdFiEndpoint):
 
             ### GET from the API and yield the resulting JSON payload
             logging.info(f"[Paged Get {self.component}] Parameters: {paged_params}")
-            res = self.session.get_response(self.url, params=paged_params, **kwargs)
+            res = self.client.session.get_response(self.url, params=paged_params, **kwargs)
 
             # If rows have been returned, there may be more to ingest.
             if res.json():

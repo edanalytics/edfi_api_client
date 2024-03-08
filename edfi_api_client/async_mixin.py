@@ -12,6 +12,7 @@ from edfi_api_client.session import EdFiSession
 from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
+    from edfi_api_client.client import EdFiClient
     from edfi_api_client.params import EdFiParams
 
 
@@ -186,14 +187,28 @@ class AsyncEdFiSession(EdFiSession):
             return response
 
 
-class AsyncEndpointMixin:
+class AsyncEdFiClientMixin:
+    oauth_url: str
+    client_key: Optional[str]
+    client_secret: Optional[str]
+    verify_ssl: bool
+
+    def __init__(self):
+        # Async client connects only when called in an async method.
+        self.async_session = AsyncEdFiSession(self.oauth_url, self.client_key, self.client_secret, verify_ssl=self.verify_ssl)
+
+    def async_connect(self, **kwargs):
+        return self.async_session.connect(**kwargs)
+
+
+class AsyncEdFiEndpointMixin:
     """
 
     """
     component: str
-    async_session: AsyncEdFiSession
     url: str
     params: 'EdFiParams'
+    client: 'EdFiClient'
 
     def async_main(func: Callable) -> Callable:
         """
@@ -206,10 +221,10 @@ class AsyncEndpointMixin:
         @functools.wraps(func)
         def wrapped(self, *args, **kwargs) -> Union[object, Awaitable[object]]:
             async def main():
-                async with self.async_session.connect(**kwargs):
+                async with self.client.async_session.connect(**kwargs):
                     return await func(self, *args, **kwargs)
 
-            if not self.async_session:
+            if not self.client.async_session:
                 return asyncio.run(main())
             else:
                 return func(self, *args, **kwargs)
@@ -233,7 +248,7 @@ class AsyncEndpointMixin:
         params['totalCount'] = "true"
         params['limit'] = 0
 
-        res = await self.async_session.get_response(self.url, params, **kwargs)
+        res = await self.client.async_session.get_response(self.url, params, **kwargs)
         return int(res.headers.get('Total-Count'))
 
     @async_main
@@ -254,7 +269,7 @@ class AsyncEndpointMixin:
             params['limit'] = limit
 
         logging.info(f"[Async Get {self.component}] Parameters: {params}")
-        res = await self.async_session.get_response(self.url, params=params, **kwargs)
+        res = await self.client.async_session.get_response(self.url, params=params, **kwargs)
         return await res.json()
 
     async def async_get_pages(self,
@@ -366,7 +381,7 @@ class AsyncEndpointMixin:
         async with aiofiles.open(path, 'wb') as fp:
             await self.iterate_taskpool(
                 lambda page: write_async_page(page, fp),
-                paged_results, pool_size=self.async_session.pool_size
+                paged_results, pool_size=self.client.async_session.pool_size
             )
 
         return path
@@ -408,7 +423,7 @@ class AsyncEndpointMixin:
         Start index at zero.
         """
         try:
-            response = await self.async_session.post_response(self.url, data=data, **kwargs)
+            response = await self.client.async_session.post_response(self.url, data=data, **kwargs)
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status, res_json.get('message')
@@ -450,7 +465,7 @@ class AsyncEndpointMixin:
 
         await self.iterate_taskpool(
             lambda idx_row: post_and_log(*idx_row),
-            id_rows, pool_size=self.async_session.pool_size
+            id_rows, pool_size=self.client.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -485,7 +500,7 @@ class AsyncEndpointMixin:
     @async_main
     async def async_delete(self, id: int, **kwargs) -> Awaitable[Tuple[Optional[str], Optional[str]]]:
         try:
-            response = self.async_session.delete_response(self.url, id=id, **kwargs)
+            response = self.client.async_session.delete_response(self.url, id=id, **kwargs)
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status, res_json.get('message')
@@ -512,7 +527,7 @@ class AsyncEndpointMixin:
 
         await self.iterate_taskpool(
             delete_and_log, self.aiterate(ids),
-            pool_size=self.async_session.pool_size
+            pool_size=self.client.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -522,7 +537,7 @@ class AsyncEndpointMixin:
     ### PUT Methods
     async def async_put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
         try:
-            response = self.async_session.put_response(self.url, id=id, data=data, **kwargs)
+            response = self.client.async_session.put_response(self.url, id=id, data=data, **kwargs)
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status_code, res_json.get('message')
@@ -555,7 +570,7 @@ class AsyncEndpointMixin:
 
         await self.iterate_taskpool(
             lambda id_row: put_and_log(*id_row),
-            id_rows, pool_size=self.async_session.pool_size
+            id_rows, pool_size=self.client.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
