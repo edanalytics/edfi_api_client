@@ -4,17 +4,186 @@ import itertools
 import json
 import logging
 import os
+import requests
 
 from collections import defaultdict
 
 from edfi_api_client import util
-from edfi_api_client.session import AsyncEdFiSession
 from edfi_api_client.response_log import ResponseLog
+from edfi_api_client.session import EdFiSession
 
 from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
+
+
+# Attempt to import optional dependencies.
+try:
+    import aiofiles
+    import aiohttp
+    import aiohttp_retry
+except ImportError:
+    _has_async = False
+else:
+    _has_async = True
+
+
+class AsyncEdFiSession(EdFiSession):
+    """
+
+    """
+    def __init__(self, *args, pool_size: int = 8, **kwargs):
+        """
+        EdFiSession initialization sets auth attributes, but does not start a session.
+        Session enters event loop on `async_session.connect(**retry_kwargs)`.
+        """
+        super().__init__(*args, **kwargs)
+        self.session  : Optional['ClientSession'] = None
+        self.pool_size: int = pool_size
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.session.close()
+        self.session = None  # Force session to reset between context loops.
+
+    def connect(self,
+        retry_on_failure: bool = False,
+        max_retries: Optional[int] = None,
+        max_wait: Optional[int] = None,
+        pool_size: Optional[int] = None,
+        **kwargs
+    ) -> 'AsyncEdFiSession':
+        # Overwrite retry-configs if passed.
+        self.retry_on_failure = retry_on_failure
+        self.max_retries = max_retries or self.max_retries
+        self.max_wait = max_wait or self.max_wait
+        self.pool_size = pool_size or self.pool_size
+
+        # Update time attributes and auth headers with latest authentication information.
+        # Run before any methods that reference optional aiohttp and aiofiles packages.
+        self.authenticate()  # Blocking method to make sure authentication happens only once
+
+        self.session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(limit=self.pool_size),
+            timeout=aiohttp.ClientTimeout(sock_connect=self.max_wait),
+        )
+
+        if self.retry_on_failure:
+            retry_options = aiohttp_retry.ExponentialRetry(
+                attempts=self.max_retries,
+                start_timeout=4.0,  # Note: this logic differs from that of EdFiSession.
+                max_timeout=self.max_wait,
+                factor=4.0,
+                statuses=self.retry_status_codes,
+            )
+
+            self.session = aiohttp_retry.RetryClient(client_session=self.session, retry_options=retry_options)
+
+        return self
+
+    def authenticate(self) -> dict:
+        """
+        Verify optional async dependencies are installed before authenticating.
+        """
+        if not _has_async:
+            raise ModuleNotFoundError(
+                "Asynchronous functionality requires additional packages to be installed."
+                "Use `pip install edfi_api_client[async]` to install them."
+            )
+        return super().authenticate()
+
+
+    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['ClientSession']:
+        """
+        Complete an asynchronous GET request against an endpoint URL.
+
+        :param url:
+        :param params:
+        :return:
+        """
+        self.authenticate()  # Always try to re-authenticate
+
+        async with self.session.get(
+            url, headers=self.auth_headers, params=params,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
+            self._custom_raise_for_status(response)
+            text = await response.text()
+            return response
+
+    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['ClientResponse']:
+        """
+        Complete an asynchronous POST request against an endpoint URL.
+
+        Note: Responses are returned regardless of status.
+
+        :param url:
+        :param data:
+        :param kwargs:
+        :return:
+        """
+        self.authenticate()  # Always try to re-authenticate
+
+        post_headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            **self.auth_headers
+        }
+        data = util.clean_post_row(data)
+
+        async with self.session.post(
+            url, headers=post_headers, data=data,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
+            text = await response.text()
+            return response
+
+    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['ClientResponse']:
+        """
+        Complete an asynchronous DELETE request against an endpoint URL.
+
+        :param url:
+        :param id:
+        :param kwargs:
+        :return:
+        """
+        self.authenticate()  # Always try to re-authenticate
+
+        delete_url = util.url_join(url, id)
+
+        async with self.session.delete(
+            delete_url, headers=self.auth_headers,
+            verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
+            text = await response.text()
+            return response
+
+    async def async_put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
+        """
+        Complete a PUT request against an endpoint URL
+        Note: Responses are returned regardless of status.
+        :param url:
+        :param id:
+        :param data:
+        """
+        self.authenticate()  # Always try to re-authenticate
+
+        put_url = util.url_join(url, id)
+
+        async with self.session.put(
+            put_url, headers=self.auth_headers, json=data,
+            verify=self.verify_ssl, raise_for_status=False,
+            **kwargs
+        ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
+            text = await response.text()
+            return response
 
 
 class AsyncEndpointMixin:
@@ -180,14 +349,11 @@ class AsyncEndpointMixin:
         :param change_version_step_size:
         :return:
         """
-        # AsyncEdFiSession.connect() makes sure all required async libraries are installed.
-        import aiofiles
+        logging.info(f"[Async Get to JSON {self.component}] Filepath: `{path}`")
 
         async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
             """ There are no asynchronous lambdas in Python. """
             await fp.write(util.page_to_bytes(await page))
-
-        logging.info(f"[Async Get to JSON {self.component}] Filepath: `{path}`")
 
         paged_results = self.async_get_pages(
             params=params,

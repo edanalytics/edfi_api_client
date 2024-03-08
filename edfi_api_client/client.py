@@ -3,8 +3,9 @@ import requests
 from requests.exceptions import HTTPError
 
 from edfi_api_client import util
+from edfi_api_client.async_mixin import AsyncEdFiSession
 from edfi_api_client.endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
-from edfi_api_client.session import EdFiSession, AsyncEdFiSession
+from edfi_api_client.session import EdFiSession
 from edfi_api_client.swagger import EdFiSwagger
 
 from typing import List, Optional
