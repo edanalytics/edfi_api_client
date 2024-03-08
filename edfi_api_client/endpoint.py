@@ -2,8 +2,6 @@ import logging
 import os
 import requests
 
-from collections import defaultdict
-
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEndpointMixin
 from edfi_api_client.params import EdFiParams
@@ -11,7 +9,10 @@ from edfi_api_client.swagger import EdFiSwagger
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.response_log import ResponseLog
 
-from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from edfi_api_client.async_mixin import AsyncEdFiSession
 
 
 class EdFiEndpoint(AsyncEndpointMixin):

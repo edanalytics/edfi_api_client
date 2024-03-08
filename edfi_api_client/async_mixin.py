@@ -1,18 +1,15 @@
 import asyncio
 import functools
-import itertools
 import json
 import logging
 import os
 import requests
 
-from collections import defaultdict
-
 from edfi_api_client import util
 from edfi_api_client.response_log import ResponseLog
 from edfi_api_client.session import EdFiSession
 
-from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Set, Tuple, Union
+from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
@@ -39,7 +36,7 @@ class AsyncEdFiSession(EdFiSession):
         Session enters event loop on `async_session.connect(**retry_kwargs)`.
         """
         super().__init__(*args, **kwargs)
-        self.session  : Optional['ClientSession'] = None
+        self.session  : Optional['aiohttp.ClientSession'] = None
         self.pool_size: int = pool_size
 
     async def __aenter__(self):
@@ -96,7 +93,7 @@ class AsyncEdFiSession(EdFiSession):
         return super().authenticate()
 
 
-    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['ClientSession']:
+    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['aiohttp.ClientSession']:
         """
         Complete an asynchronous GET request against an endpoint URL.
 
@@ -108,14 +105,15 @@ class AsyncEdFiSession(EdFiSession):
 
         async with self.session.get(
             url, headers=self.auth_headers, params=params,
-            verify_ssl=self.verify_ssl, raise_for_status=False
+            verify_ssl=self.verify_ssl, raise_for_status=False,
+            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             self._custom_raise_for_status(response)
             text = await response.text()
             return response
 
-    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['ClientResponse']:
+    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous POST request against an endpoint URL.
 
@@ -137,13 +135,14 @@ class AsyncEdFiSession(EdFiSession):
 
         async with self.session.post(
             url, headers=post_headers, data=data,
-            verify_ssl=self.verify_ssl, raise_for_status=False
+            verify_ssl=self.verify_ssl, raise_for_status=False,
+            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()
             return response
 
-    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['ClientResponse']:
+    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
 
@@ -158,7 +157,8 @@ class AsyncEdFiSession(EdFiSession):
 
         async with self.session.delete(
             delete_url, headers=self.auth_headers,
-            verify_ssl=self.verify_ssl, raise_for_status=False
+            verify_ssl=self.verify_ssl, raise_for_status=False,
+            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()

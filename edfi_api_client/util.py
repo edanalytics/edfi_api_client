@@ -2,7 +2,7 @@ import json
 import os
 import re
 
-from typing import Iterator, Optional, Tuple, Union
+from typing import Iterator, Tuple, Union
 
 
 def camel_to_snake(name: str) -> str:

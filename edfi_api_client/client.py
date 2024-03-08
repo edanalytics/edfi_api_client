@@ -1,4 +1,3 @@
-import importlib
 import requests
 from requests.exceptions import HTTPError
 

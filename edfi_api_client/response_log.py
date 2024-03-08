@@ -2,7 +2,6 @@ import collections
 import logging
 
 from typing import Dict, List, Optional
-from typing import TYPE_CHECKING
 
 
 class ResponseLog:

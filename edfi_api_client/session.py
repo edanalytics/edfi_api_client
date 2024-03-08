@@ -9,7 +9,7 @@ from requests.exceptions import RequestsWarning
 
 from edfi_api_client import util
 
-from typing import Awaitable, Callable, Optional, Set, Union
+from typing import Callable, Optional, Set, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.params import EdFiParams
@@ -232,8 +232,7 @@ class EdFiSession:
 
 
     ### Error response methods
-    @staticmethod
-    def _custom_raise_for_status(response):
+    def _custom_raise_for_status(self, response):
         """
         Custom HTTP exception logic and logging.
         The built-in Response.raise_for_status() fails too broadly, even in cases where a connection-reset is enough.
