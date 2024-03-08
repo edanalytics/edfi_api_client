@@ -321,20 +321,35 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return status, message
 
-    def post_rows(self, rows: Iterator[dict], *, log_every: int = 500, **kwargs) -> ResponseLog:
+    def post_rows(self,
+        rows: Iterator[dict],
+        *,
+        log_every: int = 500,
+        id_rows: Optional[Union[Dict[int, dict], Iterator[Tuple[int, dict]]]] = None,
+        **kwargs
+    ) -> ResponseLog:
         """
         This method tries to post all rows from an iterator.
 
         :param rows:
         :param log_every:
+        :param id_rows: Alternative input iterator argument
         :return:
         """
         logging.info(f"[Post {self.component}] Endpoint: {self.url}")
         output_log = ResponseLog(log_every)
 
-        for idx, row in enumerate(rows):
+        # Argument checking into id_rows: Iterator[(int, dict)]
+        if rows and id_rows:
+            raise ValueError("Arguments `rows` and `id_rows` are mutually-exclusive.")
+        elif rows:
+            id_rows = enumerate(rows)
+        elif isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = list(id_rows.items())
+
+        for id, row in id_rows:
             status, message = self.post(row, **kwargs)
-            output_log.record(key=idx, status=status, message=message)
+            output_log.record(key=id, status=status, message=message)
 
         output_log.log_progress()  # Always log on final count.
         return output_log

@@ -252,12 +252,19 @@ class AsyncEndpointMixin:
         return status, message
 
     @async_main
-    async def async_post_rows(self, rows: AsyncIterator[dict], *, log_every: int = 500, **kwargs) -> Awaitable[ResponseLog]:
+    async def async_post_rows(self,
+        rows: AsyncIterator[dict],
+        *,
+        log_every: int = 500,
+        id_rows: Optional[Union[Dict[int, dict], Iterator[Tuple[int, dict]]]] = None,
+        **kwargs
+    ) -> Awaitable[ResponseLog]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
         :param rows:
         :param log_every:
+        :param id_rows:
         :return:
         """
         logging.info(f"[Async Post {self.component}] Endpoint: {self.url}")
@@ -267,9 +274,17 @@ class AsyncEndpointMixin:
             status, message = await self.async_post(row, **kwargs)
             output_log.record(key=key, status=status, message=message)
 
+        # Argument checking into id_rows: Iterator[(int, dict)]
+        if rows and id_rows:
+            raise ValueError("Arguments `rows` and `id_rows` are mutually-exclusive.")
+        elif rows:
+            id_rows = self.aenumerate(rows)
+        elif isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = list(id_rows.items())
+
         await self.iterate_taskpool(
             lambda idx_row: post_and_log(*idx_row),
-            self.aenumerate(rows), pool_size=self.async_session.pool_size
+            id_rows, pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
