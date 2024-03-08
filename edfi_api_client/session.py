@@ -174,7 +174,6 @@ class EdFiSession:
         return wrapped
 
 
-    ### GET Methods
     @_with_exponential_backoff
     def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> requests.Response:
         """
@@ -190,8 +189,6 @@ class EdFiSession:
         self._custom_raise_for_status(response)
         return response
 
-
-    ### POST Methods
     @_with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
         """
@@ -212,8 +209,6 @@ class EdFiSession:
         data = util.clean_post_row(data)
         return self.session.post(url, headers=post_headers, data=data, **kwargs)
 
-
-    ### DELETE Methods
     @_with_exponential_backoff
     def delete_response(self, url: str, id: int, **kwargs) -> requests.Response:
         """
@@ -229,6 +224,21 @@ class EdFiSession:
 
         delete_url = util.url_join(url, id)
         response = self.session.get(delete_url, headers=self.auth_headers, **kwargs)
+        return response
+
+    @_with_exponential_backoff
+    def put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
+        """
+        Complete a PUT request against an endpoint URL
+        Note: Responses are returned regardless of status.
+        :param url:
+        :param id:
+        :param data:
+        """
+        self.authenticate()  # Always try to re-authenticate
+
+        put_url = util.url_join(url, id)
+        response = self.session.put(put_url, headers=self.auth_headers, json=data, verify=self.verify_ssl, **kwargs)
         return response
 
 
@@ -329,7 +339,6 @@ class AsyncEdFiSession(EdFiSession):
         return super().authenticate()
 
 
-    ### GET Methods
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['ClientSession']:
         """
         Complete an asynchronous GET request against an endpoint URL.
@@ -349,8 +358,6 @@ class AsyncEdFiSession(EdFiSession):
             text = await response.text()
             return response
 
-
-    ### POST Methods
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['ClientResponse']:
         """
         Complete an asynchronous POST request against an endpoint URL.
@@ -379,8 +386,6 @@ class AsyncEdFiSession(EdFiSession):
             text = await response.text()
             return response
 
-
-    ### DELETE Methods
     async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['ClientResponse']:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
@@ -397,6 +402,27 @@ class AsyncEdFiSession(EdFiSession):
         async with self.session.delete(
             delete_url, headers=self.auth_headers,
             verify_ssl=self.verify_ssl, raise_for_status=False
+        ) as response:
+            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
+            text = await response.text()
+            return response
+
+    async def async_put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
+        """
+        Complete a PUT request against an endpoint URL
+        Note: Responses are returned regardless of status.
+        :param url:
+        :param id:
+        :param data:
+        """
+        self.authenticate()  # Always try to re-authenticate
+
+        put_url = util.url_join(url, id)
+
+        async with self.session.put(
+            put_url, headers=self.auth_headers, json=data,
+            verify=self.verify_ssl, raise_for_status=False,
+            **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()

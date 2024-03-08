@@ -321,20 +321,35 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return status, message
 
-    def post_rows(self, rows: Iterator[dict], *, log_every: int = 500, **kwargs) -> ResponseLog:
+    def post_rows(self,
+        rows: Optional[Iterator[dict]] = None,
+        *,
+        log_every: int = 500,
+        id_rows: Optional[Union[Dict[int, dict], Iterator[Tuple[int, dict]]]] = None,
+        **kwargs
+    ) -> ResponseLog:
         """
         This method tries to post all rows from an iterator.
 
         :param rows:
         :param log_every:
+        :param id_rows: Alternative input iterator argument
         :return:
         """
         logging.info(f"[Post {self.component}] Endpoint: {self.url}")
         output_log = ResponseLog(log_every)
 
-        for idx, row in enumerate(rows):
+        # Argument checking into id_rows: Iterator[(int, dict)]
+        if rows and id_rows:
+            raise ValueError("Arguments `rows` and `id_rows` are mutually-exclusive.")
+        elif rows:
+            id_rows = enumerate(rows)
+        elif isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = list(id_rows.items())
+
+        for id, row in id_rows:
             status, message = self.post(row, **kwargs)
-            output_log.record(key=idx, status=status, message=message)
+            output_log.record(key=id, status=status, message=message)
 
         output_log.log_progress()  # Always log on final count.
         return output_log
@@ -356,24 +371,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         logging.info(f"[Post from JSON {self.component}] Filepath: `{path}`")
-        output_log = ResponseLog(log_every)
 
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"JSON file not found: {path}")
-
-        with open(path, 'rb') as fp:
-            for idx, row in enumerate(fp):
-
-                if include and idx not in include:
-                    continue
-                if exclude and idx in exclude:
-                    continue
-
-                status_code, message = self.post(row, **kwargs)
-                output_log.record(key=idx, status=status_code, message=message)
-
-        output_log.log_progress()  # Always log on final count.
-        return output_log
+        return self.post_rows(
+            id_rows=util.stream_filter_rows(path, include=include, exclude=exclude),
+            log_every=log_every, **kwargs
+        )
 
 
     ### DELETE Methods
@@ -400,6 +402,43 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         for id in ids:
             status, message = self.delete(id, **kwargs)
+            output_log.record(key=id, status=status, message=message)
+
+        output_log.log_progress()  # Always log on final count.
+        return output_log
+
+
+    ### PUT Methods
+    def put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            response = self.session.put_response(self.url, id=id, data=data, **kwargs)
+            res_json = response.json() if response.text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    def put_id_rows(self,
+        id_rows: Union[Dict[int, dict], Iterator[Tuple[int, dict]]],
+        log_every: int = 500,
+        **kwargs
+    ) -> ResponseLog:
+        """
+        Delete all records at the endpoint by ID.
+
+        :param id_rows:
+        :param log_every:
+        :return:
+        """
+        logging.info(f"[Put {self.component}] Endpoint: {self.url}")
+        output_log = ResponseLog(log_every)
+
+        if isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = list(id_rows.items())
+
+        for id, data in id_rows:
+            status, message = self.put(id=id, data=data, **kwargs)
             output_log.record(key=id, status=status, message=message)
 
         output_log.log_progress()  # Always log on final count.
@@ -531,3 +570,6 @@ class EdFiComposite(EdFiEndpoint):
 
     def delete(self, *args, **kwargs):
         raise NotImplementedError("Rows cannot be deleted from a composite directly!")
+
+    def put(self, *args, **kwargs):
+        raise NotImplementedError("Rows cannot be put to a composite directly!")

@@ -252,12 +252,19 @@ class AsyncEndpointMixin:
         return status, message
 
     @async_main
-    async def async_post_rows(self, rows: AsyncIterator[dict], *, log_every: int = 500, **kwargs) -> Awaitable[ResponseLog]:
+    async def async_post_rows(self,
+        rows: Optional[AsyncIterator[dict]] = None,
+        *,
+        log_every: int = 500,
+        id_rows: Optional[Union[Dict[int, dict], Iterator[Tuple[int, dict]]]] = None,
+        **kwargs
+    ) -> Awaitable[ResponseLog]:
         """
         This method tries to asynchronously post all rows from an iterator.
 
         :param rows:
         :param log_every:
+        :param id_rows: Alternative input iterator argument
         :return:
         """
         logging.info(f"[Async Post {self.component}] Endpoint: {self.url}")
@@ -267,9 +274,17 @@ class AsyncEndpointMixin:
             status, message = await self.async_post(row, **kwargs)
             output_log.record(key=key, status=status, message=message)
 
+        # Argument checking into id_rows: Iterator[(int, dict)]
+        if rows and id_rows:
+            raise ValueError("Arguments `rows` and `id_rows` are mutually-exclusive.")
+        elif rows:
+            id_rows = self.aenumerate(self.aiterate(rows))
+        elif isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = self.aiterate(id_rows.items())
+
         await self.iterate_taskpool(
             lambda idx_row: post_and_log(*idx_row),
-            self.aenumerate(rows), pool_size=self.async_session.pool_size
+            id_rows, pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -293,33 +308,11 @@ class AsyncEndpointMixin:
         :return:
         """
         logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
-        output_log = ResponseLog(log_every)
 
-        async def post_and_log(key: int, row: dict):
-            status, message = await self.async_post(row, **kwargs)
-            output_log.record(key=key, status=status, message=message)
-
-        async def stream_filter_rows(path_: str):
-            with open(path_, 'rb') as fp:
-                for idx, row in enumerate(fp):
-
-                    if include and idx not in include:
-                        continue
-                    if exclude and idx in exclude:
-                        continue
-
-                    yield idx, row
-
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"JSON file not found: {path}")
-
-        await self.iterate_taskpool(
-            lambda idx_row: post_and_log(*idx_row),
-            stream_filter_rows(path), pool_size=self.async_session.pool_size
+        return await self.async_post_rows(
+            id_rows=self.aiterate(util.stream_filter_rows(path, include=include, exclude=exclude)),
+            log_every=log_every, **kwargs
         )
-
-        output_log.log_progress()  # Always log on final count.
-        return output_log
 
 
     ### DELETE Methods
@@ -352,7 +345,51 @@ class AsyncEndpointMixin:
             output_log.record(key=id, status=status, message=message)
 
         await self.iterate_taskpool(
-            delete_and_log, ids, pool_size=self.async_session.pool_size
+            delete_and_log, self.aiterate(ids),
+            pool_size=self.async_session.pool_size
+        )
+
+        output_log.log_progress()  # Always log on final count.
+        return output_log
+
+
+    ### PUT Methods
+    async def async_put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            response = self.async_session.put_response(self.url, id=id, data=data, **kwargs)
+            res_text = await response.text()
+            res_json = json.loads(res_text) if res_text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    async def async_put_id_rows(self,
+        id_rows: Union[Dict[int, dict], Iterator[Tuple[int, dict]]],
+        log_every: int = 500,
+        **kwargs
+    ) -> ResponseLog:
+        """
+        Delete all records at the endpoint by ID.
+
+        :param id_rows:
+        :param log_every:
+        :return:
+        """
+        logging.info(f"[Put {self.component}] Endpoint: {self.url}")
+        output_log = ResponseLog(log_every)
+
+        async def put_and_log(key: int, id: int, row: dict):
+            status, message = await self.async_put(id, row, **kwargs)
+            output_log.record(key=key, status=status, message=message)
+
+        if isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = list(id_rows.items())
+
+        await self.iterate_taskpool(
+            lambda id_row: put_and_log(*id_row),
+            id_rows, pool_size=self.async_session.pool_size
         )
 
         output_log.log_progress()  # Always log on final count.
@@ -373,6 +410,16 @@ class AsyncEndpointMixin:
             pending.add(asyncio.create_task(callable(item)))
 
         return await asyncio.wait(pending)
+
+    @staticmethod
+    async def aiterate(iterable: Iterator):
+        """ Iterator wrapper that accepts both sync and async iterators. """
+        try:
+            async for elem in iterable:
+                yield elem
+        except Exception:
+            for elem in iterable:
+                yield elem
 
     @staticmethod
     async def aenumerate(iterable: AsyncIterator, start: int = 0):
