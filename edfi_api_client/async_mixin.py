@@ -413,11 +413,6 @@ class AsyncEndpointMixin:
         return await asyncio.wait(pending)
 
     @staticmethod
-    async def aiterate(iterable: Iterator):
-        for elem in iterable:
-            yield elem
-
-    @staticmethod
     async def aenumerate(iterable: AsyncIterator, start: int = 0):
         n = start
         async for elem in iterable:
