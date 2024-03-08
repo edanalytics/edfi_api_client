@@ -310,8 +310,8 @@ class AsyncEndpointMixin:
         logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
 
         return await self.async_post_rows(
-            id_rows=util.stream_filter_rows(path, include=include, exclude=exclude),
-            log_every=log_every
+            id_rows=self.aiterate(util.stream_filter_rows(path, include=include, exclude=exclude)),
+            log_every=log_every, **kwargs
         )
 
 
@@ -411,6 +411,11 @@ class AsyncEndpointMixin:
             pending.add(asyncio.create_task(callable(item)))
 
         return await asyncio.wait(pending)
+
+    @staticmethod
+    async def aiterate(iterable: Iterator):
+        for elem in iterable:
+            yield elem
 
     @staticmethod
     async def aenumerate(iterable: AsyncIterator, start: int = 0):

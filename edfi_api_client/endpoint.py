@@ -374,7 +374,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
 
         return self.post_rows(
             id_rows=util.stream_filter_rows(path, include=include, exclude=exclude),
-            log_every=log_every
+            log_every=log_every, **kwargs
         )
 
 
