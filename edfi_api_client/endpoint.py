@@ -322,7 +322,7 @@ class EdFiEndpoint(AsyncEndpointMixin):
         return status, message
 
     def post_rows(self,
-        rows: Iterator[dict],
+        rows: Optional[Iterator[dict]] = None,
         *,
         log_every: int = 500,
         id_rows: Optional[Union[Dict[int, dict], Iterator[Tuple[int, dict]]]] = None,
@@ -371,24 +371,11 @@ class EdFiEndpoint(AsyncEndpointMixin):
         :return:
         """
         logging.info(f"[Post from JSON {self.component}] Filepath: `{path}`")
-        output_log = ResponseLog(log_every)
 
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"JSON file not found: {path}")
-
-        with open(path, 'rb') as fp:
-            for idx, row in enumerate(fp):
-
-                if include and idx not in include:
-                    continue
-                if exclude and idx in exclude:
-                    continue
-
-                status_code, message = self.post(row, **kwargs)
-                output_log.record(key=idx, status=status_code, message=message)
-
-        output_log.log_progress()  # Always log on final count.
-        return output_log
+        return self.post_rows(
+            id_rows=util.stream_filter_rows(path, include=include, exclude=exclude),
+            log_every=log_every
+        )
 
 
     ### DELETE Methods
