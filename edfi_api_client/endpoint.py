@@ -406,6 +406,43 @@ class EdFiEndpoint(AsyncEndpointMixin):
         return output_log
 
 
+    ### PUT Methods
+    def put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            response = self.session.put_response(self.url, id=id, data=data, **kwargs)
+            res_json = response.json() if response.text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    def put_id_rows(self,
+        id_rows: Union[Dict[int, dict], Iterator[Tuple[int, dict]]],
+        log_every: int = 500,
+        **kwargs
+    ) -> ResponseLog:
+        """
+        Delete all records at the endpoint by ID.
+
+        :param id_rows:
+        :param log_every:
+        :return:
+        """
+        logging.info(f"[Put {self.component}] Endpoint: {self.url}")
+        output_log = ResponseLog(log_every)
+
+        if isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = list(id_rows.items())
+
+        for id, data in id_rows:
+            status, message = self.put(id=id, data=data, **kwargs)
+            output_log.record(key=id, status=status, message=message)
+
+        output_log.log_progress()  # Always log on final count.
+        return output_log
+
+
 class EdFiResource(EdFiEndpoint):
     component: str = 'Resource'
 
@@ -531,3 +568,6 @@ class EdFiComposite(EdFiEndpoint):
 
     def delete(self, *args, **kwargs):
         raise NotImplementedError("Rows cannot be deleted from a composite directly!")
+
+    def put(self, *args, **kwargs):
+        raise NotImplementedError("Rows cannot be put to a composite directly!")

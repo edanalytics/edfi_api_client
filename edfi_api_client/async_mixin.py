@@ -359,6 +359,51 @@ class AsyncEndpointMixin:
         return output_log
 
 
+    ### PUT Methods
+    async def async_put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
+        try:
+            response = self.async_session.put_response(self.url, id=id, data=data, **kwargs)
+            res_text = await response.text()
+            res_json = json.loads(res_text) if res_text else {}
+            status, message = response.status_code, res_json.get('message')
+        except Exception as error:
+            status, message = None, error
+
+        return status, message
+
+    async def async_put_id_rows(self,
+        id_rows: Union[Dict[int, dict], Iterator[Tuple[int, dict]]],
+        log_every: int = 500,
+        **kwargs
+    ) -> ResponseLog:
+        """
+        Delete all records at the endpoint by ID.
+
+        :param ids:
+        :param rows:
+        :param id_rows:
+        :param log_every:
+        :return:
+        """
+        logging.info(f"[Put {self.component}] Endpoint: {self.url}")
+        output_log = ResponseLog(log_every)
+
+        async def put_and_log(key: int, id: int, row: dict):
+            status, message = await self.async_put(id, row, **kwargs)
+            output_log.record(key=key, status=status, message=message)
+
+        if isinstance(id_rows, dict):  # If a dict, the object is already in memory.
+            id_rows = list(id_rows.items())
+
+        await self.iterate_taskpool(
+            lambda id_row: put_and_log(*id_row),
+            id_rows, pool_size=self.async_session.pool_size
+        )
+
+        output_log.log_progress()  # Always log on final count.
+        return output_log
+
+
     ### Async Utilities
     @staticmethod
     async def iterate_taskpool(callable: Callable[[object], object], iterator: AsyncIterator[object], pool_size: int = 8):
