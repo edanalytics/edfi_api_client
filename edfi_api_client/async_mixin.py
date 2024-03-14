@@ -546,6 +546,7 @@ class AsyncEdFiEndpointMixin:
 
 
     ### PUT Methods
+    @async_main
     async def async_put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
         try:
             response = self.client.async_session.put_response(self.url, id=id, data=data, **kwargs)
@@ -557,6 +558,7 @@ class AsyncEdFiEndpointMixin:
 
         return status, message
 
+    @async_main
     async def async_put_id_rows(self,
         id_rows: Union[Dict[int, dict], Iterator[Tuple[int, dict]]],
         log_every: int = 500,
