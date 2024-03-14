@@ -12,7 +12,7 @@ api = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET, api_version=3)
 
 # Get the total row-count for the 'students' resource in the ODS
 students = api.resource('students')
-students.total_count()
+students.get_total_count()
 
 # Pull all rows for the 'staffs' resource deletes endpoint (setting a custom page-size)
 staffs = api.resource('staffs', get_deletes=True)
@@ -48,10 +48,12 @@ Some methods do not require credentials to be called.
 | base_url      | [Required] The root url of the API server, without any trailing components like `data/v3` or `api/v2.0`                                                                |
 | client_key    | The key                                                                                                                                                                |
 | client_secret | The secret                                                                                                                                                             |
-| api_version   | Either 2 or 3, depending on the suite number of the API (Default 3)                                                                                                    |
+| api_version   | the suite number of the API (Default `3`: Ed-Fi 2 functionality has been deprecated)                                                                                   |
 | api_mode      | The API mode of the ODS (e.g., `shared_instance`, `year_specific`, etc.). If empty, the mode will automatically be inferred from the ODS' Swagger spec (Ed-Fi 3 only). |
 | api_year      | The year of data to connect to if accessing a `year_specific` or `instance_year_specific` ODS.                                                                         |
 | instance_code | The instance code if accessing an `instance_year_specific` ODS.                                                                                                        |
+| verify_ssl    | Whether to verify SSL when making requests (Default `True`)                                                                                                            |
+| verbose       | Whether to log debug information during requests (Default `False`)                                                                                                     |
 
 If either `client_key` or `client_secret` are empty, a session with the ODS will not be established.
 
@@ -85,8 +87,6 @@ Authentication with the ODS is not required:
 -----
 
 ### resources
-This method is unavailable in Ed-Fi2.
-
 Retrieve a list of namespaced-resources from the `resources` Swagger payload.
 
 ```python
@@ -105,8 +105,6 @@ Retrieve a list of namespaced-resources from the `resources` Swagger payload.
 -----
 
 ### descriptors
-This method is unavailable in Ed-Fi2.
-
 Retrieve a list of namespaced-descriptors from the `descriptors` Swagger payload.
 
 ```python
@@ -118,9 +116,76 @@ Retrieve a list of namespaced-descriptors from the `descriptors` Swagger payload
 </details>
 
 
+<details>
+<summary><code>oauth_url</code></summary>
+
+-----
+
+### oauth_url
+Build the URL used in authentication
+
+```python
+>>> api.oauth_url
+'{BASE_URL}/oauth/token'
+```
+-----
+
+</details>
+
+
+<details>
+<summary><code>resource_url</code></summary>
+
+-----
+
+### resource_url
+Build the URL used when interfacing with Ed-Fi resource endpoints
+
+```python
+>>> api.resource_url
+'{BASE_URL}/data/v3'
+```
+-----
+
+</details>
+
+
+<details>
+<summary><code>composite_url</code></summary>
+
+-----
+
+### composite_url
+Build the URL used when interfacing with Ed-Fi composite endpoints
+
+```python
+>>> api.composite_url
+'{BASE_URL}/composites/v1'
+```
+-----
+
+</details>
+
+
+<details>
+<summary><code>change_version_url</code></summary>
+
+-----
+
+### change_version_url
+Build the URL used when interfacing with the Ed-Fi change-queries endpoint
+
+```python
+>>> api.change_version_url
+'{BASE_URL}/changeQueries/v1'
+```
+-----
+
+</details>
+
+
 
 ### Methods
-
 Authentication with the ODS is not required:
 
 <details>
@@ -129,8 +194,6 @@ Authentication with the ODS is not required:
 -----
 
 ### get_info
-This method is unavailable in Ed-Fi2.
-
 Ed-Fi3 provides an informative payload at the ODS base URL.
 This contains versioning by suite and build, API mode, and URLs for authentication and data management.
 
@@ -160,8 +223,6 @@ This contains versioning by suite and build, API mode, and URLs for authenticati
 -----
 
 ### get_api_mode
-This method is unavailable in Ed-Fi2.
-
 Each Ed-Fi3 ODS has a declared API mode that alters how users interact with the ODS. This is a shortcut-method for finding the API mode of the Ed-Fi ODS via the payload retrieved using `EdFiClient.get_info()`, formatted in snake_case.
 
 ```python
@@ -177,8 +238,6 @@ This method is called automatically when `api_mode` is left undefined by the use
 <summary><code>get_ods_version</code></summary>
 
 ### get_ods_version
-This method is unavailable in Ed-Fi2.
-
 This is a shortcut-method for finding the version of the Ed-Fi ODS via the payload retrieved using `EdFiClient.get_info()`.
 
 ```python
@@ -197,8 +256,6 @@ This is a shortcut-method for finding the version of the Ed-Fi ODS via the paylo
 -----
 
 ### get_data_model_version
-This method is unavailable in Ed-Fi2.
-
 This is a shortcut-method for finding the data model version of the Ed-Fi ODS' 'ed-fi' namespace via the payload retrieved using `EdFiClient.get_info()`.
 
 ```python
@@ -212,13 +269,29 @@ This is a shortcut-method for finding the data model version of the Ed-Fi ODS' '
 
 
 <details>
+<summary><code>get_instance_locator</code></summary>
+
+-----
+
+### get_instance_locator
+Construct an instance locator to append to the base URL in a multi-ODS.
+
+```python
+>>> api.get_instance_locator()
+'2024'
+```
+
+-----
+
+</details>
+
+
+<details>
 <summary><code>get_swagger</code></summary>
 
 -----
 
 ### get_swagger
-This method is unavailable in Ed-Fi2.
-
 The entire Ed-Fi API is outlined in an OpenAPI Specification (i.e., Swagger Specification).
 There is a separate Swagger defined for each component type (e.g., resources, descriptors, etc.).
 
@@ -250,8 +323,7 @@ Returns an `EdFiSwagger` class containing the complete JSON payload, as well as 
 -----
 
 ### is_edfi2
-This boolean filter returns whether the client-connection to the ODS is via Ed-Fi2.
-Ed-Fi3 introduces many new features that are utilized heavily in this package.
+Deprecated in version 0.3. Always returns `False`.
 
 ```python
 >>> api.is_edfi2()
@@ -266,12 +338,45 @@ False
 Authentication with the ODS is required:
 
 <details>
+<summary><code>connect</code></summary>
+
+-----
+
+### connect
+This method initiates and authenticates a connection to the ODS.
+When `client_key` and `client_secret` is passed in `EdFiClient` initialization, a non-retry client is connected automatically.
+
+All requests made after connection will use retry-logic as defined in optional connection arguments.
+
+```python
+>>> api.connect(
+        retry_on_failure=False  # If True, use exponential backoff while making requests
+        max_retries=5,          # Default; number of retries to attempt before giving up on a request
+        max_wait=1200           # Default; maximum time to wait between retries before giving up on a request
+    )
+
+<Resource [edFi/students]>
+```
+
+If `EdFiClient.connect()` is used as a context manager, the session will be closed automatically.
+```python
+with api.connect():
+    ...
+
+# The session is closed and `EdFiClient.connect()` must be run again to make requests.
+```
+
+-----
+
+</details>
+
+
+<details>
 <summary><code>get_newest_change_version</code></summary>
 
 -----
 
 ### get_newest_change_version
-This method is unavailable in Ed-Fi2.  
 This method requires a connection to the ODS.
 
 Starting in Ed-Fi3, each row in the ODS is linked to an ODS-wide "change version" parameter, which allows for narrow time-windows of data to be filtered for delta-ingestions, instead of only full-ingestions.
@@ -303,13 +408,15 @@ This object contains methods to pull rows and resource metadata from the API.
         name='students',    # Name of resource
         namespace='ed-fi',  # Default ; custom resources use a different namespace
         get_deletes=False,  # Default ; set to `True` to access the /deletes endpoint
-        params={},          # Optional; used to pass parameters to API calls
-        **kwargs            # Optional; alternative way to pass parameters to API calls
+        params={},          # Optional; used to set default parameters in API calls
+        **kwargs            # Optional; alternative way to pass default parameters to API calls
     )
 
 <Resource [edFi/students]>
 ```
 `name`, `params`, and `kwargs` can be formatted in **snake_case** or **camelCase**.
+
+Alternatively, a `(namespace, name)` tuple can be passed as the first argument (to reflect the output of `EdFiClient.resources`).
 
 -----
 
@@ -333,13 +440,15 @@ Note that although descriptors and resources are saved at the same endpoint in t
 >>> api.descriptor(
         name='sexDescriptors',  # Name of descriptor
         namespace='ed-fi',      # Default ; custom resources use a different namespace
-        params={},              # Optional; used to pass parameters to API calls
-        **kwargs                # Optional; alternative way to pass parameters to API calls
+        params={},              # Optional; used to set default parameters in API calls
+        **kwargs                # Optional; alternative way to pass default parameters to API calls
     )
 
 <Resource [edFi/sexDescriptors]>
 ```
 `name`, `params`, and `kwargs` can be formatted in **snake_case** or **camelCase**.
+
+Alternatively, a `(namespace, name)` tuple can be passed as the first argument (to reflect the output of `EdFiClient.descriptors`).
 
 -----
 
@@ -366,8 +475,8 @@ Note: The only composite currently defined in the API is `enrollment`.
         composite='enrollment',  # Default ; name of composite
         filter_type=None,        # Optional; used to filter composites by ID and type
         filter_id=None,          # Optional; used to filter composites by ID and type
-        params={},               # Optional; used to pass parameters to API calls
-        **kwargs                 # Optional; alternative way to pass parameters to API calls
+        params={},               # Optional; used to set default parameters in API calls
+        **kwargs                 # Optional; alternative way to pass default parameters to API calls
     )
 
 <Enrollment Composite [edFi/students]>
@@ -383,7 +492,7 @@ Note: The only composite currently defined in the API is `enrollment`.
 
 ## EdFiEndpoint
 `EdFiEndpoint` is an abstract base class for interfacing with API endpoints.
-All methods that return `EdFiEndpoint` and child classes require a session with the API.
+All methods that return `EdFiEndpoint` and child classes require an authentication session with the API.
 
 ```python
 >>> students = api.resource('students', min_change_version=52028375, max_change_version=53295015)
@@ -398,6 +507,40 @@ All methods that return `EdFiEndpoint` and child classes require a session with 
 ```
 
 ### Attributes
+
+<details>
+<summary><code>raw</code></summary>
+
+-----
+
+### raw
+This attribute retrieves the Ed-Fi endpoint's raw camelCase representation.
+
+```python
+>>> api.resource('bell_schedules').raw
+'edFi/bellSchedules'
+```
+-----
+
+</details>
+
+
+<details>
+<summary><code>url</code></summary>
+
+-----
+
+### url
+This attribute retrieves the Ed-Fi endpoint's url without any REST identifiers.
+
+```python
+>>> api.resource('bell_schedules').url
+'{BASE_URL}/data/v3/ed-fi/bellSchedules'
+```
+-----
+
+</details>
+
 
 <details>
 <summary><code>description</code></summary>
@@ -424,7 +567,7 @@ This attribute retrieves the Ed-Fi endpoint's description if present in its resp
 -----
 
 ### has_deletes
-This attribute returns whether a deletes path is present the Ed-Fi endpoint's respective Swagger payload.
+This attribute returns whether a deletes path is present in the Ed-Fi endpoint's respective Swagger payload.
 
 ```python
 >>> api.resource('bellSchedules').has_deletes
@@ -435,6 +578,43 @@ True
 
 </details>
 
+
+<details>
+<summary><code>fields</code></summary>
+
+-----
+
+### fields
+This attribute returns the fields listed for the Ed-Fi endpoint if present in its respective Swagger payload.
+
+Note that the private `id` and `_etag` fields are removed from the output.
+
+```python
+>>> api.resource('bellSchedules').fields
+['schoolReference', 'startTime', 'alternateDayName', 'endTime', 'bellScheduleName', 'dates', ...]
+```
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>required_fields</code></summary>
+
+-----
+
+### required_fields
+This attribute returns the required fields listed for the Ed-Fi endpoint if present in its respective Swagger payload.
+
+```python
+>>> api.resource('bellSchedules').required_fields
+['bellScheduleName', 'classPeriods', 'schoolReference']
+```
+
+-----
+
+</details>
 
 
 ### Methods
@@ -471,9 +651,11 @@ This offers a shortcut for verifying claim-set permissions without needing to pu
 This method retrieves one GET-request of JSON rows from the specified endpoint.
 This can be used to verify the structure of the data or to collect a small sample for testing.
 
-An optional limit can be provided.
+An optional `limit` can be provided.
 If unspecified, the default limit will be retrieved.
 (This value must be less than the hard-coded limit of the ODS, or the request will fail.)
+
+An optional `params` dictionary can be provided that overrides the default params specified during endpoint initialization.
 
 ```python
 >>> students.get(limit=1)
@@ -502,29 +684,78 @@ All methods use identical arguments.
 Method `get_to_json()` takes an additional `path` argument.
 Under the hood, `get_rows()` implements `get_pages()`, but unnests the rows before returning.
 
+An optional `params` dictionary can be provided that overrides the default params specified during endpoint initialization.
+
 ```python
 >>> student_rows = students.get_rows(
         page_size=500,           # The limit to pass to the parameters. Overwrites parameter if already defined.
-        retry_on_failure=False,  # Reconnect session if request fails and reattempt (e.g., if authentication expires).
-        max_retries=5,           # If `retry_on_failure is True`, how many attempts before giving up.
-        max_wait=500,            # If `retry_on_failure is True`, max wait time for exponential backoff before giving up.
+        retry_on_failure=False,  # Reattempt request during failures. Overrides defaults set in `EdFiClient.connect()`.
+        max_retries=5,           # If `retry_on_failure is True`, how many attempts before giving up. Overrides defaults set in `EdFiClient.connect()`.
+        max_wait=500,            # If `retry_on_failure is True`, max wait time for exponential backoff before giving up. Overrides defaults set in `EdFiClient.connect()`.
     
         step_change_version=False,       # Only available for resources/descriptors. See [Change Version Stepping] below.
         change_version_step_size=50000,  # Only available for resources/descriptors. See [Change Version Stepping] below.
+        reverse_paging: bool=True        # Only available for resources/descriptors. See [Change Version Stepping] below.
     )
 <generator object EdFiEndpoint.get_rows at 0x7f7472650f90>
 
 >>> list(student_rows)
-[Paged Get Resource] Endpoint  : {BASE_URL}/data/v3/ed-fi/students
-[Paged Get Resource] Parameters: {'minChangeVersion': 52028375, 'maxChangeVersion': 53295015, 'limit': 500, 'offset': 0}
-[Paged Get Resource] @ Retrieved 500 rows. Paging offset...
+[Get Resource] Endpoint  : {BASE_URL}/data/v3/ed-fi/students
+[Get Resource] Parameters: {'minChangeVersion': 52028375, 'maxChangeVersion': 53295015, 'limit': 500, 'offset': 0}
+[Get Resource] @ Retrieved 500 rows. Paging offset...
 # ...
-[Paged Get Resource] Parameters: {'minChangeVersion': 52028375, 'maxChangeVersion': 53295015, 'limit': 500, 'offset': 4000}
-[Paged Get Resource] @ Retrieved 135 rows. Paging offset...
-[Paged Get Resource] @ Retrieved zero rows. Ending pagination.
+[Get Resource] Parameters: {'minChangeVersion': 52028375, 'maxChangeVersion': 53295015, 'limit': 500, 'offset': 4000}
+[Get Resource] @ Retrieved 135 rows. Paging offset...
+[Get Resource] @ Retrieved zero rows. Ending pagination.
 [{'id': 'abc123', 'studentUniqueId': '987654', 'birthDate': '1970-01-01', ...}, ...]
 ```
 To circumvent memory constraints, these methods return generators instead of lists.
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>get_total_count</code></summary>
+
+-----
+
+### get_total_count
+This method returns the total count of rows for the given endpoint, as declared by the API.
+This action is completed by sending a limit 0 GET request to the API with the `Total-Count` header set to `True`.
+
+An optional `params` dictionary can be provided that overrides the default params specified during endpoint initialization.
+
+```python
+>>> students.get_total_count()
+4135
+```
+
+`get_total_count()` is currently only implemented for resources and descriptors, not composites.
+
+This method was previously named `total_count()`; this namespace has been deprecated in favor of `get_total_count()`.
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>post</code></summary>
+
+-----
+
+### post
+This method post one JSON row to the specified endpoint, returning the status code and message of the response.
+This can be used to verify the structure of the data or to run a small sample for testing.
+
+```python
+>>> students.post(json_row)
+(200, "")
+```
+
+Posts are currently only implemented for resources and descriptors, not composites.
 
 -----
 
@@ -537,32 +768,33 @@ To circumvent memory constraints, these methods return generators instead of lis
 -----
 
 ### post_rows / post_from_json
-These are the primary methods for posting a set of JSON records to the specified endpoint and parameters.
-Method `post_rows()` takes an in-memory list; method `post_from_json()` streams records to post from a JSON file.
+These are the primary methods for posting a set of JSON records to the specified endpoint.
+Method `post_rows()` takes an iterator; method `post_from_json()` streams records to post from a JSON file.
 
-Both methods return a dictionary mapping each response status code and message with the line numbers that returned that response.
+Both methods return a `ResponseLog` mapping that documents each response's status code and message with the line numbers that returned that response.
 
 Both methods use identical arguments.
 Method `post_rows()` uses a positional `rows` argument;
 method `post_from_json()` uses a positional `path` argument.
 
-Optional arguments `include` and `exclude` can be specified to post a subset of rows, based on index in the list/file.
-If left blank, all rows are posted.
+Method `post_from_json()` has two optional arguments `include` and `exclude` can be specified to post a subset of rows, based on index in the file.
+If left blank, all rows in the file are posted.
 These arguments are mutually-exclusive.
 
 ```python
 >>> output_dict = students.post_rows(
         rows=json_rows,
-        include=None,            # Optional list of indexes to include in the post.
-        exclude=None,            # Optional list of indexes to exclude from the post.
-        retry_on_failure=False,  # Reconnect session if request fails and reattempt (e.g., if authentication expires).
-        max_retries=5,           # If `retry_on_failure is True`, how many attempts before giving up.
-        max_wait=500,            # If `retry_on_failure is True`, max wait time for exponential backoff before giving up.
+        log_every=500,           # After how many requests should a debug status be printed?
+        retry_on_failure=False,  # Reattempt request during failures. Overrides defaults set in `EdFiClient.connect()`.
+        max_retries=5,           # If `retry_on_failure is True`, how many attempts before giving up.  Overrides defaults set in `EdFiClient.connect()`.
+        max_wait=500,            # If `retry_on_failure is True`, max wait time for exponential backoff before giving up.  Overrides defaults set in `EdFiClient.connect()`.
     )
 
 >>> output_dict
 {'200': [1, 2, 3], '401: MESSAGE': [4, 5]}
 ```
+
+Posts are currently only implemented for resources and descriptors, not composites.
 
 -----
 
@@ -570,20 +802,101 @@ These arguments are mutually-exclusive.
 
 
 <details>
-<summary><code>total_count</code></summary>
+<summary><code>delete</code></summary>
 
 -----
 
-### total_count
-This method returns the total count of rows for the given endpoint, as declared by the API.
-This action is completed by sending a limit 0 GET request to the API with the `Total-Count` header set to `True`.
+### delete
+This method deletes one ID from the specified endpoint, returning the status code and message of the response.
+This can be used to run a small sample for testing.
 
 ```python
->>> students.total_count()
-4135
+>>> students.delete(20)
+(200, "")
 ```
 
-`total_count()` is currently only implemented for resources, not composites.
+Deletes are currently only implemented for resources and descriptors, not composites.
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>delete_ids</code></summary>
+
+-----
+
+### delete_ids
+This is the primary method for deleting a set of JSON records from the specified endpoint.
+
+This method returns a `ResponseLog` mapping that documents each response's status code and message with the indexes that returned that response.
+
+```python
+>>> output_dict = students.delete_ids(
+        ids=record_ids,          # An iterator with IDs to be deleted from the endpoint
+        log_every=500,           # After how many requests should a debug status be printed?
+        retry_on_failure=False,  # Reattempt request during failures. Overrides defaults set in `EdFiClient.connect()`.
+        max_retries=5,           # If `retry_on_failure is True`, how many attempts before giving up.  Overrides defaults set in `EdFiClient.connect()`.
+        max_wait=500,            # If `retry_on_failure is True`, max wait time for exponential backoff before giving up.  Overrides defaults set in `EdFiClient.connect()`.
+    )
+
+>>> output_dict
+{'200': [1, 2, 3], '401: MESSAGE': [4, 5]}
+```
+
+Deletes are currently only implemented for resources and descriptors, not composites.
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>delete</code></summary>
+
+-----
+
+### put
+This method updates the payload for a given ID at the specified endpoint, returning the status code and message of the response.
+This can be used to verify the structure of the data or to run a small sample for testing.
+
+```python
+>>> students.put(20, json_row)
+(200, "")
+```
+
+Puts are currently only implemented for resources and descriptors, not composites.
+
+-----
+
+</details>
+
+
+<details>
+<summary><code>put_id_rows</code></summary>
+
+-----
+
+### put_id_rows
+This is the primary method for updating a set of JSON records by ID at the specified endpoint.
+
+This method returns a `ResponseLog` mapping that documents each response's status code and message with the indexes that returned that response.
+
+```python
+>>> output_dict = students.put_id_rows(
+        id_rows=id_to_json_rows, # An iterator with ID-JSON row tuples to be updating at the endpoint
+        log_every=500,           # After how many requests should a debug status be printed?
+        retry_on_failure=False,  # Reattempt request during failures. Overrides defaults set in `EdFiClient.connect()`.
+        max_retries=5,           # If `retry_on_failure is True`, how many attempts before giving up.  Overrides defaults set in `EdFiClient.connect()`.
+        max_wait=500,            # If `retry_on_failure is True`, max wait time for exponential backoff before giving up.  Overrides defaults set in `EdFiClient.connect()`.
+    )
+
+>>> output_dict
+{'200': [1, 2, 3], '401: MESSAGE': [4, 5]}
+```
+
+Puts are currently only implemented for resources and descriptors, not composites.
 
 -----
 
