@@ -355,7 +355,7 @@ All requests made after connection will use retry-logic as defined in optional c
         max_wait=1200           # Default; maximum time to wait between retries before giving up on a request
     )
 
-<Resource [edFi/students]>
+[EdFiSession]
 ```
 
 If `EdFiClient.connect()` is used as a context manager, the session will be closed automatically.
@@ -897,6 +897,103 @@ This method returns a `ResponseLog` mapping that documents each response's statu
 ```
 
 Puts are currently only implemented for resources and descriptors, not composites.
+
+-----
+
+</details>
+
+
+------
+
+
+## Advanced Usage: Asynchronous Requests
+Ed-Fi API Client version 0.3 adds asynchronous alternatives to all `EdFiEndpoint` request methods.
+These act identically to their synchronous counterparts, but complete processes faster by starting new requests while waiting on the ODS.
+
+Asynchronous processing is more complex and requires deeper understanding of Python to use effectively.
+It is highly recommended to use and understand the synchronous methods before attempting their asynchronous counterparts.
+
+Using the asynchronous methods requires additional packages be installed in your Python environment.
+Use the following command to install these packages: `pip install edfi_api_client[async]`.
+
+### Connecting to an asynchronous session
+There are two ways to connect to an asynchronous session.
+The standard approach is `EdFiClient.async_connect()`.
+
+<details>
+<summary><code>EdFiClient.async_connect</code></summary>
+
+-----
+
+### EdFiClient.async_connect
+This method is identical to `EdFiClient.connect()`,
+but with one additional argument `pool_size` that determines how many asynchronous processes can run simultaneously.
+
+Unlike its synchronous counterpart, this method _must_ be used as an asynchronous context manager!
+
+```python
+import asyncio
+from edfi_api_client import EdFiClient
+
+async def main():
+    api = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    
+    async with api.async_connect(
+        pool_size=8,  # The number of asynchronous processes to run.
+        **kwargs      # Arguments used in `EdFiClient.connect()`
+    ):
+        ...  # Asynchronous gets/posts/deletes/puts
+
+asyncio.run(main())
+```
+
+Any asynchronous context managers must be declared within an asynchronous method that is passed to `asyncio.run()`.
+Use this approach when you want the most control when using asynchronous processing.
+
+-----
+
+</details>
+
+Alternatively, most of the asynchronous request methods establish a session automatically if not already defined.
+These can be used for one-off asynchronous method calls that have a clear definition for when they have been completed
+(i.e., for when the asynchronous session can be closed).
+Note that the session is reset and re-authenticated between request-methods if a session context manager is not used.
+
+All asynchronous endpoint methods have been defined below.
+
+<details>
+<summary><code>EdFiEndpoint Asynchronous Methods</code></summary>
+
+-----
+
+`EdFiSession.async_connect()` arguments can be passed in these method-calls for session-instantiation when not explicitly pre-instantiated.
+
+- async_get
+- async_get_pages*
+- async_get_rows*
+- async_get_to_json
+- async_get_total_count
+- async_post
+- async_post_rows
+- async_post_from_json
+- async_delete
+- async_delete_ids
+- async_put
+- async_put_id_rows
+
+Methods that will *not* automatically create an asynchronous session are marked with an asterisk.
+These are both getters that return an `AsyncGenerator` that can often be too large to fit into memory.
+
+For an example of how these are used without an asynchronous context manager:
+```python
+from edfi_api_client import EdFiClient
+
+api = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+students = api.resource('students')
+
+students.async_get_to_json(PATH, retry_on_failure=True, pool_size=8)  # Creates a new asynchronous retry-Session with pool-size 8.
+students.async_post_from_json(PATH, pool_size=16)  # Creates a different asynchronous Session with pool-size 16.
+```
 
 -----
 
