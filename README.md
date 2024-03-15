@@ -853,7 +853,7 @@ Deletes are currently only implemented for resources and descriptors, not compos
 
 
 <details>
-<summary><code>delete</code></summary>
+<summary><code>put</code></summary>
 
 -----
 
