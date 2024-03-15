@@ -22,13 +22,19 @@ class EdFiSwagger:
         self.component: str = component
 
         # All attributes are retrieved from lazy payload dict
-        self.json: Optional[dict] = None
+        self._json: Optional[dict] = None
 
     def __repr__(self) -> str:
         """
         Ed-Fi {self.component} OpenAPI Swagger Specification
         """
         return f"<Ed-Fi {self.component.title()} OpenAPI Swagger Specification>"
+
+    @property
+    def json(self) -> dict:
+        if not self._json:
+            self._json = self.get_json()
+        return self._json
 
     def get_json(self) -> dict:
         """
@@ -38,31 +44,25 @@ class EdFiSwagger:
 
         :return: Swagger specification definition, as a dictionary.
         """
-        if self.json:
-            return self.json
-
         logging.info(f"[Get {self.component.title()} Swagger] Retrieving Swagger into memory...")
-
         swagger_url = util.url_join(
             self.base_url, 'metadata', 'data/v3', self.component, 'swagger.json'
         )
-
-        self.json = requests.get(swagger_url).json()
-        return self.json
+        return requests.get(swagger_url).json()
 
     # Class attributes
     @property
     def version(self) -> Optional[str]:
-        return self.get_json().get('swagger')
+        return self.json.get('swagger')
 
     @property
     def version_url_string(self) -> Optional[str]:
-        return self.get_json().get('basePath')
+        return self.json.get('basePath')
 
     @property
     def token_url(self) -> Optional[str]:
         return (
-            self.get_json()
+            self.json
                 .get('securityDefinitions', {})
                 .get('oauth2_client_credentials', {})
                 .get('tokenUrl')
@@ -100,7 +100,7 @@ class EdFiSwagger:
         # Build out a collection of endpoints and their delete statuses by path.
         path_delete_mapping: Dict[(str, str), bool] = defaultdict(bool)
 
-        for path in self.get_json().get('paths', {}).keys():
+        for path in self.json.get('paths', {}).keys():
             namespace = path.split('/')[1]
             endpoint = path.split('/')[2]
 
@@ -119,7 +119,7 @@ class EdFiSwagger:
         for namespace, endpoint in self.get_endpoint_deletes().keys():
             endpoint_definition_id = self.build_definition_id(namespace, endpoint)
 
-            for definition_id, metadata in self.get_json().get('definitions').items():
+            for definition_id, metadata in self.json.get('definitions').items():
                 if definition_id == endpoint_definition_id:
                     filtered_fields = set(metadata.get('properties', {}).keys()).difference(exclude)
                     field_mapping[(namespace, endpoint)] = list(filtered_fields)
@@ -137,7 +137,7 @@ class EdFiSwagger:
         for namespace, endpoint in self.get_endpoint_deletes().keys():
             endpoint_definition_id = self.build_definition_id(namespace, endpoint)
 
-            for definition_id, metadata in self.get_json().get('definitions').items():
+            for definition_id, metadata in self.json.get('definitions').items():
                 if definition_id == endpoint_definition_id:
                     field_mapping[(namespace, endpoint)] = list(metadata.get('required', []))
 
@@ -151,7 +151,7 @@ class EdFiSwagger:
         """
         skey_mapping: Dict[str, List[str]] = {}
 
-        for key, definition in self.get_json().get('definitions', {}).items():
+        for key, definition in self.json.get('definitions', {}).items():
 
             # Only reference surrogate keys are used
             if not key.endswith('Reference'):
@@ -175,5 +175,5 @@ class EdFiSwagger:
         """
         return {
             tag['name']: tag['description']
-            for tag in self.get_json()['tags']
+            for tag in self.json['tags']
         }

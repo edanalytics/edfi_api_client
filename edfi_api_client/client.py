@@ -215,7 +215,7 @@ class EdFiClient(AsyncEdFiClientMixin):
     ### Unauthenticated Swagger methods
     def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
         swagger = EdFiSwagger(self.base_url, component=component)
-        _ = swagger.get_json()  # Force eager execution
+        _ = swagger.json  # Force eager execution
         return swagger
 
     @property
