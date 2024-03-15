@@ -101,8 +101,16 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
         return self.swagger.get_endpoint_fields().get((self.namespace, self.name))
 
     @property
+    def field_dtypes(self) -> Dict[str, str]:
+        return self.swagger.get_endpoint_field_dtypes().get((self.namespace, self.name))
+
+    @property
     def required_fields(self) -> List[str]:
-        return self.swagger.get_required_endpoint_fields().get((self.namespace, self.name))
+        return self.swagger.get_endpoint_required_fields().get((self.namespace, self.name))
+
+    @property
+    def identity_fields(self) -> List[str]:
+        return self.swagger.get_endpoint_identity_fields().get((self.namespace, self.name))
 
     @property
     def description(self) -> Optional[str]:
