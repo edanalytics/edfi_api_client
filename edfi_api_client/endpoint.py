@@ -93,24 +93,39 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
 
     ### Lazy swagger attributes
     @property
-    def has_deletes(self) -> bool:
-        return self.swagger.get_endpoint_deletes().get((self.namespace, self.name))
+    def definition_id(self):
+        ns = util.snake_to_camel(self.namespace)
+        ep = util.plural_to_singular(self.name)
+        return f"{ns}_{ep}"
+
+    @property
+    def definition(self):
+        """
+        Snake-to-camel cannot handle certain namespaces, but definitions are thankfully case-agnostic.
+        e.g., Namespace: ed-fi-xassessment-roster: (Expected: edFiXassessmentRoster; Actual: edFiXAssessmentRoster)
+        """
+        definitions = {id.lower(): define for id, define in self.swagger.definitions.items()}
+        return definitions.get(self.definition_id.lower(), {})
 
     @property
     def fields(self) -> List[str]:
-        return self.swagger.get_endpoint_fields().get((self.namespace, self.name))
+        return list(self.field_dtypes.keys())
 
     @property
     def field_dtypes(self) -> Dict[str, str]:
-        return self.swagger.get_endpoint_field_dtypes().get((self.namespace, self.name))
+        return dict(self.definition.get('field_dtypes', {}))  # Force to dict from defaultdict.
 
     @property
     def required_fields(self) -> List[str]:
-        return self.swagger.get_endpoint_required_fields().get((self.namespace, self.name))
+        return self.definition.get('required', [])
 
     @property
     def identity_fields(self) -> List[str]:
-        return self.swagger.get_endpoint_identity_fields().get((self.namespace, self.name))
+        return self.definition.get('identity', [])
+
+    @property
+    def has_deletes(self) -> bool:
+        return self.swagger.get_endpoint_deletes().get((self.namespace, self.name))
 
     @property
     def description(self) -> Optional[str]:
