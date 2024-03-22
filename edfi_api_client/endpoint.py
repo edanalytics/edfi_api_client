@@ -93,13 +93,13 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
 
     ### Lazy swagger attributes
     @property
-    def definition_id(self):
+    def definition_id(self) -> str:
         ns = util.snake_to_camel(self.namespace)
         ep = util.plural_to_singular(self.name)
         return f"{ns}_{ep}"
 
     @property
-    def definition(self):
+    def definition(self) -> dict:
         """
         Snake-to-camel cannot handle certain namespaces, but definitions are thankfully case-agnostic.
         e.g., Namespace: ed-fi-xassessment-roster: (Expected: edFiXassessmentRoster; Actual: edFiXAssessmentRoster)
