@@ -1,8 +1,9 @@
+import json
 import logging
 import requests
 
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set, Union
 
 from edfi_api_client import util
 
@@ -22,13 +23,20 @@ class EdFiSwagger:
         self.component: str = component
 
         # All attributes are retrieved from lazy payload dict
-        self.json: Optional[dict] = None
+        self._json: Optional[dict] = None
+        self._definitions: Optional[dict] = None
 
     def __repr__(self) -> str:
         """
         Ed-Fi {self.component} OpenAPI Swagger Specification
         """
         return f"<Ed-Fi {self.component.title()} OpenAPI Swagger Specification>"
+
+    @property
+    def json(self) -> dict:
+        if not self._json:
+            self._json = self.get_json()
+        return self._json
 
     def get_json(self) -> dict:
         """
@@ -38,47 +46,115 @@ class EdFiSwagger:
 
         :return: Swagger specification definition, as a dictionary.
         """
-        if self.json:
-            return self.json
-
         logging.info(f"[Get {self.component.title()} Swagger] Retrieving Swagger into memory...")
-
         swagger_url = util.url_join(
             self.base_url, 'metadata', 'data/v3', self.component, 'swagger.json'
         )
-
-        self.json = requests.get(swagger_url).json()
-        return self.json
+        return requests.get(swagger_url).json()
 
     # Class attributes
     @property
     def version(self) -> Optional[str]:
-        return self.get_json().get('swagger')
+        return self.json.get('swagger')
 
     @property
     def version_url_string(self) -> Optional[str]:
-        return self.get_json().get('basePath')
+        return self.json.get('basePath')
 
     @property
     def token_url(self) -> Optional[str]:
         return (
-            self.get_json()
+            self.json
                 .get('securityDefinitions', {})
                 .get('oauth2_client_credentials', {})
                 .get('tokenUrl')
         )
 
+    @property
+    def definitions(self) -> Dict[str, Dict[str, str]]:
+        """
+        Definitions are complex to parse due to nested references.
+        Compile the full list of references before recursively populating them.
+        """
+        # Only complete expensive parsing operation once.
+        if not self._definitions:
+            # Warn if the definitions are missing from the Swagger.
+            swagger_definitions = self.json.get('definitions', {})
+            if not swagger_definitions:
+                raise KeyError("No definitions found in Swagger JSON!")
+
+            # First pass to build definitions.
+            self._definitions: Dict[str, dict] = {
+                definition_id: self._build_definition(json_definition)
+                for definition_id, json_definition in swagger_definitions.items()
+            }
+
+            # Second pass to resolve references.
+            for definition_id, definition in self._definitions.items():
+                self._recurse_definition_references(definition)
+
+        return self._definitions
+
+    @staticmethod
+    def _build_definition(json_definition: dict) -> dict:
+        """
+        Method to simplify definition parsing without needing a helper class.
+        """
+        definition = {
+            "field_dtypes": defaultdict(str),
+            "references": defaultdict(str),
+            "identity": list(),
+            "required": list(),
+        }
+
+        # Required keys are an optional top-level field
+        if 'required' in json_definition:
+            definition['required'].extend(json_definition['required'])
+
+        # All other fields are parsed from properties
+        for field, field_metadata in json_definition.get('properties', {}).items():
+
+            # Record whether an identity field
+            if field_metadata.get('x-Ed-Fi-isIdentity'):
+                definition['identity'].append(field)
+
+            # Use self.resolve_reference to flesh out reference in a second pass after all definitions are known.
+            # Raw format: ``` {"$ref": "#/definitions/edFi_educationOrganizationReference"} ```
+            if '$ref' in field_metadata:
+                reference_name = field_metadata['$ref'].split('/')[-1]
+                if reference_name == "link":
+                    continue  # Ignore links
+                definition['references'][field] = reference_name
+            else:
+                # Default to most explicit datatype format.
+                dtype = field_metadata.get('format', field_metadata.get('type'))
+                definition['field_dtypes'][field] = dtype
+
+        return definition
+
+    def _recurse_definition_references(self, definition: dict):
+        """
+
+        """
+        for field, reference in definition['references'].items():
+            # Recurse children before resolving parent.
+            if isinstance(reference, str):
+                reference = self.definitions[reference]
+                self._recurse_definition_references(reference)
+                definition['references'][field] = reference
+
+            # Copy attributes up to parent definition.
+            for subfield, dtype in reference['field_dtypes'].items():
+                full_field = f"{field}.{subfield}"
+
+                definition['field_dtypes'][full_field] = dtype
+                if subfield in reference['identity']:
+                    definition['identity'].append(full_field)
+                if subfield in reference['required']:
+                    definition['required'].append(full_field)
+
 
     ### Endpoint Metadata Methods
-    @staticmethod
-    def build_definition_id(namespace: str, endpoint: str) -> str:
-        """
-        Ed-Fi definitions use "edFi_students" convention, instead of standard "ed-fi/students".
-        """
-        ns = util.snake_to_camel(namespace)
-        ep = util.plural_to_singular(endpoint)
-        return f"{ns}_{ep}"
-
     def get_endpoints(self) -> List[str]:
         return list(self.get_endpoint_deletes().keys())
 
@@ -100,48 +176,24 @@ class EdFiSwagger:
         # Build out a collection of endpoints and their delete statuses by path.
         path_delete_mapping: Dict[(str, str), bool] = defaultdict(bool)
 
-        for path in self.get_json().get('paths', {}).keys():
+        for path in self.json.get('paths', {}).keys():
             namespace = path.split('/')[1]
             endpoint = path.split('/')[2]
-
             path_delete_mapping[(namespace, endpoint)] |= ('/deletes' in path)
 
         return path_delete_mapping
 
-    def get_endpoint_fields(self, exclude: List[str] = ('id', '_etag')) -> Dict[Tuple[str, str], List[str]]:
+    def get_endpoint_descriptions(self) -> Dict[str, str]:
         """
-
-        :param exclude:
-        :return:
-        """
-        field_mapping: Dict[Tuple[str, str], List[str]] = {}
-
-        for namespace, endpoint in self.get_endpoint_deletes().keys():
-            endpoint_definition_id = self.build_definition_id(namespace, endpoint)
-
-            for definition_id, metadata in self.get_json().get('definitions').items():
-                if definition_id == endpoint_definition_id:
-                    filtered_fields = set(metadata.get('properties', {}).keys()).difference(exclude)
-                    field_mapping[(namespace, endpoint)] = list(filtered_fields)
-
-        return field_mapping
-
-    # TODO: Can this be unified with get_endpoint_fields()?
-    def get_required_endpoint_fields(self) -> Dict[Tuple[str, str], List[str]]:
-        """
+        Descriptions for all EdFi endpoints are found under `tags` as [name, description] JSON objects.
+        Their extraction is optional for YAML templates, but they look nice.
 
         :return:
         """
-        field_mapping: Dict[Tuple[str, str], List[str]] = {}
-
-        for namespace, endpoint in self.get_endpoint_deletes().keys():
-            endpoint_definition_id = self.build_definition_id(namespace, endpoint)
-
-            for definition_id, metadata in self.get_json().get('definitions').items():
-                if definition_id == endpoint_definition_id:
-                    field_mapping[(namespace, endpoint)] = list(metadata.get('required', []))
-
-        return field_mapping
+        return {
+            tag['name']: tag['description']
+            for tag in self.json['tags']
+        }
 
     def get_reference_skeys(self, exclude: List[str] = ('link', )) -> Dict[str, List[str]]:
         """
@@ -151,7 +203,7 @@ class EdFiSwagger:
         """
         skey_mapping: Dict[str, List[str]] = {}
 
-        for key, definition in self.get_json().get('definitions', {}).items():
+        for key, definition in self.json.get('definitions', {}).items():
 
             # Only reference surrogate keys are used
             if not key.endswith('Reference'):
@@ -165,15 +217,3 @@ class EdFiSwagger:
             skey_mapping[reference] = columns
 
         return skey_mapping
-
-    def get_endpoint_descriptions(self) -> Dict[str, str]:
-        """
-        Descriptions for all EdFi endpoints are found under `tags` as [name, description] JSON objects.
-        Their extraction is optional for YAML templates, but they look nice.
-
-        :return:
-        """
-        return {
-            tag['name']: tag['description']
-            for tag in self.get_json()['tags']
-        }

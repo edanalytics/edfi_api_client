@@ -62,6 +62,11 @@ class EdFiClient(AsyncEdFiClientMixin):
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
 
+        if self.api_version == 2:
+            raise NotImplementedError(
+                "Ed-Fi 2 functionality has been deprecated. Use `pip install edfi_api_client~=0.2.0` for Ed-Fi 2 ODSes."
+            )
+
         # Swagger variables for populating resource metadata (retrieved lazily)
         self.resources_swagger  : EdFiSwagger = EdFiSwagger(self.base_url, 'resources')
         self.descriptors_swagger: EdFiSwagger = EdFiSwagger(self.base_url, 'descriptors')
@@ -215,7 +220,7 @@ class EdFiClient(AsyncEdFiClientMixin):
     ### Unauthenticated Swagger methods
     def get_swagger(self, component: str = 'resources') -> EdFiSwagger:
         swagger = EdFiSwagger(self.base_url, component=component)
-        _ = swagger.get_json()  # Force eager execution
+        _ = swagger.json  # Force eager execution
         return swagger
 
     @property

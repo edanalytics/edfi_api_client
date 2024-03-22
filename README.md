@@ -184,6 +184,60 @@ Build the URL used when interfacing with the Ed-Fi change-queries endpoint
 </details>
 
 
+<details>
+<summary><code>resources_swagger</code></summary>
+
+-----
+
+### resources_swagger
+Lazy `EdFiSwagger` object for the "resources" endpoints.
+Populates only when attributes are called.
+
+```python
+>>> api.resources_swagger
+<Ed-Fi Resources OpenAPI Swagger Specification>
+```
+-----
+
+</details>
+
+
+<details>
+<summary><code>descriptors_swagger</code></summary>
+
+-----
+
+### descriptors_swagger
+Lazy `EdFiSwagger` object for the "descriptors" endpoints.
+Populates only when attributes are called.
+
+```python
+>>> api.descriptors_swagger
+<Ed-Fi Descriptors OpenAPI Swagger Specification>
+```
+-----
+
+</details>
+
+
+<details>
+<summary><code>composites_swagger</code></summary>
+
+-----
+
+### composites_swagger
+Lazy `EdFiSwagger` object for the "composites" endpoints.
+Populates only when attributes are called.
+
+```python
+>>> api.composites_swagger
+<Ed-Fi Composites OpenAPI Swagger Specification>
+```
+-----
+
+</details>
+
+
 
 ### Methods
 Authentication with the ODS is not required:
