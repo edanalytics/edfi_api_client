@@ -181,7 +181,7 @@ class AsyncEdFiSession(EdFiSession):
 
         async with self.session.put(
             put_url, headers=self.auth_headers, json=data,
-            verify=self.verify_ssl, raise_for_status=False,
+            verify_ssl=self.verify_ssl, raise_for_status=False,
             **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
@@ -574,9 +574,9 @@ class AsyncEdFiEndpointMixin:
         logging.info(f"[Put {self.component}] Endpoint: {self.url}")
         output_log = ResponseLog(log_every)
 
-        async def put_and_log(key: int, id: int, row: dict):
+        async def put_and_log(id: int, row: dict):
             status, message = await self.async_put(id, row, **kwargs)
-            output_log.record(key=key, status=status, message=message)
+            output_log.record(key=id, status=status, message=message)
 
         if isinstance(id_rows, dict):  # If a dict, the object is already in memory.
             id_rows = list(id_rows.items())
