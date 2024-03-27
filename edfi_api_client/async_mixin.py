@@ -167,7 +167,7 @@ class AsyncEdFiSession(EdFiSession):
             text = await response.text()
             return response
 
-    async def async_put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
+    async def put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
         """
         Complete a PUT request against an endpoint URL
         Note: Responses are returned regardless of status.
