@@ -511,7 +511,7 @@ class AsyncEdFiEndpointMixin:
     @async_main
     async def async_delete(self, id: int, **kwargs) -> Awaitable[Tuple[Optional[str], Optional[str]]]:
         try:
-            response = self.client.async_session.delete_response(self.url, id=id, **kwargs)
+            response = await self.client.async_session.delete_response(self.url, id=id, **kwargs)
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status, res_json.get('message')
@@ -549,7 +549,7 @@ class AsyncEdFiEndpointMixin:
     @async_main
     async def async_put(self, id: int, data: dict, **kwargs) -> Tuple[Optional[str], Optional[str]]:
         try:
-            response = self.client.async_session.put_response(self.url, id=id, data=data, **kwargs)
+            response = await self.client.async_session.put_response(self.url, id=id, data=data, **kwargs)
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status_code, res_json.get('message')
