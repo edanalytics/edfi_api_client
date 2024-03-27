@@ -19,6 +19,9 @@ class ResponseLog:
     def __len__(self) -> int:
         return len(self.log_dict)
 
+    def __repr__(self) -> str:
+        return str(self.count_messages())
+
     def record(self, key: int, status: Optional[Union[str, int]] = None, message: Optional[str] = None):
         status = status or self.ERROR  # Caught exceptions return no status codes.
         message = message or self.SUCCESS  # 200 responses return no JSON message.
