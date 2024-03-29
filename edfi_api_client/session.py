@@ -134,7 +134,7 @@ class EdFiSession:
             """
             Retry kwargs can be passed during Session connect or on-the-fly during requests.
             """
-            if not retry_on_failure or self.retry_on_failure:
+            if not (retry_on_failure or self.retry_on_failure):
                 return func(self, *args, **kwargs)
 
             # Attempt the GET until success or `max_retries` reached.

@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 try:
     import aiofiles
     import aiohttp
-    import aiohttp_retry
 except ImportError:
     _has_async = False
 else:
@@ -40,7 +39,10 @@ class AsyncEdFiSession(EdFiSession):
         self.session: 'aiohttp.ClientSession' = None
         self.pool_size: int = None
 
-    async def __aenter__(self):
+        # Build a client-specific non-blocking lock for authentication and retries.
+        self.lock: asyncio.Lock = asyncio.Lock()
+
+    async def __aenter__(self) -> 'AsyncEdFiSession':
         return self
 
     async def __aexit__(self, *exc):
@@ -71,17 +73,6 @@ class AsyncEdFiSession(EdFiSession):
             timeout=aiohttp.ClientTimeout(sock_connect=self.max_wait),
         )
 
-        if self.retry_on_failure:
-            retry_options = aiohttp_retry.ExponentialRetry(
-                attempts=self.max_retries,
-                start_timeout=4.0,  # Note: this logic differs from that of EdFiSession.
-                max_timeout=self.max_wait,
-                factor=4.0,
-                statuses=self.retry_status_codes,
-            )
-
-            self.session = aiohttp_retry.RetryClient(client_session=self.session, retry_options=retry_options)
-
         return self
 
     def authenticate(self) -> dict:
@@ -96,6 +87,50 @@ class AsyncEdFiSession(EdFiSession):
         return super().authenticate()
 
 
+    def _async_with_exponential_backoff(func: Callable):
+        """
+        Decorator to apply exponential backoff during failed requests.
+        TODO: Is this logic and status codes consistent across request types?
+        TODO: Can this same decorator be used in async, since we cannot have async requests made to overloaded ODS?
+        :return:
+        """
+        @functools.wraps(func)
+        async def wrapped(self,
+            *args,
+            retry_on_failure: bool = False,
+            max_retries: Optional[int] = None,
+            max_wait: Optional[int] = None,
+            **kwargs
+        ):
+            """
+            Retry kwargs can be passed during Session connect or on-the-fly during requests.
+            """
+            if not (retry_on_failure or self.retry_on_failure):
+                return await func(self, *args, **kwargs)
+
+            # Attempt the GET until success or `max_retries` reached.
+            max_retries = max_retries or self.max_retries
+            max_wait = max_wait or self.max_wait
+
+            for n_tries in range(max_retries):
+
+                try:
+                    return await func(self, *args, **kwargs)
+
+                except RequestsWarning:
+                    # If an API call fails, it may be due to rate-limiting.
+                    asyncio.sleep(
+                        min((2 ** n_tries) * 2, max_wait)
+                    )
+                    logging.warning(f"Retry number: {n_tries}")
+
+            # This block is reached only if max_retries has been reached.
+            else:
+                raise requests.exceptions.RetryError("API retry failed: max retries exceeded for URL.")
+
+        return wrapped
+
+    @_async_with_exponential_backoff
     async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['aiohttp.ClientSession']:
         """
         Complete an asynchronous GET request against an endpoint URL.
@@ -116,6 +151,7 @@ class AsyncEdFiSession(EdFiSession):
             text = await response.text()
             return response
 
+    @_async_with_exponential_backoff
     async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous POST request against an endpoint URL.
@@ -145,6 +181,7 @@ class AsyncEdFiSession(EdFiSession):
             text = await response.text()
             return response
 
+    @_async_with_exponential_backoff
     async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
@@ -167,6 +204,7 @@ class AsyncEdFiSession(EdFiSession):
             text = await response.text()
             return response
 
+    @_async_with_exponential_backoff
     async def put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
         """
         Complete a PUT request against an endpoint URL
