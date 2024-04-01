@@ -28,6 +28,7 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
         *,
         namespace: str = 'ed-fi',
         get_deletes: bool = False,
+        get_key_changes: bool = False,
         params: Optional[dict] = None,
 
         # Import the client directly to ensure we use the latest sessions when making requests.
@@ -40,10 +41,14 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
 
         # Names can be passed manually or as a `(namespace, name)` tuple as output from Swagger.
         self.namespace, self.name = self._parse_names(namespace, name)
-
-        # Build URL and dynamic params object
-        self.get_deletes: bool = get_deletes
         self.params = EdFiParams(params, **kwargs)
+
+        # GET-specific deletes and keyChanges endpoints
+        self.get_deletes: bool = get_deletes
+        self.get_key_changes: bool = get_key_changes
+        if self.get_deletes and self.get_key_changes:
+            raise ValueError("Endpoint arguments `get_deletes` and `get_key_changes` are mutually-exclusive.")
+
 
         # Optional helper classes with lazy attributes
         self.client: 'EdFiClient' = client
@@ -53,9 +58,15 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
         """
         Endpoint (Deletes) (with {N} parameters) [{namespace}/{name}]
         """
-        deletes_string = " Deletes" if self.get_deletes else ""
+        if self.get_deletes:
+            extras_string = " Deletes"
+        elif self.get_key_changes:
+            extras_string = " KeyChanges"
+        else:
+            extras_string = ""
+
         params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
-        return f"<{self.component}{deletes_string}{params_string} [{self.raw}]>"
+        return f"<{self.component}{extras_string}{params_string} [{self.raw}]>"
 
 
     ### Naming and Pathing Methods
@@ -82,13 +93,15 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
 
         :return:
         """
-        # Deletes are an optional path addition.
-        deletes = 'deletes' if self.get_deletes else None
+        # Deletes/keyChanges are an optional path addition.
+        if self.get_deletes:
+            path_extra = 'deletes'
+        elif self.get_key_changes:
+            path_extra = 'keyChanges'
+        else:
+            path_extra = None
 
-        return util.url_join(
-            self._endpoint_url,
-            self.namespace, self.name, deletes
-        )
+        return util.url_join(self._endpoint_url, self.namespace, self.name, path_extra)
 
 
     ### Lazy swagger attributes
@@ -504,6 +517,9 @@ class EdFiComposite(EdFiEndpoint):
 
         if self.get_deletes:
             logging.warning("Composites do not have /deletes endpoints. Argument `get_deletes` has been ignored.")
+        if self.get_key_changes:
+            logging.warning("Composites do not have /keyChanges endpoints. Argument `get_key_changes` has been ignored.")
+
 
     def __repr__(self):
         """
@@ -524,16 +540,14 @@ class EdFiComposite(EdFiEndpoint):
         """
         # If a filter is applied, the URL changes to match the filter type.
         if self.filter_type is None and self.filter_id is None:
-            return util.url_join(
-                self._endpoint_url,
-                self.namespace, self.composite, self.name.title()
-            )
+            return util.url_join(self._endpoint_url, self.namespace, self.composite, self.name.title())
+
         elif self.filter_type is not None and self.filter_id is not None:
             return util.url_join(
-                self._endpoint_url,
-                self.namespace, self.composite,
+                self._endpoint_url, self.namespace, self.composite,
                 self.filter_type, self.filter_id, self.name
             )
+
         else:
             raise ValueError("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
 

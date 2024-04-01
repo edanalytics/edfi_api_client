@@ -258,13 +258,15 @@ class EdFiClient(AsyncEdFiClientMixin):
         namespace: str = 'ed-fi',
         params: Optional[dict] = None,
         get_deletes: bool = False,
+        get_key_changes: bool = False,
         **kwargs
     ) -> EdFiResource:
         """
 
         """
         return EdFiResource(
-            self.resource_url, name, namespace=namespace, get_deletes=get_deletes, params=params,
+            self.resource_url, name, namespace=namespace, params=params,
+            get_deletes=get_deletes, get_key_changes=get_key_changes,
             client=self, swagger=self.resources_swagger, **kwargs
         )
 
