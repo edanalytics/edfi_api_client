@@ -356,13 +356,14 @@ class EdFiClient:
         *,
         namespace: str = 'ed-fi',
         get_deletes: bool = False,
+        get_key_changes: bool = False,
 
         params: Optional[dict] = None,
         **kwargs
     ) -> EdFiResource:
         return EdFiResource(
             client=self,
-            name=name, namespace=namespace, get_deletes=get_deletes,
+            name=name, namespace=namespace, get_deletes=get_deletes, get_key_changes=get_key_changes,
             params=params, **kwargs
         )
 
@@ -382,7 +383,7 @@ class EdFiClient:
         """
         return EdFiDescriptor(
             client=self,
-            name=name, namespace=namespace, get_deletes=False,
+            name=name, namespace=namespace, get_deletes=False, get_key_changes=False,
             params=params, **kwargs
         )
 
