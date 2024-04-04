@@ -60,17 +60,17 @@ def test_async(secret: str, verbose: bool = False):
             endpoint_count = endpoint.get_total_count()
 
 
-            # ## Synchronous Pull
-            # print(f"\nResource: {resource}; Num rows: {k_row_count}k; Synchronous")
-            # runtime, rows = time_it(endpoint.get_rows, wrap_func=list, **async_kwargs)
-            #
-            # # Get row count of written file.
-            # # sync_count = sum(1 for _ in open(output_path))
-            # if len(rows) != endpoint_count:
-            #     print("    Number of extracted rows did not match:")
-            #     print(f"    Expected: {endpoint_count} ; Pulled: {len(rows)}")
-            #
-            # print(f"    Runtime: {runtime} seconds")
+            ## Synchronous Pull
+            print(f"\nResource: {resource}; Num rows: {k_row_count}k; Synchronous")
+            runtime, rows = time_it(endpoint.get_rows, wrap_func=list, **async_kwargs)
+
+            # Get row count of written file.
+            # sync_count = sum(1 for _ in open(output_path))
+            if len(rows) != endpoint_count:
+                print("    Number of extracted rows did not match:")
+                print(f"    Expected: {endpoint_count} ; Pulled: {len(rows)}")
+
+            print(f"    Runtime: {runtime} seconds")
 
 
             ### Asynchronous Pulls
