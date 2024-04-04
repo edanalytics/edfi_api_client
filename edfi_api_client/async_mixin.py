@@ -509,6 +509,8 @@ class AsyncEdFiEndpointMixin:
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 
@@ -586,6 +588,8 @@ class AsyncEdFiEndpointMixin:
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 
@@ -624,6 +628,8 @@ class AsyncEdFiEndpointMixin:
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status_code, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 
