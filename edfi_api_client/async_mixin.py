@@ -5,6 +5,9 @@ import logging
 import os
 import requests
 
+from requests.auth import HTTPBasicAuth
+from requests.exceptions import RequestsWarning
+
 from edfi_api_client import util
 from edfi_api_client.response_log import ResponseLog
 from edfi_api_client.session import EdFiSession
@@ -86,13 +89,10 @@ class AsyncEdFiSession(EdFiSession):
             )
         return super().authenticate()
 
-
     def _async_with_exponential_backoff(func: Callable):
         """
         Decorator to apply exponential backoff during failed requests.
-        TODO: Is this logic and status codes consistent across request types?
-        TODO: Can this same decorator be used in async, since we cannot have async requests made to overloaded ODS?
-        :return:
+        Future update: unify this with EdFiSession._with_exponential_backoff to keep code DRY.
         """
         @functools.wraps(func)
         async def wrapped(self,
@@ -119,16 +119,17 @@ class AsyncEdFiSession(EdFiSession):
 
                 except RequestsWarning:
                     # If an API call fails, it may be due to rate-limiting.
-                    asyncio.sleep(
-                        min((2 ** n_tries) * 2, max_wait)
-                    )
-                    logging.warning(f"Retry number: {n_tries}")
+                    sleep_secs = min((2 ** n_tries) * 2, max_wait)
+                    logging.warning(f"Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}")
+                    async with self.lock:
+                        await asyncio.sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.
             else:
                 raise requests.exceptions.RetryError("API retry failed: max retries exceeded for URL.")
 
         return wrapped
+
 
     @_async_with_exponential_backoff
     async def get_response(self,

@@ -120,7 +120,6 @@ class EdFiSession:
         """
         Decorator to apply exponential backoff during failed requests.
         TODO: Is this logic and status codes consistent across request types?
-        TODO: Can this same decorator be used in async, since we cannot have async requests made to overloaded ODS?
         :return:
         """
         @functools.wraps(func)
@@ -148,10 +147,9 @@ class EdFiSession:
 
                 except RequestsWarning:
                     # If an API call fails, it may be due to rate-limiting.
-                    time.sleep(
-                        min((2 ** n_tries) * 2, max_wait)
-                    )
-                    logging.warning(f"Retry number: {n_tries}")
+                    sleep_secs = min((2 ** n_tries) * 2, max_wait)
+                    logging.warning(f"Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}")
+                    time.sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.
             else:
