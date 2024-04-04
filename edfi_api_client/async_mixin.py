@@ -127,8 +127,7 @@ class AsyncEdFiSession(EdFiSession):
                     # If an API call fails, it may be due to rate-limiting.
                     sleep_secs = min((2 ** n_tries) * 2, max_wait)
                     logging.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
-                    async with self.lock:
-                        await asyncio.sleep(sleep_secs)
+                    await self.safe_sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.
             else:
@@ -136,6 +135,11 @@ class AsyncEdFiSession(EdFiSession):
                 raise HTTPError(message, response=response)
 
         return wrapped
+
+    async def safe_sleep(self, secs: int):
+        """ Sync and async methods require different approaches to sleeping. """
+        async with self.lock:
+            await asyncio.sleep(secs)
 
 
     @_async_with_exponential_backoff
