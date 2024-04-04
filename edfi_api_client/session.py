@@ -134,16 +134,21 @@ class EdFiSession:
             Retry kwargs can be passed during Session connect or on-the-fly during requests.
             """
             if not (retry_on_failure or self.retry_on_failure):
-                return func(self, *args, **kwargs)
+                response = func(self, *args, **kwargs)
+                self._custom_raise_for_status(response)
+                return response
 
             # Attempt the GET until success or `max_retries` reached.
             max_retries = max_retries or self.max_retries
             max_wait = max_wait or self.max_wait
 
+            response = None  # Save the response between retries to raise after all retries.
             for n_tries in range(max_retries):
 
                 try:
-                    return func(self, *args, **kwargs)
+                    response = func(self, *args, **kwargs)
+                    self._custom_raise_for_status(response, retry_on_failure=True)
+                    return response
 
                 except RequestsWarning:
                     # If an API call fails, it may be due to rate-limiting.
@@ -153,7 +158,8 @@ class EdFiSession:
 
             # This block is reached only if max_retries has been reached.
             else:
-                raise requests.exceptions.RetryError("API retry failed: max retries exceeded for URL.")
+                message = "API retry failed: max retries exceeded for URL."
+                raise HTTPError(message, response=response)
 
         return wrapped
 
@@ -169,9 +175,7 @@ class EdFiSession:
         """
         self.authenticate()  # Always try to re-authenticate
 
-        response = self.session.get(url, headers=self.auth_headers, params=params)
-        self._custom_raise_for_status(response)
-        return response
+        return self.session.get(url, headers=self.auth_headers, params=params)
 
     @_with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
@@ -207,8 +211,7 @@ class EdFiSession:
         self.authenticate()  # Always try to re-authenticate
 
         delete_url = util.url_join(url, id)
-        response = self.session.delete(delete_url, headers=self.auth_headers, **kwargs)
-        return response
+        return self.session.delete(delete_url, headers=self.auth_headers, **kwargs)
 
     @_with_exponential_backoff
     def put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
@@ -222,12 +225,11 @@ class EdFiSession:
         self.authenticate()  # Always try to re-authenticate
 
         put_url = util.url_join(url, id)
-        response = self.session.put(put_url, headers=self.auth_headers, json=data, verify=self.verify_ssl, **kwargs)
-        return response
+        return self.session.put(put_url, headers=self.auth_headers, json=data, verify=self.verify_ssl, **kwargs)
 
 
     ### Error response methods
-    def _custom_raise_for_status(self, response):
+    def _custom_raise_for_status(self, response, *, retry_on_failure: bool = False):
         """
         Custom HTTP exception logic and logging.
         The built-in Response.raise_for_status() fails too broadly, even in cases where a connection-reset is enough.
@@ -249,7 +251,7 @@ class EdFiSession:
             logging.warning(f"API Error: {response.status_code} {response.reason}")
             message = error_messages.get(response.status_code, response.reason)  # Default to built-in response message
 
-            if response.status_code in self.retry_status_codes:
+            if retry_on_failure and response.status_code in self.retry_status_codes:
                 raise RequestsWarning(message)  # Exponential backoff expects a RequestsWarning
             else:
                 raise HTTPError(message, response=response)

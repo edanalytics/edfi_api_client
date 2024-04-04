@@ -5,6 +5,7 @@ import logging
 import os
 import requests
 
+from requests import HTTPError
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestsWarning
 
@@ -106,16 +107,21 @@ class AsyncEdFiSession(EdFiSession):
             Retry kwargs can be passed during Session connect or on-the-fly during requests.
             """
             if not (retry_on_failure or self.retry_on_failure):
-                return await func(self, *args, **kwargs)
+                response = await func(self, *args, **kwargs)
+                self._custom_raise_for_status(response)
+                return response
 
             # Attempt the GET until success or `max_retries` reached.
             max_retries = max_retries or self.max_retries
             max_wait = max_wait or self.max_wait
 
+            response = None  # Save the response between retries to raise after all retries.
             for n_tries in range(max_retries):
 
                 try:
-                    return await func(self, *args, **kwargs)
+                    response = await func(self, *args, **kwargs)
+                    self._custom_raise_for_status(response, retry_on_failure=True)
+                    return response
 
                 except RequestsWarning:
                     # If an API call fails, it may be due to rate-limiting.
@@ -126,7 +132,8 @@ class AsyncEdFiSession(EdFiSession):
 
             # This block is reached only if max_retries has been reached.
             else:
-                raise requests.exceptions.RetryError("API retry failed: max retries exceeded for URL.")
+                message = "API retry failed: max retries exceeded for URL."
+                raise HTTPError(message, response=response)
 
         return wrapped
 
@@ -154,7 +161,6 @@ class AsyncEdFiSession(EdFiSession):
             **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            self._custom_raise_for_status(response)
             text = await response.text()
             return response
 
