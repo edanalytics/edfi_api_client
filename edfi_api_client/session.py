@@ -209,7 +209,7 @@ class EdFiSession:
         self.authenticate()  # Always try to re-authenticate
 
         delete_url = util.url_join(url, id)
-        response = self.session.get(delete_url, headers=self.auth_headers, **kwargs)
+        response = self.session.delete(delete_url, headers=self.auth_headers, **kwargs)
         return response
 
     @_with_exponential_backoff
