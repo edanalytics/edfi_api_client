@@ -5,6 +5,10 @@ import logging
 import os
 import requests
 
+from requests import HTTPError
+from requests.auth import HTTPBasicAuth
+from requests.exceptions import RequestsWarning
+
 from edfi_api_client import util
 from edfi_api_client.response_log import ResponseLog
 from edfi_api_client.session import EdFiSession
@@ -20,7 +24,6 @@ if TYPE_CHECKING:
 try:
     import aiofiles
     import aiohttp
-    import aiohttp_retry
 except ImportError:
     _has_async = False
 else:
@@ -40,7 +43,10 @@ class AsyncEdFiSession(EdFiSession):
         self.session: 'aiohttp.ClientSession' = None
         self.pool_size: int = None
 
-    async def __aenter__(self):
+        # Build a client-specific non-blocking lock for authentication and retries.
+        self.lock: asyncio.Lock = asyncio.Lock()
+
+    async def __aenter__(self) -> 'AsyncEdFiSession':
         return self
 
     async def __aexit__(self, *exc):
@@ -71,17 +77,6 @@ class AsyncEdFiSession(EdFiSession):
             timeout=aiohttp.ClientTimeout(sock_connect=self.max_wait),
         )
 
-        if self.retry_on_failure:
-            retry_options = aiohttp_retry.ExponentialRetry(
-                attempts=self.max_retries,
-                start_timeout=4.0,  # Note: this logic differs from that of EdFiSession.
-                max_timeout=self.max_wait,
-                factor=4.0,
-                statuses=self.retry_status_codes,
-            )
-
-            self.session = aiohttp_retry.RetryClient(client_session=self.session, retry_options=retry_options)
-
         return self
 
     def authenticate(self) -> dict:
@@ -95,13 +90,71 @@ class AsyncEdFiSession(EdFiSession):
             )
         return super().authenticate()
 
+    def _async_with_exponential_backoff(func: Callable):
+        """
+        Decorator to apply exponential backoff during failed requests.
+        Future update: unify this with EdFiSession._with_exponential_backoff to keep code DRY.
+        """
+        @functools.wraps(func)
+        async def wrapped(self,
+            *args,
+            retry_on_failure: bool = False,
+            max_retries: Optional[int] = None,
+            max_wait: Optional[int] = None,
+            **kwargs
+        ):
+            """
+            Retry kwargs can be passed during Session connect or on-the-fly during requests.
+            """
+            if not (retry_on_failure or self.retry_on_failure):
+                response = await func(self, *args, **kwargs)
+                self._custom_raise_for_status(response)
+                return response
 
-    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['aiohttp.ClientSession']:
+            # Attempt the GET until success or `max_retries` reached.
+            max_retries = max_retries or self.max_retries
+            max_wait = max_wait or self.max_wait
+
+            response = None  # Save the response between retries to raise after all retries.
+            for n_tries in range(max_retries):
+
+                try:
+                    response = await func(self, *args, **kwargs)
+                    self._custom_raise_for_status(response, retry_on_failure=True)
+                    return response
+
+                except RequestsWarning as retry_warning:
+                    # If an API call fails, it may be due to rate-limiting.
+                    sleep_secs = min((2 ** n_tries) * 2, max_wait)
+                    logging.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
+                    await self.safe_sleep(sleep_secs)
+
+            # This block is reached only if max_retries has been reached.
+            else:
+                message = "API retry failed: max retries exceeded for URL."
+                raise HTTPError(message, response=response)
+
+        return wrapped
+
+    async def safe_sleep(self, secs: int):
+        """ Sync and async methods require different approaches to sleeping. """
+        async with self.lock:
+            await asyncio.sleep(secs)
+
+
+    @_async_with_exponential_backoff
+    async def get_response(self,
+        url: str,
+        params: Optional['EdFiParams'] = None,
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> Awaitable['aiohttp.ClientSession']:
         """
         Complete an asynchronous GET request against an endpoint URL.
 
         :param url:
         :param params:
+        :param pool_size:
         :return:
         """
         self.authenticate()  # Always try to re-authenticate
@@ -109,14 +162,19 @@ class AsyncEdFiSession(EdFiSession):
         async with self.session.get(
             url, headers=self.auth_headers, params=params,
             verify_ssl=self.verify_ssl, raise_for_status=False,
-            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
+            **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            self._custom_raise_for_status(response)
             text = await response.text()
             return response
 
-    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['aiohttp.ClientResponse']:
+    @_async_with_exponential_backoff
+    async def post_response(self,
+        url: str,
+        data: Union[str, dict],
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous POST request against an endpoint URL.
 
@@ -124,6 +182,7 @@ class AsyncEdFiSession(EdFiSession):
 
         :param url:
         :param data:
+        :param pool_size:
         :param kwargs:
         :return:
         """
@@ -139,18 +198,25 @@ class AsyncEdFiSession(EdFiSession):
         async with self.session.post(
             url, headers=post_headers, data=data,
             verify_ssl=self.verify_ssl, raise_for_status=False,
-            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
+            **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()
             return response
 
-    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['aiohttp.ClientResponse']:
+    @_async_with_exponential_backoff
+    async def delete_response(self,
+        url: str,
+        id: int,
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
 
         :param url:
         :param id:
+        :param pool_size:
         :param kwargs:
         :return:
         """
@@ -161,19 +227,28 @@ class AsyncEdFiSession(EdFiSession):
         async with self.session.delete(
             delete_url, headers=self.auth_headers,
             verify_ssl=self.verify_ssl, raise_for_status=False,
-            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
+            **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()
             return response
 
-    async def put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
+    @_async_with_exponential_backoff
+    async def put_response(self,
+        url: str,
+        id: int,
+        data: Union[str, dict],
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> requests.Response:
         """
         Complete a PUT request against an endpoint URL
         Note: Responses are returned regardless of status.
         :param url:
         :param id:
         :param data:
+        :param pool_size:
+        :param kwargs:
         """
         self.authenticate()  # Always try to re-authenticate
 
@@ -438,6 +513,8 @@ class AsyncEdFiEndpointMixin:
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 
@@ -515,6 +592,8 @@ class AsyncEdFiEndpointMixin:
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 
@@ -553,6 +632,8 @@ class AsyncEdFiEndpointMixin:
             res_text = await response.text()
             res_json = json.loads(res_text) if res_text else {}
             status, message = response.status_code, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 

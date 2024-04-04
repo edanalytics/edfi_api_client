@@ -85,8 +85,8 @@ def test_swagger_properties(secret: str, verbose: bool = False):
 
     extension = edfi.resource(('ed-fi-xassessment-roster', 'assessmentAdministrations'))  # Test extension and alternative argument init
     assert extension.has_deletes == True
-    assert extension.fields is None  # TODO: Is this a bug?
-    assert extension.required_fields is None  # TODO: Is this a bug?
+    assert extension.fields  # TODO: Find these values
+    assert extension.required_fields  # TODO: Find these values
     assert extension.description == 'The anticipated administration of an assessment under the purview of an EducationOrganization.'
 
 def test_ping(secret: str, verbose: bool = False):

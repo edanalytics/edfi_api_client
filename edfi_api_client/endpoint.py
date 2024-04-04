@@ -2,6 +2,8 @@ import logging
 import os
 import requests
 
+from requests import HTTPError
+
 from edfi_api_client import util
 from edfi_api_client.async_mixin import AsyncEdFiEndpointMixin
 from edfi_api_client.params import EdFiParams
@@ -351,6 +353,8 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
             response = self.client.session.post_response(self.url, data=data, **kwargs)
             res_json = response.json() if response.text else {}
             status, message = response.status_code, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 
@@ -419,6 +423,8 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
             response = self.client.session.delete_response(self.url, id=id, **kwargs)
             res_json = response.json() if response.text else {}
             status, message = response.status_code, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 
@@ -449,6 +455,8 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
             response = self.client.session.put_response(self.url, id=id, data=data, **kwargs)
             res_json = response.json() if response.text else {}
             status, message = response.status_code, res_json.get('message')
+        except HTTPError as error:
+            status, message = error.response.status_code, error.response.reason
         except Exception as error:
             status, message = None, error
 

@@ -23,7 +23,7 @@ setuptools.setup(
       packages=['edfi_api_client'],
       install_requires=['requests'],
       extras_require = {
-            'async': ['aiohttp', 'aiohttp_retry', 'aiofiles']
+            'async': ['aiohttp', 'aiofiles']
       },
       zip_safe=False,
 )

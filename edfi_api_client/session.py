@@ -120,7 +120,6 @@ class EdFiSession:
         """
         Decorator to apply exponential backoff during failed requests.
         TODO: Is this logic and status codes consistent across request types?
-        TODO: Can this same decorator be used in async, since we cannot have async requests made to overloaded ODS?
         :return:
         """
         @functools.wraps(func)
@@ -134,30 +133,39 @@ class EdFiSession:
             """
             Retry kwargs can be passed during Session connect or on-the-fly during requests.
             """
-            if not retry_on_failure or self.retry_on_failure:
-                return func(self, *args, **kwargs)
+            if not (retry_on_failure or self.retry_on_failure):
+                response = func(self, *args, **kwargs)
+                self._custom_raise_for_status(response)
+                return response
 
             # Attempt the GET until success or `max_retries` reached.
             max_retries = max_retries or self.max_retries
             max_wait = max_wait or self.max_wait
 
+            response = None  # Save the response between retries to raise after all retries.
             for n_tries in range(max_retries):
 
                 try:
-                    return func(self, *args, **kwargs)
+                    response = func(self, *args, **kwargs)
+                    self._custom_raise_for_status(response, retry_on_failure=True)
+                    return response
 
-                except RequestsWarning:
+                except RequestsWarning as retry_warning:
                     # If an API call fails, it may be due to rate-limiting.
-                    time.sleep(
-                        min((2 ** n_tries) * 2, max_wait)
-                    )
-                    logging.warning(f"Retry number: {n_tries}")
+                    sleep_secs = min((2 ** n_tries) * 2, max_wait)
+                    logging.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
+                    self.safe_sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.
             else:
-                raise requests.exceptions.RetryError("API retry failed: max retries exceeded for URL.")
+                message = "API retry failed: max retries exceeded for URL."
+                raise HTTPError(message, response=response)
 
         return wrapped
+
+    def safe_sleep(self, secs: int):
+        """ Sync and async methods require different approaches to sleeping. """
+        time.sleep(secs)
 
 
     @_with_exponential_backoff
@@ -171,9 +179,7 @@ class EdFiSession:
         """
         self.authenticate()  # Always try to re-authenticate
 
-        response = self.session.get(url, headers=self.auth_headers, params=params)
-        self._custom_raise_for_status(response)
-        return response
+        return self.session.get(url, headers=self.auth_headers, params=params)
 
     @_with_exponential_backoff
     def post_response(self, url: str, data: Union[str, dict], **kwargs) -> requests.Response:
@@ -209,8 +215,7 @@ class EdFiSession:
         self.authenticate()  # Always try to re-authenticate
 
         delete_url = util.url_join(url, id)
-        response = self.session.get(delete_url, headers=self.auth_headers, **kwargs)
-        return response
+        return self.session.delete(delete_url, headers=self.auth_headers, **kwargs)
 
     @_with_exponential_backoff
     def put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
@@ -224,12 +229,11 @@ class EdFiSession:
         self.authenticate()  # Always try to re-authenticate
 
         put_url = util.url_join(url, id)
-        response = self.session.put(put_url, headers=self.auth_headers, json=data, verify=self.verify_ssl, **kwargs)
-        return response
+        return self.session.put(put_url, headers=self.auth_headers, json=data, verify=self.verify_ssl, **kwargs)
 
 
     ### Error response methods
-    def _custom_raise_for_status(self, response):
+    def _custom_raise_for_status(self, response, *, retry_on_failure: bool = False):
         """
         Custom HTTP exception logic and logging.
         The built-in Response.raise_for_status() fails too broadly, even in cases where a connection-reset is enough.
@@ -248,10 +252,9 @@ class EdFiSession:
         }
 
         if 400 <= response.status_code < 600:
-            logging.warning(f"API Error: {response.status_code} {response.reason}")
             message = error_messages.get(response.status_code, response.reason)  # Default to built-in response message
 
-            if response.status_code in self.retry_status_codes:
+            if retry_on_failure and response.status_code in self.retry_status_codes:
                 raise RequestsWarning(message)  # Exponential backoff expects a RequestsWarning
             else:
                 raise HTTPError(message, response=response)
