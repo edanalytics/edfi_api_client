@@ -131,12 +131,18 @@ class AsyncEdFiSession(EdFiSession):
         return wrapped
 
     @_async_with_exponential_backoff
-    async def get_response(self, url: str, params: Optional['EdFiParams'] = None, **kwargs) -> Awaitable['aiohttp.ClientSession']:
+    async def get_response(self,
+        url: str,
+        params: Optional['EdFiParams'] = None,
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> Awaitable['aiohttp.ClientSession']:
         """
         Complete an asynchronous GET request against an endpoint URL.
 
         :param url:
         :param params:
+        :param pool_size:
         :return:
         """
         self.authenticate()  # Always try to re-authenticate
@@ -144,7 +150,7 @@ class AsyncEdFiSession(EdFiSession):
         async with self.session.get(
             url, headers=self.auth_headers, params=params,
             verify_ssl=self.verify_ssl, raise_for_status=False,
-            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
+            **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             self._custom_raise_for_status(response)
@@ -152,7 +158,12 @@ class AsyncEdFiSession(EdFiSession):
             return response
 
     @_async_with_exponential_backoff
-    async def post_response(self, url: str, data: Union[str, dict], **kwargs) -> Awaitable['aiohttp.ClientResponse']:
+    async def post_response(self,
+        url: str,
+        data: Union[str, dict],
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous POST request against an endpoint URL.
 
@@ -160,6 +171,7 @@ class AsyncEdFiSession(EdFiSession):
 
         :param url:
         :param data:
+        :param pool_size:
         :param kwargs:
         :return:
         """
@@ -175,19 +187,25 @@ class AsyncEdFiSession(EdFiSession):
         async with self.session.post(
             url, headers=post_headers, data=data,
             verify_ssl=self.verify_ssl, raise_for_status=False,
-            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
+            **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()
             return response
 
     @_async_with_exponential_backoff
-    async def delete_response(self, url: str, id: int, **kwargs) -> Awaitable['aiohttp.ClientResponse']:
+    async def delete_response(self,
+        url: str,
+        id: int,
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> Awaitable['aiohttp.ClientResponse']:
         """
         Complete an asynchronous DELETE request against an endpoint URL.
 
         :param url:
         :param id:
+        :param pool_size:
         :param kwargs:
         :return:
         """
@@ -198,20 +216,28 @@ class AsyncEdFiSession(EdFiSession):
         async with self.session.delete(
             delete_url, headers=self.auth_headers,
             verify_ssl=self.verify_ssl, raise_for_status=False,
-            # **kwargs  # TODO: Allow retry-arguments to be passed to asyncs just like syncs.
+            **kwargs
         ) as response:
             response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
             text = await response.text()
             return response
 
     @_async_with_exponential_backoff
-    async def put_response(self, url: str, id: int, data: Union[str, dict], **kwargs) -> requests.Response:
+    async def put_response(self,
+        url: str,
+        id: int,
+        data: Union[str, dict],
+        pool_size: Optional[int] = None,  # Ignored optional kwargs argument
+        **kwargs
+    ) -> requests.Response:
         """
         Complete a PUT request against an endpoint URL
         Note: Responses are returned regardless of status.
         :param url:
         :param id:
         :param data:
+        :param pool_size:
+        :param kwargs:
         """
         self.authenticate()  # Always try to re-authenticate
 
