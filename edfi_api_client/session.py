@@ -150,10 +150,10 @@ class EdFiSession:
                     self._custom_raise_for_status(response, retry_on_failure=True)
                     return response
 
-                except RequestsWarning:
+                except RequestsWarning as retry_warning:
                     # If an API call fails, it may be due to rate-limiting.
                     sleep_secs = min((2 ** n_tries) * 2, max_wait)
-                    logging.warning(f"Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}")
+                    logging.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
                     time.sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.
@@ -248,7 +248,6 @@ class EdFiSession:
         }
 
         if 400 <= response.status_code < 600:
-            logging.warning(f"API Error: {response.status_code} {response.reason}")
             message = error_messages.get(response.status_code, response.reason)  # Default to built-in response message
 
             if retry_on_failure and response.status_code in self.retry_status_codes:
