@@ -74,7 +74,7 @@ class EdFiSwagger:
     def definitions(self) -> None:
         """
         Example definition:
-        
+
         ```
         "definition1": {
             "properties": {
@@ -125,61 +125,6 @@ class EdFiSwagger:
                 self._definitions = resolved['definitions']
 
         return self._definitions
-
-    @classmethod
-    def recurse_definition_schema(cls,
-        schema: dict,
-        parent_field: Optional[str] = None,
-        collections: Optional[dict] = None
-    ) -> dict:
-        """
-        Recurse a definition JSON schema and extract metadata to display to user.
-        This method is Swagger-dependent, even though it's called within EdFiEndpoint.
-
-        Note: Parents are always included with their children.
-        """
-        # Set collections object in top-level call.
-        if not collections:
-            collections = {
-                "field_dtypes": dict(),
-                "identity": set(),
-                "required": set(),
-            }
-
-        # Optional parent FIELD_DTYPE
-        if parent_field:
-            collections['field_dtypes'][parent_field] = schema.get('format', schema.get('type'))
-
-        # REQUIRED_FIELDS
-        for field in schema.get('required', []):
-            if parent_field:
-                collections['required'].update([parent_field, f"{parent_field}.{field}"])
-            else:
-                collections['required'].add(field)
-
-        # Recurse option 1: Arrays
-        # Arrays MUST be nested fields, so parent_field is always defined.
-        if 'items' in schema:
-            collections = cls.recurse_definition_schema(schema['items'], parent_field, collections)
-
-        # Recurse option 2: Fields
-        for field, metadata in schema.get('properties', {}).items():
-
-            full_field = f"{parent_field}.{field}" if parent_field else field
-
-            # FIELD_DTYPES
-            collections['field_dtypes'][full_field] = metadata.get('format', metadata.get('type'))
-            
-            # IDENTITY_FIELDS
-            if metadata.get('x-Ed-Fi-isIdentity'):
-                if parent_field:
-                    collections['identity'].update([parent_field, f"{parent_field}.{field}"])
-                else:
-                    collections['identity'].add(field)
-
-            collections = cls.recurse_definition_schema(metadata, full_field, collections)
-
-        return collections
 
 
     ### Endpoint Metadata Methods
