@@ -1,4 +1,5 @@
 import logging
+import jsonschema
 import os
 import requests
 
@@ -145,6 +146,13 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
     @property
     def description(self) -> Optional[str]:
         return self.swagger.get_endpoint_descriptions().get(self.name)
+    
+    def validate(self, payload: dict):
+        """
+        Validate a payload against the expected endpoint structure, as outlined in its Swagger definition.
+        """
+        validator = jsonschema.Draft4Validator(self.definition)
+        validator.validate(payload)
 
 
     ### Session API methods
