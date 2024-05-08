@@ -1,9 +1,9 @@
-import json
+import jsonref
 import logging
 import requests
 
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Set, Union
+from typing import Dict, List, Optional, Tuple
 
 from edfi_api_client import util
 
@@ -69,89 +69,117 @@ class EdFiSwagger:
                 .get('oauth2_client_credentials', {})
                 .get('tokenUrl')
         )
-
+    
     @property
-    def definitions(self) -> Dict[str, Dict[str, str]]:
+    def definitions(self) -> None:
         """
-        Definitions are complex to parse due to nested references.
-        Compile the full list of references before recursively populating them.
+        Example definition:
+        
+        ```
+        "definition1": {
+            "properties": {
+                "field1": {
+                    "description": "",
+                    "type": "string"
+                },
+                "field2": {
+                    "$ref": "#/definitions/definition2"
+                },
+                "field3": {
+                    "description": "",
+                    "items": {
+                        "$ref": "#/definitions/definition3"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "field1"
+            ],
+            "type": "object"
+        }
+        ```
         """
-        # Only complete expensive parsing operation once.
+        # Only complete reference-resolution once.
         if not self._definitions:
-            # Warn if the definitions are missing from the Swagger.
-            swagger_definitions = self.json.get('definitions', {})
-            if not swagger_definitions:
+
+            # Definitions were renamed in 7.1.
+            # Extract definitions into a new object to only resolve definition references.
+            if 'components' in self.json:
+                raw_definitions = self.json.get('components', {}).get('schemas', {})
+                wrapper_json = {"components": {"schemas": raw_definitions}}
+            else:
+                raw_definitions = self.json.get('definitions', {})
+                wrapper_json = {"definitions": raw_definitions}
+
+            if not raw_definitions:
                 raise KeyError("No definitions found in Swagger JSON!")
 
-            # First pass to build definitions.
-            self._definitions: Dict[str, dict] = {
-                definition_id: self._build_definition(json_definition)
-                for definition_id, json_definition in swagger_definitions.items()
-            }
+            # Resolve references before returning JSON.
+            resolved = jsonref.replace_refs(wrapper_json, proxies=False, lazy_load=False)
 
-            # Second pass to resolve references.
-            for definition_id, definition in self._definitions.items():
-                self._recurse_definition_references(definition)
+            # Re-extract the definitions before returning.
+            if 'components' in resolved:
+                self._definitions = resolved['components']['schemas']
+            else:
+                self._definitions = resolved['definitions']
 
         return self._definitions
 
-    @staticmethod
-    def _build_definition(json_definition: dict) -> dict:
+    @classmethod
+    def recurse_definition_schema(cls,
+        schema: dict,
+        parent_field: Optional[str] = None,
+        collections: Optional[dict] = None
+    ) -> dict:
         """
-        Method to simplify definition parsing without needing a helper class.
+        Recurse a definition JSON schema and extract metadata to display to user.
+        This method is Swagger-dependent, even though it's called within EdFiEndpoint.
+
+        Note: Parents are always included with their children.
         """
-        definition = {
-            "field_dtypes": defaultdict(str),
-            "references": defaultdict(str),
-            "identity": list(),
-            "required": list(),
-        }
+        # Set collections object in top-level call.
+        if not collections:
+            collections = {
+                "field_dtypes": dict(),
+                "identity": set(),
+                "required": set(),
+            }
 
-        # Required keys are an optional top-level field
-        if 'required' in json_definition:
-            definition['required'].extend(json_definition['required'])
+        # Optional parent FIELD_DTYPE
+        if parent_field:
+            collections['field_dtypes'][parent_field] = schema.get('format', schema.get('type'))
 
-        # All other fields are parsed from properties
-        for field, field_metadata in json_definition.get('properties', {}).items():
-
-            # Record whether an identity field
-            if field_metadata.get('x-Ed-Fi-isIdentity'):
-                definition['identity'].append(field)
-
-            # Use self.resolve_reference to flesh out reference in a second pass after all definitions are known.
-            # Raw format: ``` {"$ref": "#/definitions/edFi_educationOrganizationReference"} ```
-            if '$ref' in field_metadata:
-                reference_name = field_metadata['$ref'].split('/')[-1]
-                if reference_name == "link":
-                    continue  # Ignore links
-                definition['references'][field] = reference_name
+        # REQUIRED_FIELDS
+        for field in schema.get('required', []):
+            if parent_field:
+                collections['required'].update([parent_field, f"{parent_field}.{field}"])
             else:
-                # Default to most explicit datatype format.
-                dtype = field_metadata.get('format', field_metadata.get('type'))
-                definition['field_dtypes'][field] = dtype
+                collections['required'].add(field)
 
-        return definition
+        # Recurse option 1: Arrays
+        # Arrays MUST be nested fields, so parent_field is always defined.
+        if 'items' in schema:
+            collections = cls.recurse_definition_schema(schema['items'], parent_field, collections)
 
-    def _recurse_definition_references(self, definition: dict):
-        """
+        # Recurse option 2: Fields
+        for field, metadata in schema.get('properties', {}).items():
 
-        """
-        for field, reference in definition['references'].items():
-            # Recurse children before resolving parent.
-            if isinstance(reference, str):
-                reference = self.definitions[reference]
-                self._recurse_definition_references(reference)
-                definition['references'][field] = reference
+            full_field = f"{parent_field}.{field}" if parent_field else field
 
-            # Copy attributes up to parent definition.
-            for subfield, dtype in reference['field_dtypes'].items():
-                full_field = f"{field}.{subfield}"
+            # FIELD_DTYPES
+            collections['field_dtypes'][full_field] = metadata.get('format', metadata.get('type'))
+            
+            # IDENTITY_FIELDS
+            if metadata.get('x-Ed-Fi-isIdentity'):
+                if parent_field:
+                    collections['identity'].update([parent_field, f"{parent_field}.{field}"])
+                else:
+                    collections['identity'].add(field)
 
-                definition['field_dtypes'][full_field] = dtype
-                if subfield in reference['identity']:
-                    definition['identity'].append(full_field)
-                if subfield in reference['required']:
-                    definition['required'].append(full_field)
+            collections = cls.recurse_definition_schema(metadata, full_field, collections)
+
+        return collections
 
 
     ### Endpoint Metadata Methods

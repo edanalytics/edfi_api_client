@@ -128,15 +128,15 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
 
     @property
     def field_dtypes(self) -> Dict[str, str]:
-        return dict(self.definition.get('field_dtypes', {}))  # Force to dict from defaultdict.
-
+        return self.swagger.recurse_definition_schema(self.definition)['field_dtypes']
+        
     @property
     def required_fields(self) -> List[str]:
-        return self.definition.get('required', [])
+        return list(self.swagger.recurse_definition_schema(self.definition)['required'])
 
     @property
     def identity_fields(self) -> List[str]:
-        return self.definition.get('identity', [])
+        return list(self.swagger.recurse_definition_schema(self.definition)['identity'])
 
     @property
     def has_deletes(self) -> bool:
