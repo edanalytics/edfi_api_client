@@ -21,7 +21,7 @@ setuptools.setup(
       keyword='edfi, ed-fi, api, client, data',
 
       packages=['edfi_api_client'],
-      install_requires=['requests'],
+      install_requires=['requests', 'jsonref', 'jsonschema'],
       extras_require = {
             'async': ['aiohttp', 'aiofiles']
       },

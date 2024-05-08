@@ -1,9 +1,9 @@
-import json
+import jsonref
 import logging
 import requests
 
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Set, Union
+from typing import Dict, List, Optional, Tuple
 
 from edfi_api_client import util
 
@@ -69,89 +69,62 @@ class EdFiSwagger:
                 .get('oauth2_client_credentials', {})
                 .get('tokenUrl')
         )
-
+    
     @property
-    def definitions(self) -> Dict[str, Dict[str, str]]:
+    def definitions(self) -> None:
         """
-        Definitions are complex to parse due to nested references.
-        Compile the full list of references before recursively populating them.
+        Example definition:
+
+        ```
+        "definition1": {
+            "properties": {
+                "field1": {
+                    "description": "",
+                    "type": "string"
+                },
+                "field2": {
+                    "$ref": "#/definitions/definition2"
+                },
+                "field3": {
+                    "description": "",
+                    "items": {
+                        "$ref": "#/definitions/definition3"
+                    },
+                    "type": "array"
+                }
+            },
+            "required": [
+                "field1"
+            ],
+            "type": "object"
+        }
+        ```
         """
-        # Only complete expensive parsing operation once.
+        # Only complete reference-resolution once.
         if not self._definitions:
-            # Warn if the definitions are missing from the Swagger.
-            swagger_definitions = self.json.get('definitions', {})
-            if not swagger_definitions:
+
+            # Definitions were renamed in 7.1.
+            # Extract definitions into a new object to only resolve definition references.
+            if 'components' in self.json:
+                raw_definitions = self.json.get('components', {}).get('schemas', {})
+                wrapper_json = {"components": {"schemas": raw_definitions}}
+            else:
+                raw_definitions = self.json.get('definitions', {})
+                wrapper_json = {"definitions": raw_definitions}
+
+            if not raw_definitions:
                 raise KeyError("No definitions found in Swagger JSON!")
 
-            # First pass to build definitions.
-            self._definitions: Dict[str, dict] = {
-                definition_id: self._build_definition(json_definition)
-                for definition_id, json_definition in swagger_definitions.items()
-            }
+            # Resolve references before returning JSON.
+            resolved = jsonref.replace_refs(wrapper_json, proxies=False, lazy_load=False)
 
-            # Second pass to resolve references.
-            for definition_id, definition in self._definitions.items():
-                self._recurse_definition_references(definition)
+            # Re-extract the definitions before returning.
+            if 'components' in resolved:
+                self._definitions = resolved['components']['schemas']
+            else:
+                self._definitions = resolved['definitions']
 
         return self._definitions
-
-    @staticmethod
-    def _build_definition(json_definition: dict) -> dict:
-        """
-        Method to simplify definition parsing without needing a helper class.
-        """
-        definition = {
-            "field_dtypes": defaultdict(str),
-            "references": defaultdict(str),
-            "identity": list(),
-            "required": list(),
-        }
-
-        # Required keys are an optional top-level field
-        if 'required' in json_definition:
-            definition['required'].extend(json_definition['required'])
-
-        # All other fields are parsed from properties
-        for field, field_metadata in json_definition.get('properties', {}).items():
-
-            # Record whether an identity field
-            if field_metadata.get('x-Ed-Fi-isIdentity'):
-                definition['identity'].append(field)
-
-            # Use self.resolve_reference to flesh out reference in a second pass after all definitions are known.
-            # Raw format: ``` {"$ref": "#/definitions/edFi_educationOrganizationReference"} ```
-            if '$ref' in field_metadata:
-                reference_name = field_metadata['$ref'].split('/')[-1]
-                if reference_name == "link":
-                    continue  # Ignore links
-                definition['references'][field] = reference_name
-            else:
-                # Default to most explicit datatype format.
-                dtype = field_metadata.get('format', field_metadata.get('type'))
-                definition['field_dtypes'][field] = dtype
-
-        return definition
-
-    def _recurse_definition_references(self, definition: dict):
-        """
-
-        """
-        for field, reference in definition['references'].items():
-            # Recurse children before resolving parent.
-            if isinstance(reference, str):
-                reference = self.definitions[reference]
-                self._recurse_definition_references(reference)
-                definition['references'][field] = reference
-
-            # Copy attributes up to parent definition.
-            for subfield, dtype in reference['field_dtypes'].items():
-                full_field = f"{field}.{subfield}"
-
-                definition['field_dtypes'][full_field] = dtype
-                if subfield in reference['identity']:
-                    definition['identity'].append(full_field)
-                if subfield in reference['required']:
-                    definition['required'].append(full_field)
 
 
     ### Endpoint Metadata Methods

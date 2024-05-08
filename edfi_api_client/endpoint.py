@@ -1,4 +1,5 @@
 import logging
+import jsonschema
 import os
 import requests
 
@@ -51,10 +52,11 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
         if self.get_deletes and self.get_key_changes:
             raise ValueError("Endpoint arguments `get_deletes` and `get_key_changes` are mutually-exclusive.")
 
-
         # Optional helper classes with lazy attributes
         self.client: 'EdFiClient' = client
         self.swagger: 'EdFiSwagger' = swagger
+        self.validator: 'Draft4Validator' = None
+
 
     def __repr__(self):
         """
@@ -121,6 +123,15 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
         """
         definitions = {id.lower(): define for id, define in self.swagger.definitions.items()}
         return definitions.get(self.definition_id.lower(), {})
+    
+    def validate(self, payload: dict):
+        """
+        Validate a payload against the expected endpoint structure, as outlined in its Swagger definition.
+        """
+        # Create the validator only once to improve performance when validating many rows.
+        if not self.validator:
+            self.validator = jsonschema.Draft4Validator(self.definition)
+        self.validator.validate(payload)
 
     @property
     def fields(self) -> List[str]:
@@ -128,15 +139,15 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
 
     @property
     def field_dtypes(self) -> Dict[str, str]:
-        return dict(self.definition.get('field_dtypes', {}))  # Force to dict from defaultdict.
-
+        return self._recurse_definition_schema(self.definition)['field_dtypes']
+        
     @property
     def required_fields(self) -> List[str]:
-        return self.definition.get('required', [])
+        return list(self._recurse_definition_schema(self.definition)['required'])
 
     @property
     def identity_fields(self) -> List[str]:
-        return self.definition.get('identity', [])
+        return list(self._recurse_definition_schema(self.definition)['identity'])
 
     @property
     def has_deletes(self) -> bool:
@@ -145,6 +156,57 @@ class EdFiEndpoint(AsyncEdFiEndpointMixin):
     @property
     def description(self) -> Optional[str]:
         return self.swagger.get_endpoint_descriptions().get(self.name)
+    
+    def _recurse_definition_schema(self,
+        schema: dict,
+        parent_field: Optional[str] = None,
+        collections: Optional[dict] = None
+    ) -> dict:
+        """
+        Recurse a definition JSON schema and extract metadata to display to user.
+        Note: Parents are always included with their children.
+        """
+        # Set collections object in top-level call.
+        if not collections:
+            collections = {
+                "field_dtypes": dict(),
+                "identity": set(),
+                "required": set(),
+            }
+
+        # Optional parent FIELD_DTYPE
+        if parent_field:
+            collections['field_dtypes'][parent_field] = schema.get('format', schema.get('type'))
+
+        # REQUIRED_FIELDS
+        for field in schema.get('required', []):
+            if parent_field:
+                collections['required'].update([parent_field, f"{parent_field}.{field}"])
+            else:
+                collections['required'].add(field)
+
+        # Recurse option 1: Arrays
+        # Arrays MUST be nested fields, so parent_field is always defined.
+        if 'items' in schema:
+            collections = self._recurse_definition_schema(schema['items'], parent_field, collections)
+
+        # Recurse option 2: Fields
+        for field, metadata in schema.get('properties', {}).items():
+            full_field = f"{parent_field}.{field}" if parent_field else field
+
+            # FIELD_DTYPES
+            collections['field_dtypes'][full_field] = metadata.get('format', metadata.get('type'))
+            
+            # IDENTITY_FIELDS
+            if metadata.get('x-Ed-Fi-isIdentity'):
+                if parent_field:
+                    collections['identity'].update([parent_field, f"{parent_field}.{field}"])
+                else:
+                    collections['identity'].add(field)
+
+            collections = self._recurse_definition_schema(metadata, full_field, collections)
+
+        return collections
 
 
     ### Session API methods
