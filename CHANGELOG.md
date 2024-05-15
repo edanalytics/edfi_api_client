@@ -1,10 +1,23 @@
 # edfi_api_client v0.3.0
 ## New Features
-- Remove support for Ed-Fi 2.0.
+- Add URL property methods to `EdFiClient`.
+- Add Swagger definitions parsing to `EdFiSwagger`.
+    - Add `EdFiEndpoint.definition` and `EdFiEndpoint.validate()` methods.
+    - Add `EdFiEndpoint.{fields, field_dtypes, required_fields, identity_fields}` properties.
+- Add `EdFiEndpoint.get_to_json()` getter to stream records to a file.
+- Add POST, DELETE, and PUT methods to `EdFiEndpoint`.
+- Add async counterparts for all `EdFiEndpoint` rest methods.
 
 ## Under the hood
+- Remove support for Ed-Fi 2.0.
 - Make pagination predictable by building and iterating param windows, instead of paging dynamically.
     - `EdFiComposite.get_pages()` still uses dynamic logic, since `Total-Count` header is not enabled for composites.
+- Standardize verbose logging using built-in `logging` library.
+- Add retry-arguments to `EdFiClient.connect()`.
+- Make `EdFiSwagger` lazy to only pull Swagger when required.
+- Deprecate `EdFiEndpoint.total_count()` in favor of `EdFiEndpoint.get_total_count()` for consistency.
+- Check and re-authenticate automatically before all authenticated session calls.
+- Standardize retry status codes and retry logic.
 
 
 # edfi_api_client v0.2.1
