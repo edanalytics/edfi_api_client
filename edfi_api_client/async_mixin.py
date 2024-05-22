@@ -6,7 +6,6 @@ import os
 import requests
 
 from requests import HTTPError
-from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestsWarning
 
 from edfi_api_client import util
@@ -61,6 +60,9 @@ class AsyncEdFiSession(EdFiSession):
         pool_size: int,
         **kwargs
     ) -> 'AsyncEdFiSession':
+        """
+        Verify optional async dependencies are installed before building a session.
+        """
         # Overwrite session attributes.
         self.retry_on_failure = retry_on_failure
         self.max_retries = max_retries
@@ -68,9 +70,12 @@ class AsyncEdFiSession(EdFiSession):
         self.verify_ssl = verify_ssl
         self.pool_size = pool_size
 
-        # Update time attributes and auth headers with latest authentication information.
         # Run before any methods that reference optional aiohttp and aiofiles packages.
-        self.authenticate()  # Blocking method to make sure authentication happens only once
+        if not _has_async:
+            raise ModuleNotFoundError(
+                "Asynchronous functionality requires additional packages to be installed."
+                "Use `pip install edfi_api_client[async]` to install them."
+            )
 
         self.session = aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(limit=self.pool_size),
@@ -79,16 +84,12 @@ class AsyncEdFiSession(EdFiSession):
 
         return self
 
-    def authenticate(self) -> dict:
+    async def authenticate(self) -> dict:
         """
-        Verify optional async dependencies are installed before authenticating.
+        Lock to ensure authentication only happens once.
         """
-        if not _has_async:
-            raise ModuleNotFoundError(
-                "Asynchronous functionality requires additional packages to be installed."
-                "Use `pip install edfi_api_client[async]` to install them."
-            )
-        return super().authenticate()
+        async with self.lock:
+            return super().authenticate()
 
     def _async_with_exponential_backoff(func: Callable):
         """
@@ -157,7 +158,7 @@ class AsyncEdFiSession(EdFiSession):
         :param pool_size:
         :return:
         """
-        self.authenticate()  # Always try to re-authenticate
+        await self.authenticate()  # Always try to re-authenticate
 
         async with self.session.get(
             url, headers=self.auth_headers, params=params,
@@ -186,7 +187,7 @@ class AsyncEdFiSession(EdFiSession):
         :param kwargs:
         :return:
         """
-        self.authenticate()  # Always try to re-authenticate
+        await self.authenticate()  # Always try to re-authenticate
 
         post_headers = {
             "accept": "application/json",
@@ -220,7 +221,7 @@ class AsyncEdFiSession(EdFiSession):
         :param kwargs:
         :return:
         """
-        self.authenticate()  # Always try to re-authenticate
+        await self.authenticate()  # Always try to re-authenticate
 
         delete_url = util.url_join(url, id)
 
@@ -250,7 +251,7 @@ class AsyncEdFiSession(EdFiSession):
         :param pool_size:
         :param kwargs:
         """
-        self.authenticate()  # Always try to re-authenticate
+        await self.authenticate()  # Always try to re-authenticate
 
         put_url = util.url_join(url, id)
 
