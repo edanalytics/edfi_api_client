@@ -36,9 +36,10 @@ async def test_async_post(output_secret: str, input_secret: str, verbose: bool =
     output_edfi = EdFiClient(**easecret.get_secret(output_secret), verbose=verbose)
     input_edfi = EdFiClient(**easecret.get_secret(input_secret), verbose=verbose)
 
-    async with \
-        output_edfi.async_connect(retry_on_failure=True, pool_size=8), \
-        input_edfi.async_connect(retry_on_failure=True, pool_size=8):
+    async with (
+        output_edfi.async_connect(retry_on_failure=True, pool_size=8),
+        input_edfi.async_connect(retry_on_failure=True, pool_size=8)
+    ):
 
         for namespace, rr in [
             # *output_edfi.descriptors,
@@ -46,8 +47,8 @@ async def test_async_post(output_secret: str, input_secret: str, verbose: bool =
         ]:
             try:
                 # Get all rows to insert back into Ed-Fi
-                output_endpoint = output_edfi.resource(rr, namespace=namespace)
-                input_endpoint = input_edfi.resource(rr, namespace=namespace)
+                output_endpoint = output_edfi.resource(rr, namespace=namespace, minChangeVersion=0, maxChangeVersion=200000)
+                input_endpoint = input_edfi.resource(rr, namespace=namespace, minChangeVersion=0, maxChangeVersion=200000)
 
                 format_print(f"{namespace}/{rr}: {output_endpoint.get_total_count()}")
 
@@ -75,7 +76,6 @@ async def test_async_post(output_secret: str, input_secret: str, verbose: bool =
                 output_path = os.path.join(scratch_dir, f"{rr}_async.jsonl")
                 await output_endpoint.async_get_to_json(output_path, page_size=500)
                 error_log = await input_endpoint.async_post_from_json(output_path)
-
                 print(error_log)
 
             except Exception as err:
