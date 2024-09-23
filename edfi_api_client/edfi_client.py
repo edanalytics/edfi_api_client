@@ -284,6 +284,13 @@ class EdFiClient:
         """
         token_path = 'oauth/token'
 
+        if self.api_mode in ('instance_year_specific',):
+            if not self.instance_code:
+                raise ValueError(
+                    "`instance_code` required for 'instance_year_specific' mode."
+                )
+            token_path = util.url_join(self.instance_code, token_path)
+
         access_response = requests.post(
             util.url_join(self.base_url, token_path),
             auth=HTTPBasicAuth(self.client_key, self.client_secret),
