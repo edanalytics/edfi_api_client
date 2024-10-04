@@ -310,7 +310,8 @@ class EdFiClient:
     
     def get_token_info(self) -> dict:
         """
-        The Ed-Fi API provides a way to get information about a the education organization related to a token.
+        The Ed-Fi API provides a way to get information about the education organization related to a token.
+        https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V520/pages/25100511/Authorization
         """
         if not self.access_token:
             self.connect()
