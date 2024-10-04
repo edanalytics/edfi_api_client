@@ -60,6 +60,7 @@ class EdFiClient:
         self.base_url = base_url
         self.client_key = client_key
         self.client_secret = client_secret
+        self.access_token: Optional[str] = None
 
         self.api_version = int(api_version)
         self.api_mode = api_mode or self.get_api_mode()
@@ -292,8 +293,8 @@ class EdFiClient:
         )
         access_response.raise_for_status()
 
-        access_token = access_response.json().get('access_token')
-        req_header = {'Authorization': 'Bearer {}'.format(access_token)}
+        self.access_token = access_response.json().get('access_token')
+        req_header = {'Authorization': 'Bearer {}'.format(self.access_token)}
 
         # Create a session and add headers to it.
         self.session = requests.Session()
@@ -306,6 +307,23 @@ class EdFiClient:
 
         self.verbose_log("Connection to ODS successful!")
         return self.session
+    
+    def get_token_info(self) -> dict:
+        """
+        The Ed-Fi API provides a way to get information about a the education organization related to a token.
+        """
+        if not self.access_token:
+            self.connect()
+
+        token_path = "oauth/token_info"
+        token_response = requests.post(
+            util.url_join(self.base_url, token_path),
+            headers={'Authorization': 'Bearer {}'.format(self.access_token)},
+            data={'token': self.access_token},
+            verify=self.verify_ssl
+        )
+        token_response.raise_for_status()
+        return token_response.json()
 
 
     def require_session(func: Callable) -> Callable:
@@ -501,8 +519,8 @@ class EdFi2Client(EdFiClient):
         )
         access_response.raise_for_status()
 
-        access_token = access_response.json().get('access_token')
-        req_header = {'Authorization': 'Bearer {}'.format(access_token)}
+        self.access_token = access_response.json().get('access_token')
+        req_header = {'Authorization': 'Bearer {}'.format(self.access_token)}
 
         # Create a session and add headers to it.
         self.session = requests.Session()
