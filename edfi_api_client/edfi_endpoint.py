@@ -340,12 +340,16 @@ class EdFiResource(EdFiEndpoint):
         *,
         namespace: str = 'ed-fi',
         get_deletes: bool = False,
+        get_key_changes: bool = False,
 
         params: Optional[dict] = None,
         **kwargs
     ):
         super().__init__(client, name, namespace)
         self.get_deletes: bool = get_deletes
+        self.get_key_changes: bool = get_key_changes
+        if self.get_deletes and self.get_key_changes:
+            raise ValueError("Ed-Fi Resource arguments `get_deletes` and `get_key_changes` are mutually-exclusive.")
 
         self.url = self.build_url()
         self.params = EdFiParams(params, **kwargs)
@@ -357,11 +361,17 @@ class EdFiResource(EdFiEndpoint):
         """
         Resource (Deletes) (with {N} parameters) [{namespace}/{name}]
         """
-        _deletes_string = " Deletes" if self.get_deletes else ""
+        if self.get_deletes:
+            _extras_string = " Deletes"
+        elif self.get_key_changes:
+            _extras_string = " KeyChanges"
+        else:
+            _extras_string = ""
+
         _params_string = f" with {len(self.params.keys())} parameters" if self.params else ""
         _full_name = f"{util.snake_to_camel(self.namespace)}/{util.snake_to_camel(self.name)}"
 
-        return f"<Resource{_deletes_string}{_params_string} [{_full_name}]>"
+        return f"<Resource{_extras_string}{_params_string} [{_full_name}]>"
 
 
     def build_url(self) -> str:
@@ -374,13 +384,18 @@ class EdFiResource(EdFiEndpoint):
         :return:
         """
         # Deletes are an optional path addition.
-        deletes = 'deletes' if self.get_deletes else None
+        if self.get_deletes:
+            path_extra = 'deletes'
+        elif self.get_key_changes:
+            path_extra = 'keyChanges'
+        else:
+            path_extra = None
 
         return util.url_join(
             self.client.base_url,
             self.client.version_url_string,
             self.client.instance_locator,
-            self.namespace, self.name, deletes
+            self.namespace, self.name, path_extra
         )
 
 

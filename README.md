@@ -294,11 +294,12 @@ This object contains methods to pull rows and resource metadata from the API.
 
 ```python
 >>> api.resource(
-        name='students',    # Name of resource
-        namespace='ed-fi',  # Default ; custom resources use a different namespace
-        get_deletes=False,  # Default ; set to `True` to access the /deletes endpoint
-        params={},          # Optional; used to pass parameters to API calls
-        **kwargs            # Optional; alternative way to pass parameters to API calls
+        name='students',        # Name of resource
+        namespace='ed-fi',      # Default ; custom resources use a different namespace
+        get_deletes=False,      # Default ; set to `True` to access the /deletes endpoint (mutually-exclusive with `get_key_changes`)
+        get_key_changes=False,  # Default ; set to `True` to access the /keyChanges endpoint (mutually-exclusive with `get_deletes`)
+        params={},              # Optional; used to pass parameters to API calls
+        **kwargs                # Optional; alternative way to pass parameters to API calls
     )
 
 <Resource [edFi/students]>
