@@ -1,3 +1,17 @@
+# edfi_api_client v0.2.2
+## New Features
+- Access resource `/keyChanges` endpoint using optional `get_key_changes` flag in `EdFiResource`.
+- `EdFiClient.get_token_info()` returns the JSON payload of the `/oauth/token_info` endpoint for the existing connection's access-token.
+
+## Fixes
+- Fix authentication logic and require `instance_code` be passed when authenticating to `instance_year_specific` ODSes.
+
+
+# edfi_api_client v0.2.1
+## Fixes
+- Make `api_mode` a fully-optional argument in `EdFiClient` (necessary for v7 ODSes).
+
+
 # edfi_api_client v0.2.0
 ## New Features
 - `EdFiClient.get_swagger()` now returns an EdFiSwagger class that parses OpenAPI Swagger specification.
