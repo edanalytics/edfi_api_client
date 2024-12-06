@@ -1,7 +1,7 @@
 import logging
 import math
 
-from typing import List, Optional
+from typing import Iterator, List, Optional
 
 from edfi_api_client import util
 
@@ -92,7 +92,46 @@ class EdFiParams(dict):
 
         return final_params
 
+    ### Resource pagination methods
+    def build_offset_window_params(self, page_size: int, total_count: int, reverse: bool = False) -> List['EdFiParams']:
+        """
+        Iterate offset-stepping by `page_size` until `total_count` is reached.
 
+        :param page_size:
+        :param total_count:
+        :param reverse:
+        :return:
+        """
+        params_list = []
+
+        for offset in range(0, total_count, page_size):
+            offset_params = self.copy()
+            offset_params["limit"] = page_size
+            offset_params["offset"] = offset
+            params_list.append(offset_params)
+
+        if reverse:
+            params_list.reverse()
+
+        return params_list
+
+    def build_change_version_window_params(self, change_version_step_size: int) -> Iterator['EdFiParams']:
+        """
+        Iterate change-version-stepping by `change_version_step_size` until `max_change_version` is reached.
+
+        :param change_version_step_size:
+        :return:
+        """
+        if self.min_change_version is None or self.max_change_version is None:
+            raise ValueError("Cannot paginate change version steps without specifying min and max change versions!")
+
+        change_version_step_windows = range(self.min_change_version, self.max_change_version, change_version_step_size)
+        for idx, cv_window_start in enumerate(change_version_step_windows):
+            cv_params = self.copy()
+            cv_params['minChangeVersion'] = cv_window_start + bool(idx)  # Add one to prevent overlaps
+            cv_params['maxChangeVersion'] = min(self.max_change_version, cv_window_start + change_version_step_size)
+
+            yield cv_params
 
     ### Methods for preparing params for pagination and completing pagination
     def init_page_by_offset(self, page_size: int):

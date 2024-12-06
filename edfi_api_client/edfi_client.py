@@ -4,12 +4,19 @@ import time
 from functools import wraps
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import HTTPError
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
+from edfi_api_client.edfi_session import EdFiSession
 from edfi_api_client.edfi_swagger import EdFiSwagger
 
+import logging
+logging.basicConfig(
+    level="WARNING",
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
 
 class EdFiClient:
     """
@@ -54,6 +61,10 @@ class EdFiClient:
         verify_ssl   : bool = True,
         verbose      : bool = False,
     ):
+        # Update logger first
+        if verbose:
+            logging.getLogger().setLevel(logging.INFO)
+
         self.verify_ssl = verify_ssl
         self.verbose = verbose
 
@@ -72,33 +83,29 @@ class EdFiClient:
         self.instance_locator = self.get_instance_locator()
 
         # Swagger variables for populating resource metadata (retrieved lazily)
-        self.swaggers = {
-            'resources'  : None,
-            'descriptors': None,
-            'composites' : None,
-        }
-        self._resources   = None
-        self._descriptors = None
+        self.resources_swagger  : EdFiSwagger = EdFiSwagger(self.base_url, 'resources')
+        self.descriptors_swagger: EdFiSwagger = EdFiSwagger(self.base_url, 'descriptors')
+        self.composites_swagger : EdFiSwagger = EdFiSwagger(self.base_url, 'composites')
 
-        # If ID and secret are passed, build a session.
-        self.session = None
+        # Initialize lazy session object; synchronous client connects immediately if credentials are passed.
+        self.session = EdFiSession(self.base_url, self.client_key, self.client_secret)
 
         if self.client_key and self.client_secret:
             self.connect()
+            logging.info("Connection to ODS successful!")
         else:
-            self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
+            logging.info("Client key and secret not provided. Connection with ODS will not be attempted.")
 
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
-        (Un)Authenticated Ed-Fi(2/3) Client [{api_mode}]
+        (Un)Authenticated Ed-Fi3 Client [{api_mode}]
         """
-        _session_string = "Authenticated" if self.session else "Unauthenticated"
-        _api_mode = util.snake_to_camel(self.api_mode) if self.api_mode else "None"
+        session_string = "Authenticated" if self.session else "Unauthenticated"
+        api_mode = util.snake_to_camel(self.api_mode) if self.api_mode else "None"
         if self.api_year:
-            _api_mode += f" {self.api_year}"
+            api_mode += f" {self.api_year}"
 
-        return f"<{_session_string} Ed-Fi{self.api_version} API Client [{_api_mode}]>"
+        return f"<{session_string} Ed-Fi{self.api_version} API Client [{api_mode}]>"
 
 
     ### Methods for accessing the Base URL payload and Swagger
@@ -133,7 +140,7 @@ class EdFiClient:
     def get_api_mode(self) -> Optional[str]:
         """
         Retrieve api_mode from the metadata exposed at the API root.
-
+        After API mode is deprecated in Ed-Fi 7, we can consider deprecating this method.
         :return:
         """
         api_mode = self.get_info().get('apiMode')
@@ -196,7 +203,6 @@ class EdFiClient:
             )
             self.get_swagger(component)
 
-
     @property
     def resources(self):
         """
@@ -235,21 +241,17 @@ class EdFiClient:
 
         elif self.api_mode in ('year_specific',):
             if not self.api_year:
-                raise ValueError(
-                    "`api_year` required for 'year_specific' mode."
-                )
+                raise ValueError("`api_year` required for 'year_specific' mode.")
             return str(self.api_year)
 
         elif self.api_mode in ('instance_year_specific',):
             if not self.api_year or not self.instance_code:
-                raise ValueError(
-                    "`instance_code` and `api_year` required for 'instance_year_specific' mode."
-                )
+                raise ValueError("`instance_code` and `api_year` required for 'instance_year_specific' mode.")
             return f"{self.instance_code}/{self.api_year}"
 
         else:
             raise ValueError(
-                "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n"
+                "`api_mode` must be one of: [shared_instance, sandbox, district_specific, year_specific, instance_year_specific].\n" + \
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
