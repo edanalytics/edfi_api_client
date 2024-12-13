@@ -23,6 +23,7 @@ class EdFiClient:
     :param api_mode: ['shared_instance', 'sandbox', 'district_specific', 'year_specific', 'instance_year_specific']
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
+    :param use_snapshot: Add 'Use-Snapshot' header to requests
     """
     def __new__(cls, *args, **kwargs):
         """
@@ -50,6 +51,7 @@ class EdFiClient:
         api_mode     : Optional[str] = None,
         api_year     : Optional[int] = None,
         instance_code: Optional[str] = None,
+        use_snapshot : bool = False,
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
@@ -66,6 +68,7 @@ class EdFiClient:
         self.api_mode = api_mode or self.get_api_mode()
         self.api_year = api_year
         self.instance_code = instance_code
+        self.use_snapshot = use_snapshot
 
         # Build endpoint URL pieces
         self.version_url_string = self._get_version_url_string()
@@ -306,6 +309,8 @@ class EdFiClient:
         # Create a session and add headers to it.
         self.session = requests.Session()
         self.session.headers.update(req_header)
+        if self.use_snapshot:
+            self.session.headers.update({'Use-Snapshot': 'True'})
 
         # Add new attributes to track when connection was established and when to refresh the access token.
         self.session.timestamp_unix = int(time.time())
