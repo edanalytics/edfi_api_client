@@ -179,51 +179,25 @@ class EdFiClient:
         :param component: Which component's swagger spec should be retrieved?
         :return: Swagger specification definition, as a dictionary.
         """
-        swagger_url = util.url_join(
-            self.base_url, 'metadata', self.version_url_string, component, 'swagger.json'
-        )
-
-        payload = requests.get(swagger_url, verify=self.verify_ssl).json()
-        swagger = EdFiSwagger(component, payload)
-
-        # Save the swagger in memory to save time on subsequent calls.
-        self.swaggers[component] = swagger
+        swagger = EdFiSwagger(self.base_url, component=component)
+        _ = swagger.json  # Force eager execution
         return swagger
 
-    def _set_swagger(self, component: str):
+    @property
+    def resources(self) -> List[str]:
         """
-        Populate the respective swagger object in `self.swaggers` if not already populated.
 
-        :param component:
         :return:
         """
-        if self.swaggers.get(component) is None:
-            self.verbose_log(
-                f"[Get {component.title()} Swagger] Retrieving Swagger into memory..."
-            )
-            self.get_swagger(component)
+        return self.resources_swagger.get_endpoints()
 
     @property
-    def resources(self):
+    def descriptors(self) -> List[str]:
         """
 
         :return:
         """
-        if self._resources is None:
-            self._set_swagger('resources')
-            self._resources = self.swaggers['resources'].endpoints
-        return self._resources
-
-    @property
-    def descriptors(self):
-        """
-
-        :return:
-        """
-        if self._descriptors is None:
-            self._set_swagger('descriptors')
-            self._descriptors = self.swaggers['descriptors'].endpoints
-        return self._descriptors
+        return self.descriptors_swagger.get_endpoints()
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
