@@ -176,7 +176,7 @@ class EdFiSwagger:
         """
         skey_mapping: Dict[str, List[str]] = {}
 
-        for key, definition in self.json.get('definitions', {}).items():
+        for key, definition in self.definitions.items():
 
             # Only reference surrogate keys are used
             if not key.endswith('Reference'):
