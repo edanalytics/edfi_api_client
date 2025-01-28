@@ -208,6 +208,10 @@ class EdFiClient(AsyncEdFiClientMixin):
         return util.url_join(self.base_url, 'oauth/token')
 
     @property
+    def token_info_url(self) -> str:
+        return util.url_join(self.base_url, "oauth/token_info")
+
+    @property
     def resource_url(self) -> str:
         return util.url_join(self.base_url, 'data/v3', self.get_instance_locator())
 
@@ -252,6 +256,18 @@ class EdFiClient(AsyncEdFiClientMixin):
         # Ed-Fi 6.0 changes the key from `NewestChangeVersion` to `newestChangeVersion`.
         lower_json = {key.lower(): value for key, value in res.json().items()}
         return lower_json['newestchangeversion']
+    
+    def get_token_info(self) -> dict:
+        """
+        The Ed-Fi API provides a way to get information about the education organization related to a token.
+        https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V520/pages/25100511/Authorization
+        """
+        token_response = self.session.post_response(
+            self.token_info_url,
+            data={'token': self.session.access_token}
+        )
+        token_response.raise_for_status()
+        return token_response.json()
 
 
     ### Endpoint Initializers

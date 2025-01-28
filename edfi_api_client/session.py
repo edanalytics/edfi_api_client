@@ -43,6 +43,7 @@ class EdFiSession:
         self.authenticated_at: int = None
         self.refresh_at: int = None
         self.auth_headers: dict = {}
+        self.access_token: str = None
 
     def __bool__(self) -> bool:
         return bool(self.session)
@@ -117,9 +118,10 @@ class EdFiSession:
         auth_payload = auth_response.json()
         self.authenticated_at = int(time.time())
         self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
+        self.access_token = auth_payload.get('access_token')
 
         self.auth_headers.update({
-            'Authorization': f"Bearer {auth_payload.get('access_token')}",
+            'Authorization': f"Bearer {self.access_token}",
         })
         return self.auth_headers
 
