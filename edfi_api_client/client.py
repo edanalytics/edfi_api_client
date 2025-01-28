@@ -29,6 +29,7 @@ class EdFiClient(AsyncEdFiClientMixin):
     :param api_mode: ['shared_instance', 'sandbox', 'district_specific', 'year_specific', 'instance_year_specific']
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
+    :param use_snapshot: Add 'Use-Snapshot' header to requests
     """
     def __init__(self,
         base_url     : str,
@@ -40,7 +41,8 @@ class EdFiClient(AsyncEdFiClientMixin):
         api_mode     : Optional[str] = None,
         api_year     : Optional[int] = None,
         instance_code: Optional[str] = None,
-
+        
+        use_snapshot : bool = False,
         verify_ssl   : bool = True,
         verbose      : bool = False,
     ):
@@ -61,6 +63,7 @@ class EdFiClient(AsyncEdFiClientMixin):
         self.api_mode: Optional[str] = api_mode or self.get_api_mode()  # Populates self._info to infer mode from ODS.
         self.api_year: Optional[int] = api_year
         self.instance_code: Optional[str] = instance_code
+        self.use_snapshot: bool = use_snapshot
 
         if self.api_version == 2:
             raise NotImplementedError(
@@ -100,7 +103,7 @@ class EdFiClient(AsyncEdFiClientMixin):
     ) -> EdFiSession:
         return self.session.connect(
             retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            verify_ssl=self.verify_ssl, **kwargs
+            use_snapshot=self.use_snapshot, verify_ssl=self.verify_ssl, **kwargs
         )
 
     @classmethod

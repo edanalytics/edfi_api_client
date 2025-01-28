@@ -37,6 +37,7 @@ class EdFiSession:
         self.retry_on_failure: bool = None
         self.max_retries: int = None
         self.max_wait: int = None
+        self.use_snapshot: bool = False
 
         # Authentication attributes refresh on EdFiSession.connect().
         self.authenticated_at: int = None
@@ -57,6 +58,7 @@ class EdFiSession:
         retry_on_failure: bool,
         max_retries: int,
         max_wait: int,
+        use_snapshot: bool,
         verify_ssl: bool,
         **kwargs
     ) -> requests.Session:
@@ -69,6 +71,7 @@ class EdFiSession:
         self.retry_on_failure = retry_on_failure
         self.max_retries = max_retries
         self.max_wait = max_wait
+        self.use_snapshot = use_snapshot
         self.verify_ssl = verify_ssl
 
         # Update time attributes and auth headers with latest authentication information.
@@ -98,6 +101,10 @@ class EdFiSession:
             else:
                 return self.auth_headers
 
+        # Apply snapshot header if specified.
+        self.auth_headers.update({'Use-Snapshot': str(self.use_snapshot)})
+
+        # Complete authentication.
         auth_response = requests.post(
             self.oauth_url,
             auth=HTTPBasicAuth(self.client_key, self.client_secret),

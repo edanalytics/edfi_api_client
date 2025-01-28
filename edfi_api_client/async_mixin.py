@@ -56,6 +56,7 @@ class AsyncEdFiSession(EdFiSession):
         retry_on_failure: bool,
         max_retries: int,
         max_wait: int,
+        use_snapshot: bool,
         verify_ssl: bool,
         pool_size: int,
         **kwargs
@@ -67,6 +68,7 @@ class AsyncEdFiSession(EdFiSession):
         self.retry_on_failure = retry_on_failure
         self.max_retries = max_retries
         self.max_wait = max_wait
+        self.use_snapshot = use_snapshot
         self.verify_ssl = verify_ssl
         self.pool_size = pool_size
 
@@ -269,6 +271,7 @@ class AsyncEdFiClientMixin:
     oauth_url: str
     client_key: Optional[str]
     client_secret: Optional[str]
+    use_snapshot: bool
     verify_ssl: bool
 
     def __init__(self):
@@ -284,7 +287,7 @@ class AsyncEdFiClientMixin:
     ) -> AsyncEdFiSession:
         return self.async_session.connect(
             retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
-            verify_ssl=self.verify_ssl, pool_size=pool_size, **kwargs
+            use_snapshot=self.use_snapshot, verify_ssl=self.verify_ssl, pool_size=pool_size, **kwargs
         )
 
 
