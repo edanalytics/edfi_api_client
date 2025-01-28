@@ -20,6 +20,15 @@
 - Standardize retry status codes and retry logic.
 
 
+# edfi_api_client v0.2.2
+## New Features
+- Access resource `/keyChanges` endpoint using optional `get_key_changes` flag in `EdFiResource`.
+- `EdFiClient.get_token_info()` returns the JSON payload of the `/oauth/token_info` endpoint for the existing connection's access-token.
+
+## Fixes
+- Fix authentication logic and require `instance_code` be passed when authenticating to `instance_year_specific` ODSes.
+
+
 # edfi_api_client v0.2.1
 ## Under the hood
 - Move several functions from `EdFiResource` to `EdFiEndpoint` to simplify inheritence between classes.
@@ -29,6 +38,7 @@
 ## Fixes
 - Make `EdFiEndpoint` class attributes into instance attributes
 - Fix bug in `EdFiComposite.get_pages()` where pages were not yielded
+- Make `api_mode` a fully-optional argument in `EdFiClient` (necessary for v7 ODSes).
 
 
 # edfi_api_client v0.2.0
