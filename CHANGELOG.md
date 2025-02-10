@@ -1,3 +1,8 @@
+# edfi_api_client v0.2.3
+## New Features
+- Add `use_snapshot` flag to `EdFiClient` for making requests against snapshots (default `False`).
+
+
 # edfi_api_client v0.2.2
 ## New Features
 - Access resource `/keyChanges` endpoint using optional `get_key_changes` flag in `EdFiResource`.
