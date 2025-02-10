@@ -50,6 +50,7 @@ Some methods do not require credentials to be called.
 | api_mode      | The API mode of the ODS (e.g., `shared_instance`, `year_specific`, etc.). If empty, the mode will automatically be inferred from the ODS' Swagger spec (Ed-Fi 3 only). |
 | api_year      | The year of data to connect to if accessing a `year_specific` or `instance_year_specific` ODS.                                                                         |
 | instance_code | The instance code if accessing an `instance_year_specific` ODS.                                                                                                        |
+| use_snapshot | Boolean flag for whether connected ODS is a snapshot (default `False`).                                                                                                        |
 
 If either `client_key` or `client_secret` are empty, a session with the ODS will not be established.
 
