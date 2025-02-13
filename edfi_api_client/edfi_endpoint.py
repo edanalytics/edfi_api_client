@@ -45,6 +45,9 @@ class EdFiEndpoint:
         # self.swagger: 'EdFiSwagger' = swagger
         # self.validator: 'Draft4Validator' = None
 
+        self._description: Optional[str]  = None
+        self._has_deletes: Optional[bool] = None
+
 
     def __repr__(self):
         """
@@ -109,7 +112,7 @@ class EdFiEndpoint:
         logging.info(f"[Ping {self.component}] Endpoint: {self.url}")
 
         # Override init params if passed
-        params = (params or self.params).copy()
+        params = EdFiParams(params or self.params).copy()
         params['limit'] = 1  # To ping a composite, a limit of at least one is required.
 
         # We do not want to surface student-level data during ODS-checks.
@@ -129,7 +132,7 @@ class EdFiEndpoint:
         logging.info(f"[Get {self.component}] Endpoint: {self.url}")
 
         # Override init params if passed
-        params = (params or self.params).copy()
+        params = EdFiParams(params or self.params).copy()
         if limit:  # Override limit if passed
             params['limit'] = limit
 
@@ -261,7 +264,7 @@ class EdFiEndpoint:
         logging.info(f"[Get Total Count {self.component}] Endpoint: {self.url}")
 
         # Override init params if passed
-        params = (params or self.params).copy()
+        params = EdFiParams(params or self.params).copy()
         params['totalCount'] = True
         params['limit'] = 0
 
@@ -409,7 +412,7 @@ class EdFiComposite(EdFiEndpoint):
         logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
 
         # Reset pagination parameters
-        paged_params = (params or self.params).copy()
+        paged_params = EdFiParams(params or self.params).copy()
         paged_params.init_page_by_offset(page_size)
 
         # Begin pagination-loop
