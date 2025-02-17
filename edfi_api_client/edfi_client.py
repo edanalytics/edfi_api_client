@@ -1,15 +1,20 @@
 import requests
-import time
 
-from functools import wraps
-from requests.auth import HTTPBasicAuth
 from requests.exceptions import HTTPError
-from typing import Callable, Optional
+from typing import Optional
 
 from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.edfi_swagger import EdFiSwagger
+from edfi_api_client.session import EdFiSession
 
+
+import logging
+logging.basicConfig(
+    level="WARNING",
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
 
 class EdFiClient:
     """
@@ -23,23 +28,7 @@ class EdFiClient:
     :param api_mode: ['shared_instance', 'sandbox', 'district_specific', 'year_specific', 'instance_year_specific']
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
-    :param use_snapshot: Add 'Use-Snapshot' header to requests
     """
-    def __new__(cls, *args, **kwargs):
-        """
-        The user should never need to reference an `EdFi2Client` directly.
-        This override of dunder-new makes the choice depending on passed `api_version`.
-
-        :param args:
-        :param kwargs:
-        """
-        api_version = kwargs.get('api_version', 3)
-
-        if int(api_version) == 2:
-            return object.__new__(EdFi2Client)
-        else:
-            return object.__new__(EdFiClient)
-
 
     def __init__(self,
         base_url     : str,
@@ -51,28 +40,33 @@ class EdFiClient:
         api_mode     : Optional[str] = None,
         api_year     : Optional[int] = None,
         instance_code: Optional[str] = None,
-        use_snapshot : bool = False,
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
     ):
-        self.verify_ssl = verify_ssl
-        self.verbose = verbose
+        # Update logger first
+        if verbose:
+            logging.getLogger().setLevel(logging.INFO)
 
         self.base_url = base_url
         self.client_key = client_key
         self.client_secret = client_secret
+        self.verify_ssl = verify_ssl
         self.access_token: Optional[str] = None
 
         self.api_version = int(api_version)
         self.api_mode = api_mode or self.get_api_mode()
         self.api_year = api_year
         self.instance_code = instance_code
-        self.use_snapshot = use_snapshot
 
         # Build endpoint URL pieces
-        self.version_url_string = self._get_version_url_string()
+        self.version_url_string = "data/v3"
         self.instance_locator = self.get_instance_locator()
+
+        if self.api_version == 2:
+            raise NotImplementedError(
+                "Ed-Fi 2 functionality has been deprecated. Use `pip install edfi_api_client==0.2.4` for Ed-Fi 2 ODSes."
+            )
 
         # Swagger variables for populating resource metadata (retrieved lazily)
         self.swaggers = {
@@ -83,18 +77,14 @@ class EdFiClient:
         self._resources   = None
         self._descriptors = None
 
-        # If ID and secret are passed, build a session.
-        self.session = None
-
-        if self.client_key and self.client_secret:
-            self.connect()
-        else:
-            self.verbose_log("Client key and secret not provided. Connection with ODS will not be attempted.")
+        # Initialize lazy session object (do not connect until an ODS-request method is called)
+        oauth_url = util.url_join(self.base_url, 'oauth/token')
+        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret)
 
 
     def __repr__(self):
         """
-        (Un)Authenticated Ed-Fi(2/3) Client [{api_mode}]
+        (Un)Authenticated Ed-Fi(3) Client [{api_mode}]
         """
         _session_string = "Authenticated" if self.session else "Unauthenticated"
         _api_mode = util.snake_to_camel(self.api_mode) if self.api_mode else "None"
@@ -194,9 +184,7 @@ class EdFiClient:
         :return:
         """
         if self.swaggers.get(component) is None:
-            self.verbose_log(
-                f"[Get {component.title()} Swagger] Retrieving Swagger into memory..."
-            )
+            logging.info(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
             self.get_swagger(component)
 
 
@@ -256,119 +244,55 @@ class EdFiClient:
                 "Use `get_api_mode()` to infer the api_mode of your instance."
             )
 
-
-    def _get_version_url_string(self) -> str:
-        return "data/v3"
-
-
-    ### Methods for logging and versioning
-    def is_edfi2(self) -> bool:
+    @classmethod
+    def is_edfi2(cls) -> bool:
+        """
+        EdFi2 functionality is removed after 0.2.4.
+        """
         return False
 
 
-    def verbose_log(self, message: str, verbose: bool = False):
-        """
-        Unified method for logging class state during API pulls.
-        Set `self.verbose=True or verbose=True` to log.
-
-        :param message:
-        :param verbose:
-        :return:
-        """
-        if self.verbose or verbose:
-            print(message)
-
-
     ### Methods for connecting to the ODS
-    def connect(self) -> requests.Session:
-        """
-        Create a session with authorization headers.
-
-        :return:
-        """
-        token_path = 'oauth/token'
-
-        if self.api_mode in ('instance_year_specific',):
-            if not self.instance_code:
-                raise ValueError(
-                    "`instance_code` required for 'instance_year_specific' mode."
-                )
-            token_path = util.url_join(self.instance_code, token_path)
-
-        access_response = requests.post(
-            util.url_join(self.base_url, token_path),
-            auth=HTTPBasicAuth(self.client_key, self.client_secret),
-            data={'grant_type': 'client_credentials'},
-            verify=self.verify_ssl
+    def connect(self,
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 1200,
+        use_snapshot: bool = False,
+        **kwargs
+    ) -> EdFiSession:
+        return self.session.connect(
+            retry_on_failure=retry_on_failure, max_retries=max_retries, max_wait=max_wait,
+            use_snapshot=use_snapshot, verify_ssl=self.verify_ssl, **kwargs
         )
-        access_response.raise_for_status()
-
-        self.access_token = access_response.json().get('access_token')
-        req_header = {'Authorization': 'Bearer {}'.format(self.access_token)}
-
-        # Create a session and add headers to it.
-        self.session = requests.Session()
-        self.session.headers.update(req_header)
-        if self.use_snapshot:
-            self.session.headers.update({'Use-Snapshot': 'True'})
-
-        # Add new attributes to track when connection was established and when to refresh the access token.
-        self.session.timestamp_unix = int(time.time())
-        self.session.refresh_time = int(self.session.timestamp_unix + access_response.json().get('expires_in') - 120)
-        self.session.verify = self.verify_ssl
-
-        self.verbose_log("Connection to ODS successful!")
-        return self.session
     
+
     def get_token_info(self) -> dict:
         """
         The Ed-Fi API provides a way to get information about the education organization related to a token.
         https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V520/pages/25100511/Authorization
         """
-        if not self.access_token:
-            self.connect()
+        token_info_url = util.url_join(self.base_url, "oauth/token_info")
+        logging.info(f"[Get Token Info] Endpoint: {token_info_url}")
 
-        token_path = "oauth/token_info"
-        token_response = requests.post(
-            util.url_join(self.base_url, token_path),
-            headers={'Authorization': 'Bearer {}'.format(self.access_token)},
-            data={'token': self.access_token},
-            verify=self.verify_ssl
+        token_response = self.session.post_response(
+            token_info_url,
+            data={'token': self.session.access_token},
+            remove_snapshot_header=True  # The token_info endpoint is incompatible with snapshots.
         )
         token_response.raise_for_status()
         return token_response.json()
 
 
-    def require_session(func: Callable) -> Callable:
-        """
-        This decorator verifies a session is established before calling the associated class method.
-
-        :param func:
-        :return:
-        """
-        @wraps(func)
-        def wrapped(self, *args, **kwargs):
-            if self.session is None:
-                raise ValueError(
-                    "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
-                )
-            return func(self, *args, **kwargs)
-        return wrapped
-
-
-    ### Methods for accessing ODS endpoints
-    @require_session
     def get_newest_change_version(self) -> int:
         """
         Return the newest change version marked in the ODS (Ed-Fi3 only).
 
         :return:
         """
-        change_query_path = util.url_join(
-            self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions'
-        )
+        change_version_url = util.url_join(self.base_url, 'changeQueries/v1', self.get_instance_locator(), 'availableChangeVersions')
+        logging.info(f"[Get Newest Change Version] Endpoint: {change_version_url}")
 
-        res = self.session.get(change_query_path)
+        res = self.session.get_response(change_version_url)
         if not res.ok:
             http_error_msg = (
                 f"Change version check failed with status `{res.status_code}`: {res.reason}"
@@ -380,7 +304,6 @@ class EdFiClient:
         return lower_json['newestchangeversion']
 
 
-    @require_session
     def resource(self,
         name: str,
 
@@ -397,14 +320,13 @@ class EdFiClient:
             name=name, namespace=namespace, get_deletes=get_deletes, get_key_changes=get_key_changes,
             params=params, **kwargs
         )
+    
 
-    @require_session
     def descriptor(self,
         name: str,
 
         *,
         namespace: str = 'ed-fi',
-
         params: Optional[dict] = None,
         **kwargs
     ) -> EdFiDescriptor:
@@ -419,17 +341,15 @@ class EdFiClient:
         )
 
 
-    @require_session
     def composite(self,
         name: str,
 
         *,
         namespace: str = 'ed-fi',
+        params: Optional[dict] = None,
         composite: str = 'enrollment',
         filter_type: Optional[str] = None,
         filter_id: Optional[str] = None,
-
-        params: Optional[dict] = None,
         **kwargs
     ) -> EdFiComposite:
         return EdFiComposite(
@@ -437,121 +357,4 @@ class EdFiClient:
             name=name, namespace=namespace, composite=composite,
             filter_type=filter_type, filter_id=filter_id,
             params=params, **kwargs
-        )
-
-
-
-class EdFi2Client(EdFiClient):
-    """
-
-    """
-    ### Methods for accessing the Base URL payload and Swagger
-    def get_info(self) -> dict:
-        raise NotImplementedError(
-            "Information endpoint not implemented in Ed-Fi 2."
-        )
-
-    def get_api_mode(self) -> str:
-        raise NotImplementedError(
-            "API mode cannot be inferred in Ed-Fi 2. Please specify using `api_mode`."
-        )
-
-    def get_ods_version(self) -> str:
-        raise NotImplementedError(
-            "ODS version cannot be inferred in Ed-Fi 2."
-        )
-
-    def get_data_model_version(self) -> str:
-        raise NotImplementedError(
-            "Data model version cannot be inferred in Ed-Fi 2."
-        )
-
-    def get_swagger(self, component: str = 'resources') -> dict:
-        raise NotImplementedError(
-            "Swagger specification not implemented in Ed-Fi 2."
-        )
-
-    @property
-    def resources(self):
-        raise NotImplementedError(
-            "Resources collected from Swagger specification that is not implemented in Ed-Fi 2."
-        )
-
-    @property
-    def descriptors(self):
-        raise NotImplementedError(
-            "Descriptors collected from Swagger specification that is not implemented in Ed-Fi 2."
-        )
-
-
-    ### Helper methods for building elements of endpoint URLs for GETs and POSTs
-    def _get_version_url_string(self) -> str:
-        return "api/v2.0"
-
-
-    ### Methods for logging and versioning
-    def is_edfi2(self) -> bool:
-        return True
-
-
-    ### Methods for connecting to the ODS
-    def connect(self) -> requests.Session:
-        """
-        Create a session with authorization headers.
-
-        :return:
-        """
-        login_path = 'oauth/authorize'
-        token_path = 'oauth/token'
-
-        json_header = {'Content-Type': 'application/json'}
-        login_data = {
-            'Client_id': self.client_key,
-            'Response_type': 'code',
-        }
-
-        response_login = requests.post(
-            util.url_join(self.base_url, login_path),
-            data=login_data,
-            verify=self.verify_ssl
-        )
-        response_login.raise_for_status()
-
-        login_code = response_login.json().get('code')
-
-        token_data = {
-            'Client_id': self.client_key,
-            'Client_secret': self.client_secret,
-            'Code': login_code,
-            'Grant_type': 'authorization_code'
-        }
-        access_response = requests.post(
-            util.url_join(self.base_url, token_path),
-            json=token_data,
-            headers=json_header,
-            verify=self.verify_ssl
-        )
-        access_response.raise_for_status()
-
-        self.access_token = access_response.json().get('access_token')
-        req_header = {'Authorization': 'Bearer {}'.format(self.access_token)}
-
-        # Create a session and add headers to it.
-        self.session = requests.Session()
-        self.session.headers.update(req_header)
-        self.session.headers.update(json_header)
-
-        # Add new attributes to track when connection was established and when to refresh the access token.
-        self.session.timestamp_unix = int(time.time())
-        self.session.refresh_time = int(self.session.timestamp_unix + access_response.json().get('expires_in') - 120)
-        self.session.verify = self.verify_ssl
-
-        self.verbose_log("Connection to ODS successful!")
-        return self.session
-
-
-    ### Methods for accessing ODS endpoints
-    def get_newest_change_version(self) -> int:
-        raise NotImplementedError(
-            "Change versions not implemented in Ed-Fi 2!"
         )
