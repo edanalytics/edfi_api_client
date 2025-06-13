@@ -532,29 +532,35 @@ class EdFiResource(EdFiEndpoint):
         """
         params = self.params.copy()
 
-        # Use CV-pagination to avoid timeouts on high volume resources.
-        total_count_cv_window = 10_000_000  # 10 million chosen arbitrarily
-        self.client.verbose_log("[Total Count Resource] Applying a change version window of {:,} to reduce strain on ODS...".format(total_count_cv_window))
+        # Attempt a standard record count before applying pagination.
+        try:
+            return self._get_total_count(params)
 
-        if not params.min_change_version:
-            params.min_change_version = 0
+        except:
 
-        if not params.max_change_version:
-            params.max_change_version = self.client.get_newest_change_version()
+            # Use CV-pagination to avoid timeouts on high volume resources.
+            total_count_cv_step_size = 5_000_000  # 5 million chosen arbitrarily
+            self.client.verbose_log("[Total Count Resource] Applying a change version window of {:,} to reduce strain on ODS...".format(total_count_cv_step_size))
 
-        total_rows = 0
-        params.init_page_by_change_version_step(total_count_cv_window)
+            if not params.min_change_version:
+                params.min_change_version = 0
 
-        while True:
-            self.client.verbose_log(f"[Total Count Resource] Parameters: {params}")
-            total_rows += self._get_total_count(params)
+            if not params.max_change_version:
+                params.max_change_version = self.client.get_newest_change_version()
 
-            try:
-                params.page_by_change_version_step()
-            except StopIteration:
-                break
+            total_rows = 0
+            params.init_page_by_change_version_step(total_count_cv_step_size)
 
-        return total_rows
+            while True:
+                self.client.verbose_log(f"[Total Count Resource] Parameters: {params}")
+                total_rows += self._get_total_count(params)
+
+                try:
+                    params.page_by_change_version_step()
+                except StopIteration:
+                    break
+
+            return total_rows
 
 
     def _get_total_count(self, params: EdFiParams):
