@@ -538,7 +538,7 @@ class EdFiResource(EdFiEndpoint):
 
         # Use CV-pagination to avoid timeouts on high volume resources.
         except:
-            total_count_cv_step_size = 5_000_000  # 5 million chosen arbitrarily
+            total_count_cv_step_size = 500_000  # 500 thousand chosen arbitrarily
             self.client.verbose_log("[Total Count Resource] Applying a change version window of {:,} to reduce strain on ODS...".format(total_count_cv_step_size))
 
             if not params.min_change_version:
