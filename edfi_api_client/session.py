@@ -25,12 +25,14 @@ class EdFiSession:
         oauth_url: str,
         client_key: Optional[str],
         client_secret: Optional[str],
+        *,
+        access_token: Optional[Union[str, Callable[[], str]]] = None,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
         self.client_key: Optional[str] = client_key
         self.client_secret: Optional[str] = client_secret
-
+        self.external_access_token = access_token
         # Session attributes refresh on EdFiSession.connect().
         self.session: requests.Session = None
         self.verify_ssl: bool = None
@@ -90,9 +92,9 @@ class EdFiSession:
         Note: This function is identical in both synchronous and asynchronous sessions.
         """
         # Ensure the connection has been established before trying to refresh.
-        if not (self.client_key and self.client_secret):
+        if not ((self.client_key and self.client_secret) or self.external_access_token):
             raise requests.exceptions.ConnectionError(
-                "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
+                "An established connection to the ODS is required! Provide the client_key and client_secret or an access token in EdFiClient arguments."
             )
         
         # It no manual connection was made (note: async may require a different approach)
@@ -109,20 +111,32 @@ class EdFiSession:
         # Apply snapshot header if specified.
         self.auth_headers.update({'Use-Snapshot': str(self.use_snapshot)})
 
-        # Complete authentication.
-        auth_response = requests.post(
-            self.oauth_url,
-            auth=HTTPBasicAuth(self.client_key, self.client_secret),
-            data={'grant_type': 'client_credentials'},
-            verify=self.verify_ssl
-        )
-        auth_response.raise_for_status()
+        # Defer to external token or token getter if passed
+        if self.external_access_token:
+            # Only call the token getter if token has not yet been set (or has
+            # been invalidated)
+            if not self.access_token:
+                if isinstance(self.external_access_token, str):
+                    self.access_token = self.external_access_token
+                else:
+                    logging.info("Calling external token getter.")
+                    self.access_token = self.external_access_token()
 
-        # Track when connection was established and when to refresh the access token.
-        auth_payload = auth_response.json()
-        self.authenticated_at = int(time.time())
-        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
-        self.access_token = auth_payload.get('access_token')
+        else:
+            # Or, complete authentication by requesting a token.
+            auth_response = requests.post(
+                self.oauth_url,
+                auth=HTTPBasicAuth(self.client_key, self.client_secret),
+                data={'grant_type': 'client_credentials'},
+                verify=self.verify_ssl
+            )
+            auth_response.raise_for_status()
+
+            # Track when connection was established and when to refresh the access token.
+            auth_payload = auth_response.json()
+            self.authenticated_at = int(time.time())
+            self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
+            self.access_token = auth_payload.get('access_token')
 
         self.auth_headers.update({
             'Authorization': f"Bearer {self.access_token}",

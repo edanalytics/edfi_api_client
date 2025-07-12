@@ -1,7 +1,7 @@
 import requests
 
 from requests.exceptions import HTTPError
-from typing import Optional
+from typing import Optional, Callable, Union
 
 from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
@@ -24,6 +24,7 @@ class EdFiClient:
     :param base_url: The root URL of the API, without components like `data/v3`
     :param client_key: Authentication key
     :param client_secret: Authentication secret
+    :param access_token: A string or a callable that returns a string, if authentication is handled outside
     :param api_version: 3 for Suite 3, 2 for older 2.x instances
     :param api_mode: ['shared_instance', 'sandbox', 'district_specific', 'year_specific', 'instance_year_specific']
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
@@ -40,6 +41,7 @@ class EdFiClient:
         api_mode     : Optional[str] = None,
         api_year     : Optional[int] = None,
         instance_code: Optional[str] = None,
+        access_token : Optional[Union[str, Callable[[], str]]] = None,
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
@@ -48,11 +50,14 @@ class EdFiClient:
         if verbose:
             logging.getLogger().setLevel(logging.INFO)
 
+        if access_token is not None and client_key is not None:
+           raise ValueError("Both client key and access token provided. Provide one or the other.")
+
         self.base_url = base_url
         self.client_key = client_key
         self.client_secret = client_secret
         self.verify_ssl = verify_ssl
-        self.access_token: Optional[str] = None
+        self.access_token = access_token
 
         self.api_version = int(api_version)
         self.api_mode = api_mode or self.get_api_mode()
@@ -79,7 +84,7 @@ class EdFiClient:
 
         # Initialize lazy session object (do not connect until an ODS-request method is called)
         oauth_url = util.url_join(self.base_url, 'oauth/token')
-        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret)
+        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret, access_token=self.access_token)
 
 
     def __repr__(self):
