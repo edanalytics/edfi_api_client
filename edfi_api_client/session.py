@@ -99,7 +99,9 @@ class EdFiSession:
         
         # It no manual connection was made (note: async may require a different approach)
         if not self.session:
+            # connect will call authenticate
             self.connect()
+            return self.auth_headers
 
         # Only re-authenticate when necessary.
         if self.authenticated_at:
@@ -113,14 +115,11 @@ class EdFiSession:
 
         # Defer to external token or token getter if passed
         if self.external_access_token:
-            # Only call the token getter if token has not yet been set (or has
-            # been invalidated)
-            if not self.access_token:
-                if isinstance(self.external_access_token, str):
-                    self.access_token = self.external_access_token
-                else:
-                    logging.info("Calling external token getter.")
-                    self.access_token = self.external_access_token()
+            if isinstance(self.external_access_token, str):
+                self.access_token = self.external_access_token
+            else:
+                logging.info("Calling external token getter.")
+                self.access_token = self.external_access_token()
 
         else:
             # Or, complete authentication by requesting a token.
