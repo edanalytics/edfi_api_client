@@ -7,7 +7,7 @@ from requests import HTTPError
 logging.basicConfig(level=logging.DEBUG)
 
 
-def test_mutually_exclusive_authentication():
+def test_mutually_exclusive_authentication_methods():
     # not permitted to pass in client key and external token at the same time
     with pytest.raises(ValueError):
         bad_api = EdFiClient(
@@ -30,7 +30,7 @@ def test_external_token_string():
     )
 
     # make call that requires authentication (sessions are lazy)
-    parent_school_count = parent_api.resource('schools').total_count()
+    parent_school_count = parent_api.resource('schools').get_total_count()
     logging.info(f'Parent API yields {parent_school_count}')
     common_token = parent_api.session.access_token
 
@@ -41,7 +41,7 @@ def test_external_token_string():
     )
     
     # make same call requiring authentication
-    child_school_count = child_api.resource('schools').total_count()
+    child_school_count = child_api.resource('schools').get_total_count()
     logging.info(f'Child API yields {child_school_count}')
     
     assert child_school_count == parent_school_count
@@ -60,7 +60,7 @@ def test_external_token_getter():
     )
 
     # make call that requires authentication (sessions are lazy)
-    parent_school_count = parent_api.resource('schools').total_count()
+    parent_school_count = parent_api.resource('schools').get_total_count()
     logging.info(f'Parent API yields {parent_school_count}')
     common_token = parent_api.session.access_token
 
@@ -71,7 +71,7 @@ def test_external_token_getter():
     )
     
     # make same call requiring authentication
-    child_school_count = child_api.resource('schools').total_count()
+    child_school_count = child_api.resource('schools').get_total_count()
     logging.info(f'Child API yields {child_school_count}')
     
     assert child_school_count == parent_school_count
