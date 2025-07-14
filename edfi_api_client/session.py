@@ -179,8 +179,9 @@ class EdFiSession:
                 except RequestsWarning as retry_warning:
                     # If an API call fails, it may be due to rate-limiting.
                     sleep_secs = min((2 ** n_tries) * 2, max_wait)
-                    logging.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
-                    self.safe_sleep(sleep_secs)
+                    if n_tries + 1 < max_retries:
+                        logging.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
+                        self.safe_sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.
             else:
