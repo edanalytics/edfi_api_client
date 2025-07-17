@@ -29,6 +29,7 @@ class EdFiClient:
     :param api_mode: ['shared_instance', 'sandbox', 'district_specific', 'year_specific', 'instance_year_specific']
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
+    :param refresh_buffer_seconds: Buffer (in seconds) between actual token expiry time and when refreshes should be scheduled. Default 2 minutes. 
     """
 
     def __init__(self,
