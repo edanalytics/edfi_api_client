@@ -27,12 +27,15 @@ class EdFiSession:
         client_secret: Optional[str],
         *,
         access_token: Optional[Union[str, Callable[[], str]]] = None,
+        refresh_buffer_seconds: int = 120,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
         self.client_key: Optional[str] = client_key
         self.client_secret: Optional[str] = client_secret
         self.external_access_token = access_token
+        self.refresh_buffer_seconds = refresh_buffer_seconds
+
         # Session attributes refresh on EdFiSession.connect().
         self.session: requests.Session = None
         self.verify_ssl: bool = None
@@ -134,7 +137,7 @@ class EdFiSession:
             # Track when connection was established and when to refresh the access token.
             auth_payload = auth_response.json()
             self.authenticated_at = int(time.time())
-            self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
+            self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - self.refresh_buffer_seconds)
             self.access_token = auth_payload.get('access_token')
 
         self.auth_headers.update({
