@@ -45,6 +45,8 @@ class EdFiClient:
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
+
+        refresh_buffer_seconds: int = 120,
     ):
         # Update logger first
         if verbose:
@@ -58,6 +60,7 @@ class EdFiClient:
         self.client_secret = client_secret
         self.verify_ssl = verify_ssl
         self.access_token = access_token
+        self.refresh_buffer_seconds = refresh_buffer_seconds
 
         self.api_version = int(api_version)
         self.api_mode = api_mode or self.get_api_mode()
@@ -84,7 +87,7 @@ class EdFiClient:
 
         # Initialize lazy session object (do not connect until an ODS-request method is called)
         oauth_url = util.url_join(self.base_url, 'oauth/token')
-        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret, access_token=self.access_token)
+        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret, access_token=self.access_token, refresh_buffer_seconds=refresh_buffer_seconds)
 
 
     def __repr__(self):
