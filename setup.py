@@ -20,7 +20,8 @@ setuptools.setup(
 
       packages=['edfi_api_client'],
       install_requires=[
-          'requests'
+          'requests',
+          'portalocker'
       ],
       zip_safe=False,
 )

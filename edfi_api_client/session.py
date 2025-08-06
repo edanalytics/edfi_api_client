@@ -1,11 +1,17 @@
 import functools
 import logging
 import time
+import os
+import json
+from json import JSONDecodeError
+import hashlib
 
 import requests
 from requests import HTTPError
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestsWarning
+
+import portalocker
 
 from edfi_api_client import util
 
@@ -25,6 +31,7 @@ class EdFiSession:
         oauth_url: str,
         client_key: Optional[str],
         client_secret: Optional[str],
+        use_persisted_token: bool = False,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
@@ -44,6 +51,15 @@ class EdFiSession:
         self.refresh_at: int = None
         self.auth_headers: dict = {}
         self.access_token: str = None
+
+        self.use_persisted_token: bool = use_persisted_token
+        # unique path for each base url / client key combination
+        instance_client_id = hashlib.md5(self.oauth_url.encode('utf-8'))
+        instance_client_id.update(self.client_key.encode('utf-8'))
+        os.makedirs(os.path.expanduser(f'~/.edfi-tokens/'), exist_ok=True)
+        self.persisted_token_path: str = os.path.expanduser(f'~/.edfi-tokens/{instance_client_id.hexdigest()}.json')
+        self.last_token_sync_time: int = 0
+
 
     def __bool__(self) -> bool:
         return bool(self.session)
@@ -98,6 +114,7 @@ class EdFiSession:
         # It no manual connection was made (note: async may require a different approach)
         if not self.session:
             self.connect()
+            return self.auth_headers
 
         # Only re-authenticate when necessary.
         if self.authenticated_at:
@@ -106,6 +123,69 @@ class EdFiSession:
             else:
                 return self.auth_headers
 
+        if self.use_persisted_token:
+            # check to see if on-disk version has been updated
+            if os.path.exists(self.persisted_token_path) and self.last_token_sync_time < os.path.getmtime(self.persisted_token_path):
+                # acquire read lock
+                with portalocker.Lock(
+                    self.persisted_token_path,
+                    mode='r+',
+                    timeout=10,
+                    flags=portalocker.LockFlags.SHARED | portalocker.LockFlags.NON_BLOCKING
+                ) as f:
+                    auth_payload = self._reload_token_from_cache_fh(f)
+                
+            else:
+                with portalocker.Lock(
+                    self.persisted_token_path,
+                    mode='a+',
+                    timeout=10,
+                    flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING
+                ) as f:
+                    f.seek(0) # since we open in a+ for both read+write and want to read from the beginning
+                    auth_payload = None
+                    # someone may have written since we last checked; avoid fetching again if so
+
+                    if self.last_token_sync_time < os.path.getmtime(self.persisted_token_path):
+                        auth_payload = self._reload_token_from_cache_fh(f)
+                    # cache may be malformed, in which case auth_payload will be empty
+                    if not auth_payload:
+                        f.seek(0)
+                        f.truncate(0)
+                        auth_payload = self._make_auth_request()
+                        logging.info(f"Writing new token to {self.persisted_token_path}")
+                        f.write(json.dumps(auth_payload))
+                   
+            self.last_token_sync_time = int(time.time())
+                
+        else:
+            auth_payload = self._make_auth_request()
+
+        # Track when connection was established and when to refresh the access token.
+        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
+        if self.refresh_at < time.time():
+            # picked up an already expired token; re-auth
+            return self.authenticate()
+        self.access_token = auth_payload.get('access_token')
+        logging.info(f'Using token starting with {self.access_token[:5]}')
+
+        self.auth_headers.update({
+            'Authorization': f"Bearer {self.access_token}",
+        })
+        return self.auth_headers
+
+    def _reload_token_from_cache_fh(self, file):
+        logging.info(f"Refreshing token from {self.persisted_token_path}")
+
+        self.authenticated_at = os.path.getmtime(self.persisted_token_path)
+        try:
+            auth_payload = json.loads(file.read())
+        except JSONDecodeError:
+            auth_payload = {}
+
+        return auth_payload
+
+    def _make_auth_request(self):
         # Apply snapshot header if specified.
         self.auth_headers.update({'Use-Snapshot': str(self.use_snapshot)})
 
@@ -118,16 +198,10 @@ class EdFiSession:
         )
         auth_response.raise_for_status()
 
-        # Track when connection was established and when to refresh the access token.
         auth_payload = auth_response.json()
-        self.authenticated_at = int(time.time())
-        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
-        self.access_token = auth_payload.get('access_token')
+        self.authenticated_at = time.time()
 
-        self.auth_headers.update({
-            'Authorization': f"Bearer {self.access_token}",
-        })
-        return self.auth_headers
+        return auth_payload
 
     def _with_exponential_backoff(func: Callable):
         """
