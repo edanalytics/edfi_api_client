@@ -62,12 +62,12 @@ def test_external_token_getter():
     # make call that requires authentication (sessions are lazy)
     parent_school_count = parent_api.resource('schools').get_total_count()
     logging.info(f'Parent API yields {parent_school_count}')
-    common_token = parent_api.session.access_token
+    common_payload = parent_api.session.last_auth_payload
 
     # setup client passing in the existing token (as a getter)
     child_api = EdFiClient(
         base_url=base_url,
-        access_token=lambda: common_token
+        access_token=lambda: common_payload
     )
     
     # make same call requiring authentication
@@ -89,7 +89,7 @@ def test_token_getter_called_on_retry():
         nonlocal counter 
         counter += 1
         logging.info(f'Token getter called {counter} times')
-        return 'badtoken'
+        return {'access_token': 'badtoken'}
 
     api = EdFiClient(
         base_url=base_url,

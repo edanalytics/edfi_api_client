@@ -26,7 +26,7 @@ class EdFiSession:
         client_key: Optional[str],
         client_secret: Optional[str],
         *,
-        access_token: Optional[Union[str, Callable[[], str]]] = None,
+        access_token: Optional[Union[str, Callable[[], object]]] = None,
         refresh_buffer_seconds: int = 120,
         **kwargs
     ):
@@ -49,6 +49,7 @@ class EdFiSession:
         self.refresh_at: int = None
         self.auth_headers: dict = {}
         self.access_token: str = None
+        self.last_auth_payload: Optional[dict] = None
 
     def __bool__(self) -> bool:
         return bool(self.session)
@@ -120,9 +121,11 @@ class EdFiSession:
         if self.external_access_token:
             if isinstance(self.external_access_token, str):
                 self.access_token = self.external_access_token
+                self.last_auth_payload = {'access_token': self.external_access_token}
             else:
                 logging.info("Calling external token getter.")
-                self.access_token = self.external_access_token()
+                self.last_auth_payload = self.external_access_token()
+                self.authenticated_at = self.last_auth_payload.get('authenticated_at')
 
         else:
             # Or, complete authentication by requesting a token.
@@ -135,10 +138,12 @@ class EdFiSession:
             auth_response.raise_for_status()
 
             # Track when connection was established and when to refresh the access token.
-            auth_payload = auth_response.json()
+            self.last_auth_payload = auth_response.json()
             self.authenticated_at = int(time.time())
-            self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - self.refresh_buffer_seconds)
-            self.access_token = auth_payload.get('access_token')
+
+        if self.authenticated_at:
+            self.refresh_at = int(self.authenticated_at + self.last_auth_payload.get('expires_in') - self.refresh_buffer_seconds)
+        self.access_token = self.last_auth_payload.get('access_token')
 
         self.auth_headers.update({
             'Authorization': f"Bearer {self.access_token}",
