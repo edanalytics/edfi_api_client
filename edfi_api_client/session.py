@@ -144,6 +144,7 @@ class EdFiSession:
         if self.authenticated_at:
             self.refresh_at = int(self.authenticated_at + self.last_auth_payload.get('expires_in') - self.refresh_buffer_seconds)
         self.access_token = self.last_auth_payload.get('access_token')
+        logging.info(f'Using token starting with {self.access_token[:5]}')
 
         self.auth_headers.update({
             'Authorization': f"Bearer {self.access_token}",
