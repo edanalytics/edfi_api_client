@@ -42,7 +42,7 @@ class EdFiClient:
         api_mode     : Optional[str] = None,
         api_year     : Optional[int] = None,
         instance_code: Optional[str] = None,
-        access_token : Optional[Union[str, Callable[[], str]]] = None,
+        access_token : Optional[Union[str, Callable[[], dict]]] = None,
 
         verify_ssl   : bool = True,
         verbose      : bool = False,

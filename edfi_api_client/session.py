@@ -26,7 +26,7 @@ class EdFiSession:
         client_key: Optional[str],
         client_secret: Optional[str],
         *,
-        access_token: Optional[Union[str, Callable[[], object]]] = None,
+        access_token: Optional[Union[str, Callable[[], dict]]] = None,
         refresh_buffer_seconds: int = 120,
         **kwargs
     ):
