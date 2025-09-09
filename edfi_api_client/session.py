@@ -32,6 +32,7 @@ class EdFiSession:
         client_key: Optional[str],
         client_secret: Optional[str],
         use_persisted_token: bool = False,
+        persisted_token_base_path: str = '~/.edfi-tokens',
         **kwargs
     ):
         self.oauth_url: str = oauth_url
@@ -52,12 +53,15 @@ class EdFiSession:
         self.auth_headers: dict = {}
         self.access_token: str = None
 
+        # Set token persistence variables
         self.use_persisted_token: bool = use_persisted_token
+
         # unique path for each base url / client key combination
         instance_client_id = hashlib.md5(self.oauth_url.encode('utf-8'))
         instance_client_id.update(self.client_key.encode('utf-8'))
-        os.makedirs(os.path.expanduser(f'~/.edfi-tokens/'), exist_ok=True)
-        self.persisted_token_path: str = os.path.expanduser(f'~/.edfi-tokens/{instance_client_id.hexdigest()}.json')
+        os.makedirs(os.path.expanduser(persisted_token_base_path), exist_ok=True)
+
+        self.persisted_token_path: str = os.path.expanduser(f'{persisted_token_base_path}/{instance_client_id.hexdigest()}.json')
         self.last_token_sync_time: int = 0
 
 
