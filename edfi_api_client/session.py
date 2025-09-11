@@ -147,57 +147,74 @@ class EdFiSession:
         return self.auth_headers
 
     def _load_token_from_cache(self, file):
-        logging.info(f"Refreshing token from {self.token_cache_path}")
+        logging.info(f"Loading token from {self.token_cache_path}")
 
-        self.authenticated_at = os.path.getmtime(self.token_cache_path)
         try:
+            self.authenticated_at = os.path.getmtime(self.token_cache_path)
             auth_payload = json.loads(file.read())
         except JSONDecodeError:
+            # file corruption; return empty
+            auth_payload = {}
+        except FileNotFoundError:
+            # file deleted since we last checked; return empty
             auth_payload = {}
 
         return auth_payload
 
-    def _load_or_update_token_from_cache(self, force_refresh=False):
-        # check to see if on-disk version has been updated
-        if os.path.exists(self.token_cache_path) and self.last_token_sync_time < os.path.getmtime(self.token_cache_path) and not force_refresh:
-            # acquire read lock, then read
-            with portalocker.Lock(
-                self.token_cache_path,
-                mode='r+',
-                timeout=10,
-                flags=portalocker.LockFlags.SHARED | portalocker.LockFlags.NON_BLOCKING
-            ) as f:
-                auth_payload = self._load_token_from_cache(f)
-                # "force" a pull on a corrupt token (will still check for a valid token next time)
-                if not auth_payload:
-                    return self._load_or_update_token_from_cache(force_refresh=True)
-            
-        else:
-            logging.info('Token cache miss; attempting to get write lock to refresh')
-            # otherwise, cache miss, expired token in cache, or forced refresh
-            with portalocker.Lock(
-                self.token_cache_path,
-                mode='a+', # w mode will truncate file before read
-                timeout=10,
-                flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING
-            ) as f:
-                f.seek(0) # a mode puts cursor at end
-                auth_payload = None
+    def _load_or_update_token_from_cache(self, force_refresh=False, max_retries=3):
+        retry = 0
 
-                # someone may have written since we last checked; avoid fetching again if so
-                if self.last_token_sync_time < os.path.getmtime(self.token_cache_path):
-                    auth_payload = self._load_token_from_cache(f)
+        while retry <= max_retries:
+            try: 
+                # check to see if on-disk version has been updated
+                if os.path.exists(self.token_cache_path) and self.last_token_sync_time < os.path.getmtime(self.token_cache_path) and not force_refresh:
+                    # acquire read lock, then read
+                    with portalocker.Lock(
+                        self.token_cache_path,
+                        mode='r+',
+                        timeout=10,
+                        flags=portalocker.LockFlags.SHARED | portalocker.LockFlags.NON_BLOCKING
+                    ) as f:
+                        auth_payload = self._load_token_from_cache(f)
+                        # "force" a pull on a corrupt token (will still check for a valid token next time)
+                        if not auth_payload:
+                            return self._load_or_update_token_from_cache(force_refresh=True)
+                    
+                else:
+                    logging.info('Token cache miss; attempting to get write lock')
+                    # otherwise, cache miss, expired token in cache, or forced refresh
+                    with portalocker.Lock(
+                        self.token_cache_path,
+                        mode='a+', # w mode will truncate file before read
+                        timeout=10,
+                        flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING
+                    ) as f:
+                        f.seek(0) # a mode puts cursor at end
+                        auth_payload = None
 
-                # cache may be malformed, in which case auth_payload will be empty
-                if not auth_payload:
-                    f.seek(0)
-                    f.truncate(0)
-                    auth_payload = self._make_auth_request()
-                    logging.info(f"Writing new token to {self.token_cache_path}")
-                    f.write(json.dumps(auth_payload))
-               
-        self.last_token_sync_time = int(time.time())
-        return auth_payload
+                        # someone may have written since we last checked; avoid fetching again if so
+                        if os.path.exists(self.token_cache_path) and self.last_token_sync_time < os.path.getmtime(self.token_cache_path):
+                            auth_payload = self._load_token_from_cache(f)
+
+                        # cache may be malformed, in which case auth_payload will be empty
+                        if not auth_payload:
+                            f.seek(0)
+                            f.truncate(0)
+                            auth_payload = self._make_auth_request()
+                            logging.info(f"Writing new token to {self.token_cache_path}")
+                            f.write(json.dumps(auth_payload))
+                       
+                self.last_token_sync_time = int(time.time())
+                return auth_payload
+
+            except portalocker.exceptions.LockException as err:
+                logging.info(f'Failed to acquire lock; {max_retries - retry} tries left')
+                time.sleep(2**retry)
+                retry += 1
+
+        # exceeded max retries;
+        raise portalocker.exceptions.LockException('Could not acquire locks on token cache')
+
                 
 
 
