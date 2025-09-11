@@ -43,8 +43,8 @@ class EdFiClient:
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
-        use_persisted_token: bool = False,
-        persisted_token_base_path: str = '~/.edfi-tokens',
+        use_token_cache: bool = False,
+        token_cache_directory: str = '~/.edfi-tokens',
     ):
         # Update logger first
         if verbose:
@@ -60,8 +60,8 @@ class EdFiClient:
         self.api_mode = api_mode or self.get_api_mode()
         self.api_year = api_year
         self.instance_code = instance_code
-        self.use_persisted_token = use_persisted_token
-        self.persisted_token_base_path = persisted_token_base_path
+        self.use_token_cache = use_token_cache
+        self.token_cache_directory = token_cache_directory
 
         # Build endpoint URL pieces
         self.version_url_string = "data/v3"
@@ -83,7 +83,7 @@ class EdFiClient:
 
         # Initialize lazy session object (do not connect until an ODS-request method is called)
         oauth_url = util.url_join(self.base_url, 'oauth/token')
-        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret, self.use_persisted_token, self.persisted_token_base_path)
+        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret, self.use_token_cache, self.token_cache_directory)
 
 
     def __repr__(self):

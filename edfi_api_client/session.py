@@ -31,8 +31,8 @@ class EdFiSession:
         oauth_url: str,
         client_key: Optional[str],
         client_secret: Optional[str],
-        use_persisted_token: bool = False,
-        persisted_token_base_path: str = '~/.edfi-tokens',
+        use_token_cache: bool = False,
+        token_cache_directory: str = '~/.edfi-tokens',
         **kwargs
     ):
         self.oauth_url: str = oauth_url
@@ -54,14 +54,14 @@ class EdFiSession:
         self.access_token: str = None
 
         # Set token persistence variables
-        self.use_persisted_token: bool = use_persisted_token
+        self.use_token_cache: bool = use_token_cache
 
         # unique path for each base url / client key combination
         instance_client_id = hashlib.md5(self.oauth_url.encode('utf-8'))
         instance_client_id.update(self.client_key.encode('utf-8'))
-        os.makedirs(os.path.expanduser(persisted_token_base_path), exist_ok=True)
+        os.makedirs(os.path.expanduser(token_cache_directory), exist_ok=True)
 
-        self.persisted_token_path: str = os.path.expanduser(f'{persisted_token_base_path}/{instance_client_id.hexdigest()}.json')
+        self.token_cache_path: str = os.path.expanduser(f'{token_cache_directory}/{instance_client_id.hexdigest()}.json')
         self.last_token_sync_time: int = 0
 
 
@@ -127,41 +127,9 @@ class EdFiSession:
             else:
                 return self.auth_headers
 
-        if self.use_persisted_token:
-            # check to see if on-disk version has been updated
-            if os.path.exists(self.persisted_token_path) and self.last_token_sync_time < os.path.getmtime(self.persisted_token_path):
-                # acquire read lock
-                with portalocker.Lock(
-                    self.persisted_token_path,
-                    mode='r+',
-                    timeout=10,
-                    flags=portalocker.LockFlags.SHARED | portalocker.LockFlags.NON_BLOCKING
-                ) as f:
-                    auth_payload = self._reload_token_from_cache_fh(f)
-                
-            else:
-                with portalocker.Lock(
-                    self.persisted_token_path,
-                    mode='a+',
-                    timeout=10,
-                    flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING
-                ) as f:
-                    f.seek(0) # since we open in a+ for both read+write and want to read from the beginning
-                    auth_payload = None
-                    # someone may have written since we last checked; avoid fetching again if so
-
-                    if self.last_token_sync_time < os.path.getmtime(self.persisted_token_path):
-                        auth_payload = self._reload_token_from_cache_fh(f)
-                    # cache may be malformed, in which case auth_payload will be empty
-                    if not auth_payload:
-                        f.seek(0)
-                        f.truncate(0)
-                        auth_payload = self._make_auth_request()
-                        logging.info(f"Writing new token to {self.persisted_token_path}")
-                        f.write(json.dumps(auth_payload))
-                   
-            self.last_token_sync_time = int(time.time())
-                
+        # last_token_sync_time stored as instance variable, not in payload
+        if self.use_token_cache:
+            auth_payload = self._load_or_update_token_from_cache()
         else:
             auth_payload = self._make_auth_request()
 
@@ -178,16 +146,60 @@ class EdFiSession:
         })
         return self.auth_headers
 
-    def _reload_token_from_cache_fh(self, file):
-        logging.info(f"Refreshing token from {self.persisted_token_path}")
+    def _load_token_from_cache(self, file):
+        logging.info(f"Refreshing token from {self.token_cache_path}")
 
-        self.authenticated_at = os.path.getmtime(self.persisted_token_path)
+        self.authenticated_at = os.path.getmtime(self.token_cache_path)
         try:
             auth_payload = json.loads(file.read())
         except JSONDecodeError:
             auth_payload = {}
 
         return auth_payload
+
+    def _load_or_update_token_from_cache(self, force_refresh=False):
+        # check to see if on-disk version has been updated
+        if os.path.exists(self.token_cache_path) and self.last_token_sync_time < os.path.getmtime(self.token_cache_path) and not force_refresh:
+            # acquire read lock, then read
+            with portalocker.Lock(
+                self.token_cache_path,
+                mode='r+',
+                timeout=10,
+                flags=portalocker.LockFlags.SHARED | portalocker.LockFlags.NON_BLOCKING
+            ) as f:
+                auth_payload = self._load_token_from_cache(f)
+                # "force" a pull on a corrupt token (will still check for a valid token next time)
+                if not auth_payload:
+                    return self._load_or_update_token_from_cache(force_refresh=True)
+            
+        else:
+            logging.info('Token cache miss; attempting to get write lock to refresh')
+            # otherwise, cache miss, expired token in cache, or forced refresh
+            with portalocker.Lock(
+                self.token_cache_path,
+                mode='a+', # w mode will truncate file before read
+                timeout=10,
+                flags=portalocker.LockFlags.EXCLUSIVE | portalocker.LockFlags.NON_BLOCKING
+            ) as f:
+                f.seek(0) # a mode puts cursor at end
+                auth_payload = None
+
+                # someone may have written since we last checked; avoid fetching again if so
+                if self.last_token_sync_time < os.path.getmtime(self.token_cache_path):
+                    auth_payload = self._load_token_from_cache(f)
+
+                # cache may be malformed, in which case auth_payload will be empty
+                if not auth_payload:
+                    f.seek(0)
+                    f.truncate(0)
+                    auth_payload = self._make_auth_request()
+                    logging.info(f"Writing new token to {self.token_cache_path}")
+                    f.write(json.dumps(auth_payload))
+               
+        self.last_token_sync_time = int(time.time())
+        return auth_payload
+                
+
 
     def _make_auth_request(self):
         # Apply snapshot header if specified.

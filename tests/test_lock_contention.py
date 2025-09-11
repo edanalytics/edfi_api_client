@@ -14,7 +14,7 @@ def get_token(i):
         base_url=base_url, 
         client_key=client_key, 
         client_secret=client_secret,
-        use_persisted_token=True
+        use_token_cache=True
     )
     _ = api.resource('schools').get_total_count()
 
