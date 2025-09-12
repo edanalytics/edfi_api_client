@@ -99,7 +99,7 @@ class LockfileTokenCache(BaseTokenCache):
         yield True
 
     @contextlib.contextmanager
-    def get_write_lock(self, timeout=15, staleness_threshold=60):
+    def get_write_lock(self, timeout=30, staleness_threshold=60):
         try:
             timeout_end = time.time() + timeout
             acquired = False

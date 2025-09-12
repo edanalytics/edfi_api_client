@@ -15,7 +15,7 @@ logging.basicConfig(
     format='[%(asctime)s] %(levelname)s %(name)s.%(funcName)s:%(lineno)d %(message)s'
 )
 
-def create_client_from_env():
+def create_client_from_env(token_cache_lock_type='python_lockfile'):
     base_url = os.environ.get('EDFI_API_BASE_URL')
     client_secret = os.environ.get('EDFI_API_CLIENT_SECRET', 'testsecret')
     client_key = os.environ.get('EDFI_API_CLIENT_KEY', 'testkey')
@@ -28,7 +28,7 @@ def create_client_from_env():
         client_key=client_key, 
         client_secret=client_secret,
         use_token_cache=True,
-        token_cache_lock_type='portalocker'
+        token_cache_lock_type=token_cache_lock_type
     )
 
     return api
