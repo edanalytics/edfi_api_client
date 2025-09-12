@@ -12,7 +12,7 @@ from requests.exceptions import RequestsWarning
 import portalocker
 
 from edfi_api_client import util
-from edfi_api_client.token_cache import PortalockerTokenCache, TokenCacheError
+from edfi_api_client.token_cache import PortalockerTokenCache, LockfileTokenCache, TokenCacheError
 
 from typing import Callable, Optional, Set, Union
 from typing import TYPE_CHECKING
@@ -31,6 +31,7 @@ class EdFiSession:
         client_key: Optional[str],
         client_secret: Optional[str],
         use_token_cache: bool = False,
+        token_cache_lock_type: str = 'python_lockfile',
         **kwargs
     ):
         self.oauth_url: str = oauth_url
@@ -53,15 +54,25 @@ class EdFiSession:
 
         # Set token persistence variables
         self.use_token_cache: bool = use_token_cache
+        self.token_cache_lock_type: str = token_cache_lock_type
         if self.use_token_cache:
             # unique cache backing for each base url / client key combination
             instance_client_id = hashlib.md5(self.oauth_url.encode('utf-8'))
             instance_client_id.update(self.client_key.encode('utf-8'))
 
-            self.token_cache = PortalockerTokenCache(
-                token_id=instance_client_id.hexdigest(),
-                token_cache_directory='~/.edfi-tokens'
-            )
+            match self.token_cache_lock_type:
+                case 'portalocker':
+                    self.token_cache = PortalockerTokenCache(
+                        token_id=instance_client_id.hexdigest(),
+                        token_cache_directory='~/.edfi-tokens'
+                    )
+                case 'python_lockfile':
+                    self.token_cache = LockfileTokenCache(
+                        token_id=instance_client_id.hexdigest(),
+                        token_cache_directory='~/.edfi-tokens'
+                    )
+                case _:
+                    raise('Not a valid lock type')
 
             self.last_token_sync_time: int = 0
 
@@ -157,6 +168,7 @@ class EdFiSession:
                     auth_payload = self.token_cache.load()
                     self.authenticated_at = self.token_cache.get_last_modified()
             except TokenCacheError: 
+                # dirty read; cache miss; lock failure
                 auth_payload = None
             if not auth_payload:
                 return self._load_or_update_token_from_cache(force_refresh=True)

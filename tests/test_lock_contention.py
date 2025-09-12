@@ -27,7 +27,8 @@ def create_client_from_env():
         base_url=base_url, 
         client_key=client_key, 
         client_secret=client_secret,
-        use_token_cache=True
+        use_token_cache=True,
+        token_cache_lock_type='portalocker'
     )
 
     return api
