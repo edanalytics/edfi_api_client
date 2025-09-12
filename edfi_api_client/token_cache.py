@@ -99,12 +99,19 @@ class LockfileTokenCache(BaseTokenCache):
         yield True
 
     @contextlib.contextmanager
-    def get_write_lock(self, timeout=15):
+    def get_write_lock(self, timeout=15, staleness_threshold=60):
         try:
             timeout_end = time.time() + timeout
             acquired = False
             while time.time() <= timeout_end:
                 try:
+                    if os.path.exists(self.lockfile_path):
+                        lockfile_age = time.time() - os.path.getmtime(self.lockfile_path)
+                        if lockfile_age > staleness_threshold: 
+                            # assume another client died while holding the lock
+                            logging.info(f'Lockfile at {self.lockfile_path} touched more than {staleness_threshold}s ago. Removing lockfile.')
+                            os.remove(self.lockfile_path)
+                    
                     with open(self.lockfile_path, 'x') as f:
                         f.write(f'{os.getpid()}')
                         acquired = True
@@ -114,10 +121,6 @@ class LockfileTokenCache(BaseTokenCache):
 
             if not acquired:
                 raise TokenCacheError('Unable to acquire write lock on token cache.')
-                if os.path.exists(self.lockfile_path):
-                    lockfile_age = time.time() - os.path.getmtime(self.lockfile_path)
-                    if lockfile_age > 120: 
-                        logging.error('Lockfile at {self.lockfile_path} touched more than 2 minutes ago. Consider removing stale lockfile.')
             yield acquired
         finally:
             if acquired and os.path.exists(self.lockfile_path):
