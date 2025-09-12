@@ -48,7 +48,7 @@ class BaseTokenCache(abc.ABC):
         raise NotImplementedError
 
 
-class LockfileTokenCache():
+class LockfileTokenCache(BaseTokenCache):
     def __init__(
         self, 
         token_id,
@@ -125,7 +125,7 @@ class LockfileTokenCache():
 
 
 
-class PortalockerTokenCache():
+class PortalockerTokenCache(BaseTokenCache):
     def __init__(
         self, 
         token_id,
