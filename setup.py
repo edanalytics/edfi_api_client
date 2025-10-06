@@ -22,5 +22,8 @@ setuptools.setup(
       install_requires=[
           'requests'
       ],
+      extras_require={
+          'test': ['pytest', 'responses']
+      },
       zip_safe=False,
 )
