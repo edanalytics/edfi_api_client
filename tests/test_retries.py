@@ -1,6 +1,8 @@
 from edfi_api_client import EdFiClient
 
+import pytest
 from requests.auth import _basic_auth_str
+from requests.exceptions import HTTPError
 import responses
 from responses import matchers
 
@@ -112,3 +114,73 @@ def test_max_retries():
 
     assert(len(schools) == max_pages)
     assert(total_calls == max_retries * (max_pages+1)) # max_retries for the last, empty page as well
+
+
+@responses.activate()
+def test_default_no_retry():
+    """Test that retries are off by default"""
+    responses.get(
+        BASE_URL,
+        json={
+            'version': '7.1',
+            'informationalVersion': '7.1',
+            'suite': '3',
+            'build': '2025.5.1.1636',
+            'apiMode': 'District Specific',
+            'dataModels': [{'informationalVersion': 'The Ed-Fi Data Model 5.0',
+                 'name': 'Ed-Fi',
+                 'version': '5.0.0'}],
+            'urls': {
+                'dependencies': f'{BASE_URL}/metadata/data/v3/dependencies',
+                'openApiMetadata': f'{BASE_URL}/metadata/',
+                'oauth': f'{BASE_URL}/oauth/token',
+                'dataManagementApi': f'{BASE_URL}/data/v3/',
+                'xsdMetadata': f'{BASE_URL}/metadata/xsd'
+            }
+        }
+    )
+    responses.post(
+        f'{BASE_URL}/oauth/token',
+        json={
+            "access_token": TOKEN,
+            "expires_in": 1800,
+            "token_type": "bearer"
+        },
+        match=[
+            matchers.header_matcher({"Authorization": BASIC_AUTH_HEADER})
+        ]
+    )
+    responses.post(
+        f'{BASE_URL}/oauth/token_info',
+        json={
+            "active": True,
+            "client_id": CLIENT_KEY,
+            "assigned_profiles": [],
+            "education_organizations": [
+                {
+                    'education_organization_id': 9999,
+                    'local_education_agency_id': 9999,
+                    'name_of_institution': 'District1',
+                    'state_education_agency_id': 1,
+                    'type': 'edfi.LocalEducationAgency'
+                }
+            ],
+            "namespace_prefixes": ['uri://ed-fi.org/']
+        },
+        match=[
+            matchers.urlencoded_params_matcher({'token': TOKEN}),
+            matchers.header_matcher({"Authorization": f"Bearer {TOKEN}"})
+        ]
+    )
+    responses.get(
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        json={'error': 'Timed out.'},
+        status=504,
+        content_type='application/json'
+    )
+
+    client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    with pytest.raises(HTTPError, match=r".*time-out.*"):
+        schools = list(client.resource('schools').get_rows())
+
+
