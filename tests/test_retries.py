@@ -172,7 +172,7 @@ def test_default_no_retry():
             matchers.header_matcher({"Authorization": f"Bearer {TOKEN}"})
         ]
     )
-    responses.get(
+    school_rsp = responses.get(
         f'{BASE_URL}/data/v3/ed-fi/schools',
         json={'error': 'Timed out.'},
         status=504,
@@ -182,5 +182,6 @@ def test_default_no_retry():
     client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
     with pytest.raises(HTTPError, match=r".*time-out.*"):
         schools = list(client.resource('schools').get_rows())
+        assert(school_rsp.call_count == 1)
 
 
