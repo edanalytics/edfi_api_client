@@ -153,7 +153,11 @@ class EdFiEndpoint:
         This method returns all rows from an endpoint, applying pagination logic as necessary.
         Rows are returned as a generator.
 
+        :param params:
         :param page_size:
+        :param reverse_paging:
+        :param step_change_version:
+        :param change_version_step_size:
         :param retry_on_failure:
         :param max_retries:
         :param max_wait:
@@ -174,9 +178,9 @@ class EdFiEndpoint:
         *,
         params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
+        reverse_paging: bool = True,
         step_change_version: bool = False,
         change_version_step_size: int = 50000,
-        reverse_paging: bool = True,
         **kwargs
     ) -> Iterator[List[dict]]:
         """
@@ -184,9 +188,13 @@ class EdFiEndpoint:
         Rows are returned as a generator.
 
         :param params:
+        :param page_size:
+        :param reverse_paging:
         :param step_change_version:
         :param change_version_step_size:
-        :param reverse_paging:
+        :param retry_on_failure:
+        :param max_retries:
+        :param max_wait:
         :return:
         """
         # Override init params if passed
