@@ -212,6 +212,9 @@ class EdFiSession:
         Complete a POST request against an endpoint URL.
         Note: Responses are returned regardless of status.
 
+        The record is scrubbed of any IDs that would cause posts to resource endpoints to fail.
+        Note that these IDs are never present in posts used for authentication or the token info endpoint.
+
         :param url:
         :param data:
         :return:
