@@ -43,7 +43,7 @@ class EdFiSession:
         self.authenticated_at: int = None
         self.refresh_at: int = None
         self.auth_headers: dict = {}
-        self.access_token: str = None
+        self._access_token: str = None  # Lazy property defined in authenticate()
 
     def __bool__(self) -> bool:
         return bool(self.session)
@@ -122,13 +122,25 @@ class EdFiSession:
         auth_payload = auth_response.json()
         self.authenticated_at = int(time.time())
         self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in') - 120)
-        self.access_token = auth_payload.get('access_token')
+        self._access_token = auth_payload.get('access_token')
 
         self.auth_headers.update({
-            'Authorization': f"Bearer {self.access_token}",
+            'Authorization': f"Bearer {self._access_token}",
         })
         return self.auth_headers
+    
+    @property
+    def access_token(self) -> str:
+        """
+        Define lazy property if undefined.
+        This case should only arise when calling EdFiClient.get_token_info() without making another request first.
+        """
+        if not self._access_token:
+            self.authenticate()
+        return self._access_token
+    
 
+    ### REST Methods 
     def _with_exponential_backoff(func: Callable):
         """
         Decorator to apply exponential backoff during failed requests.

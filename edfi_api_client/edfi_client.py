@@ -276,7 +276,7 @@ class EdFiClient:
 
         token_response = self.session.post_response(
             token_info_url,
-            data={'token': self.session.access_token},
+            data={'token': self.session.access_token},  # This attribute is defined on first authentication.
             remove_snapshot_header=True  # The token_info endpoint is incompatible with snapshots.
         )
         token_response.raise_for_status()
