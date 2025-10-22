@@ -64,7 +64,7 @@ class EdFiClient:
 
         if self.api_version == 2:
             raise NotImplementedError(
-                "Ed-Fi 2 functionality has been deprecated. Use `pip install edfi_api_client==0.2.4` for Ed-Fi 2 ODSes."
+                "Ed-Fi 2 functionality has been deprecated. Use `pip install edfi_api_client~=0.2.0` for Ed-Fi 2 ODSes."
             )
 
         # Swagger variables for populating resource metadata (retrieved lazily)
