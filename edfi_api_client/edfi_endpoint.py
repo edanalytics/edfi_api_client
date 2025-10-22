@@ -98,7 +98,7 @@ class EdFiEndpoint:
             path_extra = None
 
         return util.url_join(
-            self.client.base_url, 'data/v3', self.client.get_instance_locator(),
+            self.client.base_url, 'data/v3', self.client.instance_locator,
             self.namespace, self.name, path_extra
         )
 
@@ -370,7 +370,7 @@ class EdFiComposite(EdFiEndpoint):
 
         :return:
         """
-        base_composite_url = util.url_join(self.client.base_url, 'composites/v1', self.client.get_instance_locator())
+        base_composite_url = util.url_join(self.client.base_url, 'composites/v1', self.client.instance_locator)
 
         # If a filter is applied, the URL changes to match the filter type.
         if self.filter_type is None and self.filter_id is None:

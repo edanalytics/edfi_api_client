@@ -61,7 +61,6 @@ class EdFiClient:
 
         # Build endpoint URL pieces
         self.version_url_string = "data/v3"
-        self.instance_locator = self.get_instance_locator()
 
         if self.api_version == 2:
             raise NotImplementedError(
@@ -212,7 +211,8 @@ class EdFiClient:
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
-    def get_instance_locator(self) -> Optional[str]:
+    @property
+    def instance_locator(self) -> Optional[str]:
         """
         Construct API URL components to resolve requests in a multi-ODS
 
@@ -289,7 +289,7 @@ class EdFiClient:
 
         :return:
         """
-        change_version_url = util.url_join(self.base_url, 'changeQueries/v1', self.get_instance_locator(), 'availableChangeVersions')
+        change_version_url = util.url_join(self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions')
         logging.info(f"[Get Newest Change Version] Endpoint: {change_version_url}")
 
         res = self.session.get_response(change_version_url)
