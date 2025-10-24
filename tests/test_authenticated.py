@@ -64,7 +64,7 @@ def test_get_token_info():
             "namespace_prefixes": ['uri://ed-fi.org/']
         },
         match=[
-            matchers.urlencoded_params_matcher({'token': TOKEN}),
+            matchers.json_params_matcher({'token': TOKEN}),
             matchers.header_matcher({"Authorization": f"Bearer {TOKEN}"})
         ]
     )
