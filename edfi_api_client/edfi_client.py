@@ -77,8 +77,7 @@ class EdFiClient:
         self._descriptors = None
 
         # Initialize lazy session object (do not connect until an ODS-request method is called)
-        oauth_url = util.url_join(self.base_url, 'oauth/token')
-        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret)
+        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret)
 
 
     def __repr__(self):
@@ -211,6 +210,25 @@ class EdFiClient:
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
+    @property
+    def oauth_url(self) -> str:
+        """
+        Construct the OAuth URL for authentication in Session.
+        Instance year-specific API modes require altered URL structure.
+
+        :return:
+        """
+        token_path = 'oauth/token'
+
+        if self.api_mode in ('instance_year_specific',):
+            if not self.instance_code:
+                raise ValueError(
+                    "`instance_code` required for 'instance_year_specific' mode."
+                )
+            token_path = util.url_join(self.instance_code, token_path)
+
+        return util.url_join(self.base_url, token_path)
+
     @property
     def instance_locator(self) -> Optional[str]:
         """
