@@ -23,5 +23,8 @@ setuptools.setup(
           'requests',
           'portalocker'
       ],
+      extras_require={
+          'test': ['pytest', 'responses']
+      },
       zip_safe=False,
 )

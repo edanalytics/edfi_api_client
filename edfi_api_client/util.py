@@ -36,6 +36,8 @@ def url_join(*args) -> str:
 def clean_post_row(row: Union[str, dict]) -> str:
     """
     Remove 'id' from a string or dictionary payload and force to a string.
+    These keys will cause posts to resource endpoints to fail.
+
     TODO: Can this be made more efficient?
     :return:
     """

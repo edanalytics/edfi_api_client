@@ -50,7 +50,7 @@ class EdFiSession:
         self.authenticated_at: int = None
         self.refresh_at: int = None
         self.auth_headers: dict = {}
-        self.access_token: str = None
+        self._access_token: str = None  # Lazy property defined in authenticate()
 
         # Set token persistence variables
         self.use_token_cache: bool = use_token_cache
@@ -147,15 +147,15 @@ class EdFiSession:
 
         # Track when connection was established and when to refresh the access token.
         self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
-        if self.refresh_at < time.time():
+        if self.refresh_at < int(time.time()):
             # picked up an already expired token; re-auth
             return self.authenticate()
 
-        self.access_token = auth_payload.get('access_token')
-        logging.info(f'Using token starting with {self.access_token[:5]}')
+        self._access_token = auth_payload.get('access_token')
+        logging.info(f'Using token starting with {self._access_token[:5]}')
 
         self.auth_headers.update({
-            'Authorization': f"Bearer {self.access_token}",
+            'Authorization': f"Bearer {self._access_token}",
         })
         return self.auth_headers
 
@@ -177,6 +177,7 @@ class EdFiSession:
 
             with self.token_cache.get_write_lock():
                 auth_payload = None
+                # if the cache was updated since we last checked, try to get the payload from it
 
                 if self.token_cache.get_last_modified() > self.last_token_sync_time:
                     try:
@@ -193,7 +194,11 @@ class EdFiSession:
 
         return auth_payload
 
-    def _make_auth_request(self):
+    def _make_auth_request(self) -> dict:
+        """
+        Makes auth request, updates authenticated_at, and returns payload
+        """
+
         # Apply snapshot header if specified.
         self.auth_headers.update({'Use-Snapshot': str(self.use_snapshot)})
 
@@ -207,10 +212,21 @@ class EdFiSession:
         auth_response.raise_for_status()
 
         auth_payload = auth_response.json()
-        self.authenticated_at = time.time()
+        self.authenticated_at = int(time.time())
 
         return auth_payload
-
+    
+    @property
+    def access_token(self) -> str:
+        """
+        Define lazy property if undefined.
+        This case should only arise when calling EdFiClient.get_token_info() without making another request first.
+        """
+        if not self._access_token:
+            self.authenticate()
+        return self._access_token
+    
+    ### REST Methods 
     def _with_exponential_backoff(func: Callable):
         """
         Decorator to apply exponential backoff during failed requests.
@@ -281,6 +297,9 @@ class EdFiSession:
         """
         Complete a POST request against an endpoint URL.
         Note: Responses are returned regardless of status.
+
+        The record is scrubbed of any IDs that would cause posts to resource endpoints to fail.
+        Note that these IDs are never present in posts used for authentication or the token info endpoint.
 
         :param url:
         :param data:

@@ -18,7 +18,7 @@ logging.basicConfig(
 def create_client_from_env(token_cache_lock_type='python_lockfile'):
     base_url = os.environ.get('EDFI_API_BASE_URL')
     client_secret = os.environ.get('EDFI_API_CLIENT_SECRET', 'testsecret')
-    client_key = os.environ.get('EDFI_API_CLIENT_KEY', 'testkey')
+    client_key = os.environ.get('EDFI_API_CLIENT_ID', 'testkey')
 
     if any([x is None for x in [base_url, client_secret, client_key]]):
         raise ValueError('Please provide valid credentials')

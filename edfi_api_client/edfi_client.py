@@ -64,11 +64,10 @@ class EdFiClient:
 
         # Build endpoint URL pieces
         self.version_url_string = "data/v3"
-        self.instance_locator = self.get_instance_locator()
 
         if self.api_version == 2:
             raise NotImplementedError(
-                "Ed-Fi 2 functionality has been deprecated. Use `pip install edfi_api_client==0.2.4` for Ed-Fi 2 ODSes."
+                "Ed-Fi 2 functionality has been deprecated. Use `pip install edfi_api_client~=0.2.0` for Ed-Fi 2 ODSes."
             )
 
         # Swagger variables for populating resource metadata (retrieved lazily)
@@ -81,8 +80,7 @@ class EdFiClient:
         self._descriptors = None
 
         # Initialize lazy session object (do not connect until an ODS-request method is called)
-        oauth_url = util.url_join(self.base_url, 'oauth/token')
-        self.session = EdFiSession(oauth_url, self.client_key, self.client_secret, self.use_token_cache, **kwargs)
+        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, self.use_token_cache, **kwargs)
 
 
     def __repr__(self):
@@ -215,7 +213,27 @@ class EdFiClient:
 
 
     ### Helper methods for building elements of endpoint URLs for GETs and POSTs
-    def get_instance_locator(self) -> Optional[str]:
+    @property
+    def oauth_url(self) -> str:
+        """
+        Construct the OAuth URL for authentication in Session.
+        Instance year-specific API modes require altered URL structure.
+
+        :return:
+        """
+        token_path = 'oauth/token'
+
+        if self.api_mode in ('instance_year_specific',):
+            if not self.instance_code:
+                raise ValueError(
+                    "`instance_code` required for 'instance_year_specific' mode."
+                )
+            token_path = util.url_join(self.instance_code, token_path)
+
+        return util.url_join(self.base_url, token_path)
+
+    @property
+    def instance_locator(self) -> Optional[str]:
         """
         Construct API URL components to resolve requests in a multi-ODS
 
@@ -279,7 +297,7 @@ class EdFiClient:
 
         token_response = self.session.post_response(
             token_info_url,
-            data={'token': self.session.access_token},
+            data={'token': self.session.access_token},  # This attribute is defined on first authentication.
             remove_snapshot_header=True  # The token_info endpoint is incompatible with snapshots.
         )
         token_response.raise_for_status()
@@ -292,7 +310,7 @@ class EdFiClient:
 
         :return:
         """
-        change_version_url = util.url_join(self.base_url, 'changeQueries/v1', self.get_instance_locator(), 'availableChangeVersions')
+        change_version_url = util.url_join(self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions')
         logging.info(f"[Get Newest Change Version] Endpoint: {change_version_url}")
 
         res = self.session.get_response(change_version_url)
