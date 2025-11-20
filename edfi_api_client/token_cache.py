@@ -13,17 +13,22 @@ class TokenCacheError(Exception):
 
 
 class BaseTokenCache(abc.ABC):
-    @abc.abstractmethod
-    def exists(self) -> bool:
-        raise NotImplementedError
+    cache_path: str = ...  # Defined in child class inits.
 
-    @abc.abstractmethod
+    def exists(self):
+        return os.path.exists(self.cache_path)
+
     def get_last_modified(self) -> int:
-        raise NotImplementedError
+        """Gets Unix time of when cache was last modified"""
+        if os.path.exists(self.cache_path):
+            return os.path.getmtime(self.cache_path)
+        else:
+            return 0
 
     @abc.abstractmethod
     def load(self) -> dict:
-        """Load value from cache
+        """
+        Load value from cache
 
         Should assume that a read or a write lock has already been acquired by
         caller.
@@ -32,7 +37,8 @@ class BaseTokenCache(abc.ABC):
 
     @abc.abstractmethod
     def update(self, value: dict):
-        """Update value in cache
+        """
+        Update value in cache
 
         Should assume that a read or a write lock has already been acquired by
         caller.
@@ -40,11 +46,11 @@ class BaseTokenCache(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_read_lock(self):
+    def get_read_lock(self, max_retries: int = 3):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_write_lock(self):
+    def get_write_lock(self, **kwargs):
         raise NotImplementedError
 
 
@@ -60,16 +66,12 @@ class LockfileTokenCache(BaseTokenCache):
         # Make sure parent directory exists
         os.makedirs(os.path.expanduser(token_cache_directory), exist_ok=True)
 
-    def exists(self):
-        return os.path.exists(self.cache_path)
-
-
     def load(self) -> dict: 
         """Loads value from cache"""
         try:
             logging.info(f'Loading cache from {self.cache_path}')
-            with open(self.cache_path, 'r') as f:
-                value = json.loads(f.read())
+            with open(self.cache_path, 'r') as fp:
+                value = json.loads(fp.read())
         except json.JSONDecodeError:
             raise TokenCacheError('Cache corruption')
         except FileNotFoundError:
@@ -77,32 +79,23 @@ class LockfileTokenCache(BaseTokenCache):
 
         return value
 
-
     def update(self, value: dict):
         """Updates cache with new value"""
-        with open(self.cache_path, 'w') as f:
-            logging.info(f'Writing cache to{self.cache_path}')
-            f.write(json.dumps(value))
-
-
-    def get_last_modified(self) -> int:
-        """Gets Unix time of when cache was last modified"""
-
-        if os.path.exists(self.cache_path):
-            return os.path.getmtime(self.cache_path)
-        else:
-            return 0
+        with open(self.cache_path, 'w') as fp:
+            logging.info(f'Writing cache to {self.cache_path}')
+            fp.write(json.dumps(value))
 
     @contextlib.contextmanager
-    def get_read_lock(self, max_retries=3):
+    def get_read_lock(self, **kwargs):
         # Optimistic
         yield True
 
     @contextlib.contextmanager
-    def get_write_lock(self, timeout=30, staleness_threshold=60):
+    def get_write_lock(self, timeout: int = 30, staleness_threshold: int = 60):
         try:
             timeout_end = time.time() + timeout
             acquired = False
+
             while time.time() <= timeout_end:
                 try:
                     if os.path.exists(self.lockfile_path):
@@ -115,17 +108,20 @@ class LockfileTokenCache(BaseTokenCache):
                     with open(self.lockfile_path, 'x') as f:
                         f.write(f'{os.getpid()}')
                         acquired = True
+                    
                     break
+
                 except FileExistsError as err:
                     time.sleep(0.25)
 
             if not acquired:
                 raise TokenCacheError('Unable to acquire write lock on token cache.')
+            
             yield acquired
+        
         finally:
             if acquired and os.path.exists(self.lockfile_path):
                 os.remove(self.lockfile_path)
-
 
 
 class PortalockerTokenCache(BaseTokenCache):
@@ -133,7 +129,7 @@ class PortalockerTokenCache(BaseTokenCache):
         self, 
         token_id,
         token_cache_directory: str = '~/.edfi-tokens',
-        default_timeout=20
+        default_timeout: int = 20
     ):
         self.cache_path: str = os.path.expanduser(f'{token_cache_directory}/{token_id}.json')
         self.default_timeout = default_timeout
@@ -153,20 +149,16 @@ class PortalockerTokenCache(BaseTokenCache):
         # Make sure parent directory exists
         os.makedirs(os.path.expanduser(token_cache_directory), exist_ok=True)
 
-    def exists(self):
-        return os.path.exists(self.cache_path)
-
-
     def load(self) -> dict: 
         """Loads value from cache"""
         try:
             logging.info(f'Loading cache from {self.cache_path}')
             if self.read_lock.fh:
-                f = self.read_lock.fh
-                value = json.loads(f.read())
+                fp = self.read_lock.fh
+                value = json.loads(fp.read())
             elif self.write_lock.fh:
-                f = self.write_lock.fh
-                value = json.loads(f.read())
+                fp = self.write_lock.fh
+                value = json.loads(fp.read())
             else:
                 raise TokenCacheError('Lock not held')
         except json.JSONDecodeError:
@@ -176,68 +168,61 @@ class PortalockerTokenCache(BaseTokenCache):
 
         return value
 
-
     def update(self, value: dict):
         """Updates cache with new value"""
         if self.write_lock.fh:
-            f = self.write_lock.fh
-            f.seek(0)
-            f.truncate()
+            fp = self.write_lock.fh
+            fp.seek(0)
+            fp.truncate()
         else:
             raise TokenCacheError('Lock not held')
-        logging.info(f'Writing cache to{self.cache_path}')
-        f.write(json.dumps(value))
-
-
-    def get_last_modified(self) -> int:
-        """Gets Unix time of when cache was last modified"""
-
-        if os.path.exists(self.cache_path):
-            return os.path.getmtime(self.cache_path)
-        else:
-            return 0
+        logging.info(f'Writing cache to {self.cache_path}')
+        fp.write(json.dumps(value))
 
     @contextlib.contextmanager
-    def get_read_lock(self, max_retries=3):
+    def get_read_lock(self, max_retries: int = 3):
         # A portalocker lock with non-blocking and a timeout set has its own repeated
         # retry logic; however, nice to surface some info in logs with our own retries.
         try:
             attempt = 0
-            f = None
+            fp = None
+
             while attempt <= max_retries:
                 try:
-                    f = self.read_lock.acquire()
+                    fp = self.read_lock.acquire()
                     break
                 except Exception as err:
                     logging.info(f'Failed to acquire read lock; {max_retries - attempt} tries left')
                     time.sleep(2**attempt)
                     attempt += 1
 
-            if not f:
+            if not fp:
                 raise TokenCacheError('Unable to acquire read lock on token cache.')
             else:
-                yield f
+                yield fp
+        
         finally:
             self.read_lock.release()
             
     @contextlib.contextmanager
-    def get_write_lock(self, max_retries=3):
+    def get_write_lock(self, max_retries: int = 3):
         try:
-            f = None
+            fp = None
             attempt = 0
+
             while attempt <= max_retries:
                 try:
-                    f = self.write_lock.acquire()
+                    fp = self.write_lock.acquire()
                     break
                 except portalocker.exceptions.LockException as err:
                     logging.info(f'Failed to acquire write lock; {max_retries - attempt} tries left')
                     time.sleep(2**attempt)
                     attempt += 1
 
-            if not f:
+            if not fp:
                 raise TokenCacheError('Unable to acquire write lock on token cache.')
-            yield f
+            
+            yield fp
+        
         finally:
             self.write_lock.release()
-
-            
