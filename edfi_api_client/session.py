@@ -166,6 +166,11 @@ class EdFiSession:
         self.auth_headers.update({
             'Authorization': f"Bearer {self._access_token}",
         })
+
+        # Apply snapshot header if specified.
+        if self.use_snapshot:
+            self.auth_headers.update({'Use-Snapshot': 'True'})
+
         return self.auth_headers
 
     def _load_or_update_token_from_cache(self, force_refresh: bool = False, max_retries: int = 3):
@@ -209,11 +214,6 @@ class EdFiSession:
         """
         Makes auth request, updates time attributes, and returns payload.
         """
-
-        # Apply snapshot header if specified.
-        self.auth_headers.update({'Use-Snapshot': str(self.use_snapshot)})
-
-        # Complete authentication.
         auth_response = requests.post(
             self.oauth_url,
             auth=HTTPBasicAuth(self.client_key, self.client_secret),
