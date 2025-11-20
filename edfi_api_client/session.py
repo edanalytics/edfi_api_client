@@ -177,7 +177,7 @@ class EdFiSession:
         # check to see if cache was updated more recently
         if self.token_cache.exists() and self.token_cache.get_last_modified() > self.last_token_sync_time and not force_refresh:
             try:
-                with self.token_cache.get_read_lock():
+                with self.token_cache.get_read_lock(max_retries=max_retries):
                     self.last_token_sync_time = time.time()
                     auth_payload = self.token_cache.load()
                     self.authenticated_at = self.token_cache.get_last_modified()
