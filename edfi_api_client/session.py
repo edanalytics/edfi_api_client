@@ -202,7 +202,8 @@ class EdFiSession:
                     auth_payload = self._make_auth_request()
                     self.token_cache.update(auth_payload)
 
-        # Re-auth if the retrieved token is alreads expired.
+        # Re-auth if the retrieved token is already expired.
+        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
         if self.refresh_at < int(time.time()):
             return self.authenticate()
 
@@ -223,8 +224,7 @@ class EdFiSession:
         # Track when connection was established and when to refresh the access token.
         auth_payload = auth_response.json()
         self.authenticated_at = int(time.time())
-        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
-
+        
         return auth_payload
     
 
