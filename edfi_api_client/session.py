@@ -9,8 +9,6 @@ from requests import HTTPError
 from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestsWarning
 
-import portalocker
-
 from edfi_api_client import util
 from edfi_api_client.token_cache import PortalockerTokenCache, LockfileTokenCache, TokenCacheError
 
@@ -55,8 +53,9 @@ class EdFiSession:
         # Set token persistence variables
         self.use_token_cache: bool = use_token_cache
         self.token_cache_lock_type: str = token_cache_lock_type
+
+        # Optional unique cache backing for each base url / client key combination
         if self.use_token_cache:
-            # unique cache backing for each base url / client key combination
             instance_client_id = hashlib.md5(self.oauth_url.encode('utf-8'))
             instance_client_id.update(self.client_key.encode('utf-8'))
 
@@ -117,17 +116,27 @@ class EdFiSession:
 
 
     ### Methods to assist in authentication and retries.
+    @property
+    def access_token(self) -> str:
+        """
+        Define lazy property if undefined.
+        This case should only arise when calling EdFiClient.get_token_info() without making another request first.
+        """
+        if not self._access_token:
+            self.authenticate()
+        return self._access_token
+
     def authenticate(self) -> dict:
         """
         Note: This function is identical in both synchronous and asynchronous sessions.
         """
-        # Ensure the connection has been established before trying to refresh.
+        # Short-circuit if user calls auth-required methods without passing auth arguments.
         if not (self.client_key and self.client_secret):
             raise requests.exceptions.ConnectionError(
                 "An established connection to the ODS is required! Provide the client_key and client_secret in EdFiClient arguments."
             )
         
-        # It no manual connection was made (note: async may require a different approach)
+        # Ensure the connection has been established before trying to refresh. (note: async may require a different approach)
         if not self.session:
             self.connect()
             return self.auth_headers
@@ -139,17 +148,11 @@ class EdFiSession:
             else:
                 return self.auth_headers
 
-        # last_token_sync_time stored as instance variable, not in payload
+        # Retrieve cached token if present, otherwise (re)authenticate.
         if self.use_token_cache:
             auth_payload = self._load_or_update_token_from_cache()
         else:
             auth_payload = self._make_auth_request()
-
-        # Track when connection was established and when to refresh the access token.
-        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
-        if self.refresh_at < int(time.time()):
-            # picked up an already expired token; re-auth
-            return self.authenticate()
 
         self._access_token = auth_payload.get('access_token')
         logging.info(f'Using token starting with {self._access_token[:5]}')
@@ -157,28 +160,35 @@ class EdFiSession:
         self.auth_headers.update({
             'Authorization': f"Bearer {self._access_token}",
         })
+
+        # Apply snapshot header if specified.
+        if self.use_snapshot:
+            self.auth_headers.update({'Use-Snapshot': 'True'})
+
         return self.auth_headers
 
-    def _load_or_update_token_from_cache(self, force_refresh=False, max_retries=3):
+    def _load_or_update_token_from_cache(self, force_refresh: bool = False, max_retries: int = 3):
         # check to see if cache was updated more recently
         if self.token_cache.exists() and self.token_cache.get_last_modified() > self.last_token_sync_time and not force_refresh:
             try:
-                with self.token_cache.get_read_lock():
+                with self.token_cache.get_read_lock(max_retries=max_retries):
                     self.last_token_sync_time = time.time()
                     auth_payload = self.token_cache.load()
                     self.authenticated_at = self.token_cache.get_last_modified()
             except TokenCacheError: 
                 # dirty read; cache miss; lock failure
                 auth_payload = None
+            
             if not auth_payload:
                 return self._load_or_update_token_from_cache(force_refresh=True)
+        
         else:
             logging.info('Token cache miss; attempting to get write lock')
 
             with self.token_cache.get_write_lock():
                 auth_payload = None
-                # if the cache was updated since we last checked, try to get the payload from it
 
+                # if the cache was updated since we last checked, try to get the payload from it
                 if self.token_cache.get_last_modified() > self.last_token_sync_time:
                     try:
                         # even if force_refresh is set?
@@ -192,17 +202,17 @@ class EdFiSession:
                     auth_payload = self._make_auth_request()
                     self.token_cache.update(auth_payload)
 
+        # Re-auth if the retrieved token is already expired.
+        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
+        if self.refresh_at < int(time.time()):
+            return self.authenticate()
+
         return auth_payload
 
     def _make_auth_request(self) -> dict:
         """
-        Makes auth request, updates authenticated_at, and returns payload
+        Makes auth request, updates time attributes, and returns payload.
         """
-
-        # Apply snapshot header if specified.
-        self.auth_headers.update({'Use-Snapshot': str(self.use_snapshot)})
-
-        # Complete authentication.
         auth_response = requests.post(
             self.oauth_url,
             auth=HTTPBasicAuth(self.client_key, self.client_secret),
@@ -211,21 +221,13 @@ class EdFiSession:
         )
         auth_response.raise_for_status()
 
+        # Track when connection was established and when to refresh the access token.
         auth_payload = auth_response.json()
         self.authenticated_at = int(time.time())
-
+        
         return auth_payload
     
-    @property
-    def access_token(self) -> str:
-        """
-        Define lazy property if undefined.
-        This case should only arise when calling EdFiClient.get_token_info() without making another request first.
-        """
-        if not self._access_token:
-            self.authenticate()
-        return self._access_token
-    
+
     ### REST Methods 
     def _with_exponential_backoff(func: Callable):
         """
