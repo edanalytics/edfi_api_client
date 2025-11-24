@@ -13,17 +13,13 @@ class TokenCacheError(Exception):
 
 
 class BaseTokenCache(abc.ABC):
-    cache_path: str = ...  # Defined in child class inits.
+    @abc.abstractmethod
+    def exists(self) -> bool:
+        raise NotImplementedError
 
-    def exists(self):
-        return os.path.exists(self.cache_path)
-
+    @abc.abstractmethod
     def get_last_modified(self) -> int:
-        """Gets Unix time of when cache was last modified"""
-        if os.path.exists(self.cache_path):
-            return os.path.getmtime(self.cache_path)
-        else:
-            return 0
+        raise NotImplementedError
 
     @abc.abstractmethod
     def load(self) -> dict:
@@ -65,6 +61,16 @@ class LockfileTokenCache(BaseTokenCache):
 
         # Make sure parent directory exists
         os.makedirs(os.path.expanduser(token_cache_directory), exist_ok=True)
+
+    def exists(self):
+        return os.path.exists(self.cache_path)
+
+    def get_last_modified(self) -> int:
+        """Gets Unix time of when cache was last modified"""
+        if os.path.exists(self.cache_path):
+            return os.path.getmtime(self.cache_path)
+        else:
+            return 0
 
     def load(self) -> dict: 
         """Loads value from cache"""
@@ -148,6 +154,16 @@ class PortalockerTokenCache(BaseTokenCache):
 
         # Make sure parent directory exists
         os.makedirs(os.path.expanduser(token_cache_directory), exist_ok=True)
+
+    def exists(self):
+        return os.path.exists(self.cache_path)
+
+    def get_last_modified(self) -> int:
+        """Gets Unix time of when cache was last modified"""
+        if os.path.exists(self.cache_path):
+            return os.path.getmtime(self.cache_path)
+        else:
+            return 0
 
     def load(self) -> dict: 
         """Loads value from cache"""
