@@ -9,13 +9,15 @@ import pytest
 import portalocker
 
 from edfi_api_client import EdFiClient
+from edfi_api_client.token_cache import LockfileTokenCache
 
 logging.basicConfig(
     level=logging.DEBUG,
     format='[%(asctime)s] %(levelname)s %(name)s.%(funcName)s:%(lineno)d %(message)s'
 )
 
-def create_client_from_env(token_cache_lock_type='python_lockfile'):
+def create_client_from_env():
+    """Instantiates an EdFiClient with a pure-Python lockfile token cache"""
     base_url = os.environ.get('EDFI_API_BASE_URL')
     client_secret = os.environ.get('EDFI_API_CLIENT_SECRET', 'testsecret')
     client_key = os.environ.get('EDFI_API_CLIENT_ID', 'testkey')
@@ -27,13 +29,12 @@ def create_client_from_env(token_cache_lock_type='python_lockfile'):
         base_url=base_url, 
         client_key=client_key, 
         client_secret=client_secret,
-        use_token_cache=True,
-        token_cache_lock_type=token_cache_lock_type
+        token_cache=LockfileTokenCache()
     )
 
     return api
 
-def get_token(i):
+def create_client_and_get_token(i):
     api = create_client_from_env()
     
     try:
@@ -48,7 +49,7 @@ def get_token(i):
 
 def test_multiprocessing_uses_same_token():
     with Pool(25) as p:
-        tokens = p.map(get_token, range(100))
+        tokens = p.map(create_client_and_get_token, range(100))
     token_counts = Counter(tokens)
     logging.info(token_counts)
     assert (
@@ -62,7 +63,7 @@ def test_multiprocessing_with_forced_refreshes():
     token_path = api.session.token_cache.cache_path
 
     with Pool(25) as p:
-        results = p.map_async(get_token, range(100))
+        results = p.map_async(create_client_and_get_token, range(100))
 
         # force cache invalidations to simulate token expiry
         refresh_counter = 0

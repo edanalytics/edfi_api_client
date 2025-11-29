@@ -5,6 +5,8 @@ import logging
 import abc
 import contextlib
 
+from typing import Union
+
 import portalocker
 
 
@@ -36,31 +38,51 @@ class BaseTokenCache(abc.ABC):
         """
         Update value in cache
 
-        Should assume that a read or a write lock has already been acquired by
-        caller.
+        Should assume that a write lock has already been acquired by caller.
         """
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_read_lock(self, max_retries: int = 3):
+    def get_read_lock(self, **kwargs):
         raise NotImplementedError
 
     @abc.abstractmethod
     def get_write_lock(self, **kwargs):
         raise NotImplementedError
 
+    @property
+    @abc.abstractmethod
+    def token_id(self):
+        raise NotImplementedError
+
+    @token_id.setter
+    @abc.abstractmethod
+    def token_id(self, val):
+        raise NotImplementedError
+
 
 class LockfileTokenCache(BaseTokenCache):
     def __init__(
         self, 
-        token_id,
-        token_cache_directory: str = '~/.edfi-tokens',
+        token_cache_directory: Union[str, os.PathLike] = '~/.edfi-tokens',
     ):
-        self.cache_path: str = os.path.expanduser(f'{token_cache_directory}/{token_id}.json')
-        self.lockfile_path: str = self.cache_path + '.lock'
+        self.token_cache_directory = token_cache_directory
+        self._token_id = None # updated after instantiation by EdFiSession
 
         # Make sure parent directory exists
-        os.makedirs(os.path.expanduser(token_cache_directory), exist_ok=True)
+        os.makedirs(os.path.expanduser(self.token_cache_directory), exist_ok=True)
+
+    @property
+    def token_id(self):
+        return self._token_id
+    
+    @token_id.setter
+    def token_id(self, val):
+        self._token_id = val
+        
+        # Update associated paths
+        self.cache_path = os.path.expanduser(f'{self.token_cache_directory}/{self._token_id}.json')
+        self.lockfile_path = self.cache_path + '.lock'
 
     def exists(self):
         return os.path.exists(self.cache_path)
@@ -117,7 +139,12 @@ class LockfileTokenCache(BaseTokenCache):
                     
                     break
 
+                except FileNotFoundError as err:
+                    # case where lockfile is removed in between check for lockfile and getmtime
+                    time.sleep(0.25)
+                    
                 except FileExistsError as err:
+                    # TODO; make sleep time configurable?
                     time.sleep(0.25)
 
             if not acquired:
