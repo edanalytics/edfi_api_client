@@ -28,8 +28,7 @@ class EdFiSession:
         oauth_url: str,
         client_key: Optional[str],
         client_secret: Optional[str],
-        use_token_cache: bool = False,
-        token_cache_lock_type: str = 'python_lockfile',
+        token_cache: Optional['BaseTokenCache'] = None,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
@@ -50,29 +49,13 @@ class EdFiSession:
         self.auth_headers: dict = {}
         self._access_token: str = None  # Lazy property defined in authenticate()
 
-        # Set token persistence variables
-        self.use_token_cache: bool = use_token_cache
-        self.token_cache_lock_type: str = token_cache_lock_type
-
         # Optional unique cache backing for each base url / client key combination
-        if self.use_token_cache:
+        self.token_cache = token_cache
+        if self.token_cache is not None:
             instance_client_id = hashlib.md5(self.oauth_url.encode('utf-8'))
             instance_client_id.update(self.client_key.encode('utf-8'))
 
-            match self.token_cache_lock_type:
-                case 'portalocker':
-                    self.token_cache = PortalockerTokenCache(
-                        token_id=instance_client_id.hexdigest(),
-                        token_cache_directory='~/.edfi-tokens'
-                    )
-                case 'python_lockfile':
-                    self.token_cache = LockfileTokenCache(
-                        token_id=instance_client_id.hexdigest(),
-                        token_cache_directory='~/.edfi-tokens'
-                    )
-                case _:
-                    raise('Not a valid lock type')
-
+            self.token_cache.token_id = instance_client_id.hexdigest()
             self.last_token_sync_time: int = 0
 
 
@@ -149,7 +132,7 @@ class EdFiSession:
                 return self.auth_headers
 
         # Retrieve cached token if present, otherwise (re)authenticate.
-        if self.use_token_cache:
+        if self.token_cache:
             auth_payload = self._load_or_update_token_from_cache()
         else:
             auth_payload = self._make_auth_request()
@@ -157,6 +140,7 @@ class EdFiSession:
         self._access_token = auth_payload.get('access_token')
         logging.info(f'Using token starting with {self._access_token[:5]}')
 
+        # Update headers
         self.auth_headers.update({
             'Authorization': f"Bearer {self._access_token}",
         })
@@ -167,34 +151,29 @@ class EdFiSession:
 
         return self.auth_headers
 
-    def _load_or_update_token_from_cache(self, force_refresh: bool = False, max_retries: int = 3):
+    def _load_or_update_token_from_cache(self, force_write_lock: bool = False):
         # check to see if cache was updated more recently
-        if self.token_cache.exists() and self.token_cache.get_last_modified() > self.last_token_sync_time and not force_refresh:
+        if self.token_cache.exists() and self.token_cache.get_last_modified() > self.last_token_sync_time and not force_write_lock:
             try:
-                with self.token_cache.get_read_lock(max_retries=max_retries):
-                    self.last_token_sync_time = time.time()
-                    auth_payload = self.token_cache.load()
-                    self.authenticated_at = self.token_cache.get_last_modified()
+                with self.token_cache.get_read_lock():
+                    auth_payload = self._load_token_from_cache()
             except TokenCacheError: 
                 # dirty read; cache miss; lock failure
                 auth_payload = None
             
             if not auth_payload:
-                return self._load_or_update_token_from_cache(force_refresh=True)
+                return self._load_or_update_token_from_cache(force_write_lock=True)
         
         else:
-            logging.info('Token cache miss; attempting to get write lock')
+            logging.info('Token cache is stale; attempting to get write lock')
 
             with self.token_cache.get_write_lock():
                 auth_payload = None
 
-                # if the cache was updated since we last checked, try to get the payload from it
+                # cache may have updated since we last checked
                 if self.token_cache.get_last_modified() > self.last_token_sync_time:
                     try:
-                        # even if force_refresh is set?
-                        self.last_token_sync_time = time.time()
-                        auth_payload = self.token_cache.load()
-                        self.authenticated_at = self.token_cache.get_last_modified()
+                        auth_payload = self._load_token_from_cache()
                     except TokenCacheError:
                         auth_payload = None
 
@@ -203,7 +182,6 @@ class EdFiSession:
                     self.token_cache.update(auth_payload)
 
         # Re-auth if the retrieved token is already expired.
-        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
         if self.refresh_at < int(time.time()):
             return self.authenticate()
 
@@ -220,12 +198,26 @@ class EdFiSession:
             verify=self.verify_ssl
         )
         auth_response.raise_for_status()
+        auth_payload = auth_response.json()
 
         # Track when connection was established and when to refresh the access token.
-        auth_payload = auth_response.json()
         self.authenticated_at = int(time.time())
+        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
         
         return auth_payload
+
+    def _load_token_from_cache(self) -> dict:
+        """
+        Loads token from cache, updates time attributes, and returns payload
+        """
+        self.last_token_sync_time = time.time()
+        auth_payload = self.token_cache.load()
+
+        self.authenticated_at = self.token_cache.get_last_modified()
+        self.refresh_at = int(self.authenticated_at + auth_payload.get('expires_in', 0) - 120)
+        
+        return auth_payload
+
     
 
     ### REST Methods 
