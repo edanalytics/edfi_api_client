@@ -67,7 +67,7 @@ def test_multiprocessing_with_forced_refreshes():
         # force cache invalidations to simulate token expiry
         refresh_counter = 0
         while not results.ready():
-            time.sleep(random.randint(1, 10))
+            time.sleep(random.randint(1, 10)/5)
             if os.path.exists(token_path):
                 os.remove(token_path)
             refresh_counter += 1
