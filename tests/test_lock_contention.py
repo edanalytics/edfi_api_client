@@ -6,7 +6,6 @@ from multiprocessing import Pool
 from collections import Counter
 
 import pytest
-import portalocker
 
 from edfi_api_client import EdFiClient
 from edfi_api_client.token_cache import LockfileTokenCache

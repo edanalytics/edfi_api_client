@@ -21,8 +21,7 @@ setuptools.setup(
     python_requires='>=3.10',
     packages=['edfi_api_client'],
     install_requires=[
-        'requests',
-        'portalocker'
+        'requests'
     ],
     extras_require={
         'test': ['pytest', 'responses']
