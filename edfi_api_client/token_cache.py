@@ -60,15 +60,32 @@ class BaseTokenCache(abc.ABC):
 
 
 class LockfileTokenCache(BaseTokenCache):
+    """
+    On-disk token cache coordinated with a lockfile, dependent on OS
+    implementation of exclusive file creation. 
+    """
+
     def __init__(
         self, 
         token_cache_directory: Union[str, os.PathLike] = '~/.edfi-tokens',
+        write_lock_timeout: int = 30,
+        write_lock_staleness_threshold: int = 60,
+        write_lock_retry_delay: float = 0.5
     ):
+        # On-disk token cache instance variables
         self.token_cache_directory = token_cache_directory
-        self._token_id = None # updated after instantiation by EdFiSession
-
-        # Make sure parent directory exists
         os.makedirs(os.path.expanduser(self.token_cache_directory), exist_ok=True)
+
+        # Token id passed in after instantiation by EdFiSession; initialize associated
+        # paths to None
+        self._token_id = None
+        self.cache_path = None
+        self.lockfile_path = None
+
+        # Other configuration instance variables
+        self.write_lock_timeout = write_lock_timeout
+        self.write_lock_staleness_threshold = write_lock_staleness_threshold
+        self.write_lock_retry_delay = write_lock_retry_delay
 
     @property
     def token_id(self):
@@ -117,16 +134,16 @@ class LockfileTokenCache(BaseTokenCache):
         yield True
 
     @contextlib.contextmanager
-    def get_write_lock(self, timeout: int = 30, staleness_threshold: int = 60):
+    def get_write_lock(self):
         try:
-            timeout_end = time.time() + timeout
+            timeout_end = time.time() + self.write_lock_timeout
             acquired = False
 
             while time.time() <= timeout_end:
                 try:
                     if os.path.exists(self.lockfile_path):
                         lockfile_age = time.time() - os.path.getmtime(self.lockfile_path)
-                        if lockfile_age > staleness_threshold: 
+                        if lockfile_age > self.write_lock_staleness_threshold: 
                             # assume another client died while holding the lock
                             logging.info(f'Lockfile at {self.lockfile_path} touched more than {staleness_threshold}s ago. Removing lockfile.')
                             os.remove(self.lockfile_path)
@@ -139,11 +156,11 @@ class LockfileTokenCache(BaseTokenCache):
 
                 except FileNotFoundError as err:
                     # case where lockfile is removed in between check for lockfile and getmtime
-                    time.sleep(0.25)
+                    time.sleep(self.write_lock_retry_delay)
                     
                 except FileExistsError as err:
-                    # TODO; make sleep time configurable?
-                    time.sleep(0.25)
+                    # case where lockfile already exists and it is not yet considered stale
+                    time.sleep(self.write_lock_retry_delay)
 
             if not acquired:
                 raise TokenCacheError('Unable to acquire write lock on token cache.')
