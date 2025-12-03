@@ -176,7 +176,7 @@ class EdFiClient:
         :return: Swagger specification definition, as a dictionary.
         """
         swagger_url = util.url_join(
-            self.base_url, 'metadata', self.version_url_string, component, 'swagger.json'
+            self.base_url, 'metadata', self.version_url_string, self.instance_locator, component, 'swagger.json'
         )
 
         payload = requests.get(swagger_url, verify=self.verify_ssl).json()
