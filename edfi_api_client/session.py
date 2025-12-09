@@ -2,7 +2,6 @@ import functools
 import logging
 import time
 import os
-import hashlib
 
 import requests
 from requests import HTTPError
@@ -52,10 +51,7 @@ class EdFiSession:
         # Optional unique cache backing for each base url / client key combination
         self.token_cache = token_cache
         if self.token_cache is not None:
-            instance_client_id = hashlib.md5(self.oauth_url.encode('utf-8'))
-            instance_client_id.update(self.client_key.encode('utf-8'))
-
-            self.token_cache.token_id = instance_client_id.hexdigest()
+            self.token_cache.session = self
             self.last_token_sync_time: int = 0
 
 
