@@ -4,6 +4,7 @@ import json
 import logging
 import abc
 import contextlib
+import hashlib
 
 from typing import Union
 
@@ -13,6 +14,9 @@ class TokenCacheError(Exception):
 
 
 class BaseTokenCache(abc.ABC):
+    """Base interface for a single EdFiSession, having a single oauth url /
+    client key"""
+
     @abc.abstractmethod
     def exists(self) -> bool:
         raise NotImplementedError
@@ -47,15 +51,17 @@ class BaseTokenCache(abc.ABC):
     @abc.abstractmethod
     def get_write_lock(self, **kwargs):
         raise NotImplementedError
-
+    
+    # EdFiSession should pass in a reference to itself to provide access
+    # to any needed attributes, such as OAuth URL or client ID
     @property
     @abc.abstractmethod
-    def token_id(self):
+    def session(self):
         raise NotImplementedError
 
-    @token_id.setter
+    @session.setter
     @abc.abstractmethod
-    def token_id(self, val):
+    def session(self, val):
         raise NotImplementedError
 
 
@@ -78,6 +84,7 @@ class LockfileTokenCache(BaseTokenCache):
 
         # Token id passed in after instantiation by EdFiSession; initialize associated
         # paths to None
+        self._session = None
         self._token_id = None
         self.cache_path = None
         self.lockfile_path = None
@@ -88,13 +95,18 @@ class LockfileTokenCache(BaseTokenCache):
         self.write_lock_retry_delay = write_lock_retry_delay
 
     @property
-    def token_id(self):
-        return self._token_id
-    
-    @token_id.setter
-    def token_id(self, val):
-        self._token_id = val
-        
+    def session(self):
+        return self._session
+
+    @session.setter
+    def session(self, val):
+        self._session = val
+
+        # Hash oauth url and client key for unique filename
+        instance_client_id = hashlib.md5(self._session.oauth_url.encode('utf-8'))
+        instance_client_id.update(self._session.client_key.encode('utf-8'))
+        self._token_id = instance_client_id.hexdigest()
+
         # Update associated paths
         self.cache_path = os.path.expanduser(f'{self.token_cache_directory}/{self._token_id}.json')
         self.lockfile_path = self.cache_path + '.lock'
