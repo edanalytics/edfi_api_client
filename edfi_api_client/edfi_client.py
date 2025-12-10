@@ -7,6 +7,7 @@ from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.edfi_swagger import EdFiSwagger
 from edfi_api_client.session import EdFiSession
+from edfi_api_client.token_cache import BaseTokenCache
 
 
 import logging
@@ -45,7 +46,7 @@ class EdFiClient:
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
-        token_cache: Optional['BaseTokenCache'] = None,
+        token_cache: Optional[BaseTokenCache] = None,
         **kwargs
     ):
         # Update logger first

@@ -5,8 +5,12 @@ import logging
 import abc
 import contextlib
 import hashlib
+from pathlib import Path
 
-from typing import Union
+from typing import Union, Optional
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from edfi_api_client.session import EdFiSession
 
 
 class TokenCacheError(Exception):
@@ -84,10 +88,10 @@ class LockfileTokenCache(BaseTokenCache):
 
         # Token id passed in after instantiation by EdFiSession; initialize associated
         # paths to None
-        self._session = None
-        self._token_id = None
-        self.cache_path = None
-        self.lockfile_path = None
+        self._session: Optional[EdFiSession] = None
+        self._token_id : str = 'default'
+        self.cache_path : os.PathLike = Path(self.token_cache_directory) / 'default.json'
+        self.lockfile_path : os.PathLike = Path(self.token_cache_directory) / 'default.json.lock'
 
         # Other configuration instance variables
         self.write_lock_timeout = write_lock_timeout
@@ -117,7 +121,7 @@ class LockfileTokenCache(BaseTokenCache):
     def get_last_modified(self) -> int:
         """Gets Unix time of when cache was last modified"""
         if os.path.exists(self.cache_path):
-            return os.path.getmtime(self.cache_path)
+            return int(os.path.getmtime(self.cache_path))
         else:
             return 0
 
@@ -166,11 +170,11 @@ class LockfileTokenCache(BaseTokenCache):
                     
                     break
 
-                except FileNotFoundError as err:
+                except FileNotFoundError:
                     # case where lockfile is removed in between check for lockfile and getmtime
                     time.sleep(self.write_lock_retry_delay)
                     
-                except FileExistsError as err:
+                except FileExistsError:
                     # case where lockfile already exists and it is not yet considered stale
                     time.sleep(self.write_lock_retry_delay)
 

@@ -1,7 +1,6 @@
 import functools
 import logging
 import time
-import os
 
 import requests
 from requests import HTTPError
@@ -11,7 +10,7 @@ from requests.exceptions import RequestsWarning
 from edfi_api_client import util
 from edfi_api_client.token_cache import BaseTokenCache, TokenCacheError
 
-from typing import Callable, Optional, Set, Union
+from typing import Callable, Optional, Set, Union, cast
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_params import EdFiParams
@@ -35,7 +34,7 @@ class EdFiSession:
         self.client_secret: Optional[str] = client_secret
 
         # Session attributes refresh on EdFiSession.connect().
-        self.session: requests.Session = None
+        self.session: Optional[requests.Session] = None
         self.verify_ssl: bool = None
         self.retry_on_failure: bool = None
         self.max_retries: int = None
@@ -46,10 +45,10 @@ class EdFiSession:
         self.authenticated_at: int = None
         self.refresh_at: int = None
         self.auth_headers: dict = {}
-        self._access_token: str = None  # Lazy property defined in authenticate()
+        self._access_token: Optional[str] = None  # Lazy property defined in authenticate()
 
         # Optional unique cache backing for each base url / client key combination
-        self.token_cache = token_cache
+        self.token_cache: Optional[BaseTokenCache] = token_cache
         if self.token_cache is not None:
             self.token_cache.session = self
             self.last_token_sync_time: int = 0
@@ -62,8 +61,9 @@ class EdFiSession:
         return self
 
     def __exit__(self):
-        self.session.close()
-        self.session = None  # Force session to reset between context loops.
+        if self.session is not None:
+            self.session.close()
+            self.session = None  # Force session to reset between context loops.
 
     def connect(self, *,
         retry_on_failure: bool = False,
@@ -91,7 +91,7 @@ class EdFiSession:
         # Update time attributes and auth headers with latest authentication information.
         self.authenticate()
         
-        return self
+        return self.session
 
 
     ### Methods to assist in authentication and retries.
@@ -103,6 +103,7 @@ class EdFiSession:
         """
         if not self._access_token:
             self.authenticate()
+        self._access_token = cast(str, self._access_token) # guaranteed value by authenticate
         return self._access_token
 
     def authenticate(self) -> dict:
@@ -133,7 +134,7 @@ class EdFiSession:
         else:
             auth_payload = self._make_auth_request()
 
-        self._access_token = auth_payload.get('access_token')
+        self._access_token = auth_payload.get('access_token', '')
         logging.info(f'Using token starting with {self._access_token[:5]}')
 
         # Update headers
@@ -148,6 +149,7 @@ class EdFiSession:
         return self.auth_headers
 
     def _load_or_update_token_from_cache(self, force_write_lock: bool = False):
+        self.token_cache = cast(BaseTokenCache, self.token_cache)
         # check to see if cache was updated more recently
         if self.token_cache.exists() and self.token_cache.get_last_modified() > self.last_token_sync_time and not force_write_lock:
             try:
@@ -206,7 +208,9 @@ class EdFiSession:
         """
         Loads token from cache, updates time attributes, and returns payload
         """
-        self.last_token_sync_time = time.time()
+        self.token_cache = cast(BaseTokenCache, self.token_cache) # guarantee for type checker
+
+        self.last_token_sync_time = int(time.time())
         auth_payload = self.token_cache.load()
 
         self.authenticated_at = self.token_cache.get_last_modified()
@@ -279,6 +283,7 @@ class EdFiSession:
         :return:
         """
         self.authenticate()  # Always try to re-authenticate
+        self.session = cast(requests.Session, self.session)
 
         return self.session.get(url, headers=self.auth_headers, params=params)
 
@@ -296,6 +301,7 @@ class EdFiSession:
         :return:
         """
         self.authenticate()  # Always try to re-authenticate
+        self.session = cast(requests.Session, self.session)
 
         post_headers = {
             "accept": "application/json",
@@ -322,6 +328,7 @@ class EdFiSession:
         :return:
         """
         self.authenticate()  # Always try to re-authenticate
+        self.session = cast(requests.Session, self.session)
 
         delete_url = util.url_join(url, id)
         return self.session.delete(delete_url, headers=self.auth_headers, **kwargs)
@@ -336,6 +343,7 @@ class EdFiSession:
         :param data:
         """
         self.authenticate()  # Always try to re-authenticate
+        self.session = cast(requests.Session, self.session)
 
         put_url = util.url_join(url, id)
         return self.session.put(put_url, headers=self.auth_headers, json=data, verify=self.verify_ssl, **kwargs)

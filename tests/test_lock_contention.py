@@ -5,8 +5,6 @@ import random
 from multiprocessing import Pool
 from collections import Counter
 
-import pytest
-
 from edfi_api_client import EdFiClient
 from edfi_api_client.token_cache import LockfileTokenCache
 
@@ -17,7 +15,7 @@ logging.basicConfig(
 
 def create_client_from_env():
     """Instantiates an EdFiClient with a pure-Python lockfile token cache"""
-    base_url = os.environ.get('EDFI_API_BASE_URL')
+    base_url = os.environ.get('EDFI_API_BASE_URL', '')
     client_secret = os.environ.get('EDFI_API_CLIENT_SECRET', 'testsecret')
     client_key = os.environ.get('EDFI_API_CLIENT_ID', 'testkey')
 
