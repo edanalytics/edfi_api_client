@@ -7,6 +7,7 @@ from edfi_api_client import util
 from edfi_api_client.edfi_endpoint import EdFiResource, EdFiDescriptor, EdFiComposite
 from edfi_api_client.edfi_swagger import EdFiSwagger
 from edfi_api_client.session import EdFiSession
+from edfi_api_client.token_cache import BaseTokenCache
 
 
 import logging
@@ -28,6 +29,8 @@ class EdFiClient:
     :param api_mode: ['shared_instance', 'sandbox', 'district_specific', 'year_specific', 'instance_year_specific']
     :param api_year: Required only for 'year_specific' or 'instance_year_specific' modes
     :param instance_code: Only required for 'instance_specific' or 'instance_year_specific modes'
+    
+    :param token_cache: Optionally pass in an implementation of BaseTokenCache to persist tokens, e.g. to disk via LockfileTokenCache
     """
 
     def __init__(self,
@@ -43,6 +46,8 @@ class EdFiClient:
 
         verify_ssl   : bool = True,
         verbose      : bool = False,
+        token_cache: Optional[BaseTokenCache] = None,
+        **kwargs
     ):
         # Update logger first
         if verbose:
@@ -58,6 +63,7 @@ class EdFiClient:
         self.api_mode = api_mode or self.get_api_mode()
         self.api_year = api_year
         self.instance_code = instance_code
+        self.token_cache = token_cache
 
         # Build endpoint URL pieces
         self.version_url_string = "data/v3"
@@ -77,7 +83,7 @@ class EdFiClient:
         self._descriptors = None
 
         # Initialize lazy session object (do not connect until an ODS-request method is called)
-        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret)
+        self.session = EdFiSession(self.oauth_url, self.client_key, self.client_secret, self.token_cache, **kwargs)
 
 
     def __repr__(self):

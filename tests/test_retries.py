@@ -181,7 +181,7 @@ def test_default_no_retry():
 
     client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
     with pytest.raises(HTTPError, match=r".*time-out.*"):
-        schools = list(client.resource('schools').get_rows())
+        _ = list(client.resource('schools').get_rows())
         assert(school_rsp.call_count == 1)
 
 
