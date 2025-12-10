@@ -157,7 +157,7 @@ class LockfileTokenCache(BaseTokenCache):
                         lockfile_age = time.time() - os.path.getmtime(self.lockfile_path)
                         if lockfile_age > self.write_lock_staleness_threshold: 
                             # assume another client died while holding the lock
-                            logging.info(f'Lockfile at {self.lockfile_path} touched more than {staleness_threshold}s ago. Removing lockfile.')
+                            logging.info(f'Lockfile at {self.lockfile_path} touched more than {self.write_lock_staleness_threshold}s ago. Removing lockfile.')
                             os.remove(self.lockfile_path)
                     
                     with open(self.lockfile_path, 'x') as f:
