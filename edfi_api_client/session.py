@@ -9,7 +9,7 @@ from requests.auth import HTTPBasicAuth
 from requests.exceptions import RequestsWarning
 
 from edfi_api_client import util
-from edfi_api_client.token_cache import LockfileTokenCache, TokenCacheError
+from edfi_api_client.token_cache import BaseTokenCache, TokenCacheError
 
 from typing import Callable, Optional, Set, Union
 from typing import TYPE_CHECKING
@@ -27,7 +27,7 @@ class EdFiSession:
         oauth_url: str,
         client_key: Optional[str],
         client_secret: Optional[str],
-        token_cache: Optional['BaseTokenCache'] = None,
+        token_cache: Optional[BaseTokenCache] = None,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
