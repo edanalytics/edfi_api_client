@@ -72,7 +72,7 @@ class EdFiSession:
         use_snapshot: bool = False,
         verify_ssl: bool = True,
         **kwargs
-    ) -> requests.Session:
+    ) -> 'EdFiSession':
         """
         Create a session with authorization headers.
 
@@ -91,7 +91,7 @@ class EdFiSession:
         # Update time attributes and auth headers with latest authentication information.
         self.authenticate()
         
-        return self.session
+        return self
 
 
     ### Methods to assist in authentication and retries.
