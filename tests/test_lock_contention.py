@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import random
+import json
 from multiprocessing import Pool
 from collections import Counter
 
@@ -82,3 +83,17 @@ def test_multiprocessing_with_forced_refreshes():
             None not in token_counts
         )   
 
+
+def test_reauth_on_stale_cache():
+    api = create_client_from_env()
+    token_path =  api.session.token_cache.cache_path
+
+    # create expired token
+    with open(token_path, 'w') as fp:
+        json.dump({'access_token': 'stale_value', 'expires_in': 0, 'token_type': 'bearer'}, fp)
+
+    # test that we get a fresh token
+    token_prefix = create_client_and_get_token(0)
+    assert(token_prefix != '' and token_prefix is not None)
+
+  

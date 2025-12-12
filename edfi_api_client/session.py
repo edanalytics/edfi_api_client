@@ -46,6 +46,7 @@ class EdFiSession:
         self.refresh_at: int = None
         self.auth_headers: dict = {}
         self._access_token: Optional[str] = None  # Lazy property defined in authenticate()
+        self._last_auth_payload: dict = {}
 
         # Optional unique cache backing for each base url / client key combination
         self.token_cache: Optional[BaseTokenCache] = token_cache
@@ -133,6 +134,7 @@ class EdFiSession:
             auth_payload = self._load_or_update_token_from_cache()
         else:
             auth_payload = self._make_auth_request()
+        self._last_auth_payload = auth_payload
 
         self._access_token = auth_payload.get('access_token', '')
         logging.info(f'Using token starting with {self._access_token[:5]}')
@@ -181,7 +183,8 @@ class EdFiSession:
 
         # Re-auth if the retrieved token is already expired.
         if self.refresh_at < int(time.time()):
-            return self.authenticate()
+            self.authenticate()
+            return self._last_auth_payload
 
         return auth_payload
 
