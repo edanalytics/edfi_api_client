@@ -6,13 +6,13 @@ README = (HERE / "README.md").read_text()
 
 setuptools.setup(
     name='edfi_api_client',
-    version='0.2.3',
+    version='0.3.0',
     description='Ed-Fi API client and tools',
     license_files=['LICENSE'],
     url='https://github.com/edanalytics/edfi_api_client',
 
-    author='Erik Joranlien, Jay Kaiser',
-    author_email='ejoranlien@edanalytics.org, jkaiser@edanalytics.org',
+    author='Erik Joranlien, Jay Kaiser, Alex Chen',
+    author_email='ejoranlien@edanalytics.org, jkaiser@edanalytics.org, achen@edanalytics.org',
 
     long_description=README,
     long_description_content_type='text/markdown',
