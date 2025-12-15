@@ -9,9 +9,17 @@ def camel_to_snake(name: str) -> str:
     :param name: A camelCase string value to be converted to snake_case.
     :return: A string in snake_case.
     """
-    name = re.sub(r'(.)([A-Z][a-z]+)' , r'\1_\2', name)
+    # Special handling: if ends with [A-Z]s, treat that 's' as part of the acronym
+    # e.g., "IEPs" -> don't split before the 's'
+    name = re.sub(r'([A-Z])s\b', r'\1$', name)  # Temporarily replace 's' with marker
+    
+    name = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
     name = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
     name = re.sub(r'[_ ]+', '_', name)
+    
+    # Restore the 's'
+    name = name.replace('$', 's')
+    
     return name.lower()
 
 
