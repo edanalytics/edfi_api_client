@@ -1,5 +1,7 @@
-import datetime
+import json
 import re
+
+from typing import Union
 
 
 def camel_to_snake(name: str) -> str:
@@ -38,3 +40,19 @@ def url_join(*args) -> str:
     return '/'.join(
         map(lambda x: str(x).rstrip('/'), filter(lambda x: x is not None, args))
     )
+
+def clean_post_row(row: Union[str, dict]) -> str:
+    """
+    Remove 'id' from a string or dictionary payload and force to a string.
+    These keys will cause posts to resource endpoints to fail.
+
+    TODO: Can this be made more efficient?
+    :return:
+    """
+    if isinstance(row, (bytes, str)):
+        row = json.loads(row)
+
+    # "Resource identifiers cannot be assigned by the client."
+    # "Value for the auto-assigned identifier property 'DescriptorId' cannot be assigned by the client"
+    row = {col: val for col, val in row.items() if not (col == 'id' or col.endswith("DescriptorId"))}
+    return json.dumps(row)

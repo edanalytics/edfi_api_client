@@ -50,7 +50,8 @@ Some methods do not require credentials to be called.
 | api_mode      | The API mode of the ODS (e.g., `shared_instance`, `year_specific`, etc.). If empty, the mode will automatically be inferred from the ODS' Swagger spec (Ed-Fi 3 only). |
 | api_year      | The year of data to connect to if accessing a `year_specific` or `instance_year_specific` ODS.                                                                         |
 | instance_code | The instance code if accessing an `instance_year_specific` ODS.                                                                                                        |
-| use_snapshot | Boolean flag for whether connected ODS is a snapshot (default `False`).                                                                                                        |
+| use_snapshot  | Boolean flag for whether connected ODS is a snapshot (default `False`).                                                                                                |
+| token_cache   | An optional token cache instance, such as `edfi_api_client.token_cache.LockfileTokenCache`, for storing OAuth bearer tokens to be shared among clients.                |
 
 If either `client_key` or `client_secret` are empty, a session with the ODS will not be established.
 
@@ -692,3 +693,34 @@ However, this row will not be lost.
 -----
 
 </details>
+
+
+## Token caching
+[Starting in version 7.3](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation/commit/80970eef722e31020bd9bb232eb92b5ca4a81f12), EdFi Web API instances limit clients to 15 concurrent bearer tokens by default. In case an application uses multiple concurrent `EdFiClient`s using the same client key and hitting the same API on a single machine or shared filesystem, this library provides a barebones on-disk cache to conserve tokens and avoid this limit. 
+
+```python
+from edfi_api_client import EdFiClient
+from edfi_api_client.token_cache import LockfileTokenCache
+
+api = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET, api_version=3, token_cache=LockfileTokenCache())
+```
+
+
+<details>
+<summary>Arguments:</summary>
+
+-----
+
+| Argument                        | Description                                                                                                                                                            |
+|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| token_cache_directory           | Path to store tokens in. One cache is a JSON file containing an authentication payload, unique by OAuth URL and client key. (default `~/.edfi-tokens/`)                |
+| write_lock_timeout              | Seconds to wait to acquire a write lock if the cache is to be updated. (default 30)                                                                                    | 
+| write_lock_staleness_threshold  | Seconds to wait after the last modified timestamp before forcibly deleting an existing lockfile (default 60). Aggressive by default, because a client won't try to obtain a write lock unless the payload inside is already expired or is corrupt.     |
+| write_lock_retry_delay          | Seconds to wait before retrying to acquire a write lock. (default 0.5)                                                                                                 |
+
+
+-----
+
+</details>
+
+Other kinds of shared caches may be implemented with the interface defined in `edfi_api_client.token_cache.BaseTokenCache`, should more sophisticated functionality be required (encryption, distributed caching, etc.).
