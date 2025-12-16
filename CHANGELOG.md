@@ -1,3 +1,12 @@
+# edfi_api_client v0.3.0
+## New Features
+
+## Under the Hood
+
+## Fixes
+
+
+
 # edfi_api_client v0.2.3
 ## New Features
 - Add `use_snapshot` flag to `EdFiClient` for making requests against snapshots (default `False`).
