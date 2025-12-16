@@ -9,13 +9,17 @@ from collections import Counter
 from edfi_api_client import EdFiClient
 from edfi_api_client.token_cache import LockfileTokenCache
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='[%(asctime)s] %(levelname)s %(name)s.%(funcName)s:%(lineno)d %(message)s'
-)
 
 def create_client_from_env():
-    """Instantiates an EdFiClient with a pure-Python lockfile token cache"""
+    """Instantiates an EdFiClient with a pure-Python lockfile token cache
+
+    Tests using this are intended to run against a live ODS with credentials
+    stored in environment variables, which can be spun up locally with
+    edfi_testing_stack or bare Docker. Multiprocessing for parallel clients has
+    only been tested on WSL; the process-based Windows implementation is
+    unlikely to work well.
+
+    """
     base_url = os.environ.get('EDFI_API_BASE_URL', '')
     client_secret = os.environ.get('EDFI_API_CLIENT_SECRET', 'testsecret')
     client_key = os.environ.get('EDFI_API_CLIENT_ID', 'testkey')
