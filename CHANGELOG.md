@@ -4,7 +4,7 @@
 ## Under the Hood
 
 ## Fixes
-
+- Fix behavior of `camel_to_snake()` util helper to handle more resource names.
 
 
 # edfi_api_client v0.2.3
