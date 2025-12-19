@@ -1,5 +1,7 @@
-import datetime
+import json
 import re
+
+from typing import Union
 
 
 def camel_to_snake(name: str) -> str:
@@ -9,9 +11,17 @@ def camel_to_snake(name: str) -> str:
     :param name: A camelCase string value to be converted to snake_case.
     :return: A string in snake_case.
     """
-    name = re.sub(r'(.)([A-Z][a-z]+)' , r'\1_\2', name)
+    # Special handling: if ends with [A-Z]s, treat that 's' as part of the acronym
+    # e.g., "IEPs" -> don't split before the 's'
+    name = re.sub(r'([A-Z])s\b', r'\1$', name)  # Temporarily replace 's' with marker
+    
+    name = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
     name = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
     name = re.sub(r'[_ ]+', '_', name)
+    
+    # Restore the 's'
+    name = name.replace('$', 's')
+    
     return name.lower()
 
 
@@ -30,3 +40,19 @@ def url_join(*args) -> str:
     return '/'.join(
         map(lambda x: str(x).rstrip('/'), filter(lambda x: x is not None, args))
     )
+
+def clean_post_row(row: Union[str, dict]) -> str:
+    """
+    Remove 'id' from a string or dictionary payload and force to a string.
+    These keys will cause posts to resource endpoints to fail.
+
+    TODO: Can this be made more efficient?
+    :return:
+    """
+    if isinstance(row, (bytes, str)):
+        row = json.loads(row)
+
+    # "Resource identifiers cannot be assigned by the client."
+    # "Value for the auto-assigned identifier property 'DescriptorId' cannot be assigned by the client"
+    row = {col: val for col, val in row.items() if not (col == 'id' or col.endswith("DescriptorId"))}
+    return json.dumps(row)

@@ -1,3 +1,22 @@
+# edfi_api_client v0.3.0
+## New Features
+- Remove support for Ed-Fi 2. 
+- Add optional token caching to persist auth tokens to disk using new `token_cache` argument.
+
+## Under the Hood
+- Migrate REST functionality into its own `Session` class:
+  - Initializes lazily and only authenticates when interfacing with an authenticated API call
+  - Allow exponential backoff for any Session method call.
+  - Add internal methods for POSTs, DELETEs, and PUTs.
+- Replace `verbose_log` print statements with the built-in `logging` library.
+- Deprecate `EdFiEndpoint.total_count()` in favor of more descriptive `get_total_count()`.
+- Add authentication and caching tests to package.
+
+## Fixes
+- Fix behavior of `camel_to_snake()` util helper to handle more resource names.
+- Add instance locator to Swagger endpoint URL in `instance_year_specific` ODS instances.
+
+
 # edfi_api_client v0.2.3
 ## New Features
 - Add `use_snapshot` flag to `EdFiClient` for making requests against snapshots (default `False`).

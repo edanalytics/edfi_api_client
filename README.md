@@ -10,7 +10,7 @@ api = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET, api_version=3)
 
 # Get the total row-count for the 'students' resource in the ODS
 students = api.resource('students')
-students.total_count()
+students.get_total_count()
 
 # Pull all rows for the 'staffs' resource deletes endpoint (setting a custom page-size)
 staffs = api.resource('staffs', get_deletes=True)
@@ -50,7 +50,8 @@ Some methods do not require credentials to be called.
 | api_mode      | The API mode of the ODS (e.g., `shared_instance`, `year_specific`, etc.). If empty, the mode will automatically be inferred from the ODS' Swagger spec (Ed-Fi 3 only). |
 | api_year      | The year of data to connect to if accessing a `year_specific` or `instance_year_specific` ODS.                                                                         |
 | instance_code | The instance code if accessing an `instance_year_specific` ODS.                                                                                                        |
-| use_snapshot | Boolean flag for whether connected ODS is a snapshot (default `False`).                                                                                                        |
+| use_snapshot  | Boolean flag for whether connected ODS is a snapshot (default `False`).                                                                                                |
+| token_cache   | An optional token cache instance, such as `edfi_api_client.token_cache.LockfileTokenCache`, for storing OAuth bearer tokens to be shared among clients.                |
 
 If either `client_key` or `client_secret` are empty, a session with the ODS will not be established.
 
@@ -84,8 +85,6 @@ Authentication with the ODS is not required:
 -----
 
 ### resources
-This method is unavailable in Ed-Fi2.
-
 Retrieve a list of namespaced-resources from the `resources` Swagger payload.
 
 ```python
@@ -104,8 +103,6 @@ Retrieve a list of namespaced-resources from the `resources` Swagger payload.
 -----
 
 ### descriptors
-This method is unavailable in Ed-Fi2.
-
 Retrieve a list of namespaced-descriptors from the `descriptors` Swagger payload.
 
 ```python
@@ -128,8 +125,6 @@ Authentication with the ODS is not required:
 -----
 
 ### get_info
-This method is unavailable in Ed-Fi2.
-
 Ed-Fi3 provides an informative payload at the ODS base URL.
 This contains versioning by suite and build, API mode, and URLs for authentication and data management.
 
@@ -159,8 +154,6 @@ This contains versioning by suite and build, API mode, and URLs for authenticati
 -----
 
 ### get_api_mode
-This method is unavailable in Ed-Fi2.
-
 Each Ed-Fi3 ODS has a declared API mode that alters how users interact with the ODS. This is a shortcut-method for finding the API mode of the Ed-Fi ODS via the payload retrieved using `EdFiClient.get_info()`, formatted in snake_case.
 
 ```python
@@ -176,8 +169,6 @@ This method is called automatically when `api_mode` is left undefined by the use
 <summary><code>get_ods_version</code></summary>
 
 ### get_ods_version
-This method is unavailable in Ed-Fi2.
-
 This is a shortcut-method for finding the version of the Ed-Fi ODS via the payload retrieved using `EdFiClient.get_info()`.
 
 ```python
@@ -196,8 +187,6 @@ This is a shortcut-method for finding the version of the Ed-Fi ODS via the paylo
 -----
 
 ### get_data_model_version
-This method is unavailable in Ed-Fi2.
-
 This is a shortcut-method for finding the data model version of the Ed-Fi ODS' 'ed-fi' namespace via the payload retrieved using `EdFiClient.get_info()`.
 
 ```python
@@ -216,8 +205,6 @@ This is a shortcut-method for finding the data model version of the Ed-Fi ODS' '
 -----
 
 ### get_swagger
-This method is unavailable in Ed-Fi2.
-
 The entire Ed-Fi API is outlined in an OpenAPI Specification (i.e., Swagger Specification).
 There is a separate Swagger defined for each component type (e.g., resources, descriptors, etc.).
 
@@ -245,13 +232,14 @@ Returns an `EdFiSwagger` class containing the complete JSON payload, as well as 
 -----
 
 ### is_edfi2
-This boolean filter returns whether the client-connection to the ODS is via Ed-Fi2.
-Ed-Fi3 introduces many new features that are utilized heavily in this package.
+Ed-Fi3 introduced many new features that are utilized heavily in this package.
 
 ```python
 >>> api.is_edfi2()
 False
 ```
+
+Package compatibility with Ed-Fi2 has been deprecated as of version 0.3. 
 
 -----
 
@@ -261,12 +249,32 @@ False
 Authentication with the ODS is required:
 
 <details>
+<summary><code>get_token_info</code></summary>
+
+-----
+
+### get_token_info
+This method requires a connection to the ODS.
+
+The Ed-Fi API provides a way to get information about the education organization related to a token.
+This method returns the `oauth/token_info` payload for the current session.
+
+```python
+>>> api.get_token_info()
+{'active': True, 'client_id': '', 'namespace_prefixes': [], 'education_organizations': [], 'assigned_profiles': []}
+```
+
+-----
+
+</details>
+
+
+<details>
 <summary><code>get_newest_change_version</code></summary>
 
 -----
 
 ### get_newest_change_version
-This method is unavailable in Ed-Fi2.  
 This method requires a connection to the ODS.
 
 Starting in Ed-Fi3, each row in the ODS is linked to an ODS-wide "change version" parameter, which allows for narrow time-windows of data to be filtered for delta-ingestions, instead of only full-ingestions.
@@ -288,7 +296,7 @@ This method returns the newest change version defined in the ODS.
 -----
 
 ### resource
-This method requires a connection to the ODS.
+This method only requires a connection to the ODS when calling a REST method.
 
 Use this method to initialize an EdFiResource (i.e. EdFiEndpoint).
 This object contains methods to pull rows and resource metadata from the API.
@@ -318,7 +326,7 @@ This object contains methods to pull rows and resource metadata from the API.
 -----
 
 ### descriptor
-This method requires a connection to the ODS.
+This method only requires a connection to the ODS when calling a REST method.
 
 Use this method to initialize an EdFiResource (i.e. EdFiEndpoint).
 This object contains methods to pull rows and descriptor metadata from the API.
@@ -348,7 +356,7 @@ Note that although descriptors and resources are saved at the same endpoint in t
 -----
 
 ### composite
-This method requires a connection to the ODS.
+This method only requires a connection to the ODS when calling a REST method.
 
 Use this method to initialize an EdFiComposite (i.e. EdFiEndpoint).
 This object contains methods to pull rows and composite metadata from the API.
@@ -453,6 +461,8 @@ This offers a shortcut for verifying claim-set permissions without needing to pu
 {'message': 'Ping was successful! ODS data has been intentionally scrubbed from this response.'}
 ```
 
+Note that `params` and retry-arguments can be passed to override those initialized in the `EdFiEndpoint`.
+
 -----
 
 </details>
@@ -478,6 +488,8 @@ If unspecified, the default limit will be retrieved.
 [{'id': 'abc123', 'studentUniqueId': '987654', 'birthDate': '1970-01-01', ...}]
 ```
 Because this GET does not use pagination, the return is a list, not a generator.
+
+Note that `params` and retry-arguments can be passed to override those initialized in the `EdFiEndpoint`.
 
 -----
 
@@ -521,26 +533,30 @@ Under the hood, `get_rows()` implements `get_pages()`, but unnests the rows befo
 ```
 To circumvent memory constraints, these methods return generators instead of lists.
 
+Note that `params` and retry-arguments can be passed to override those initialized in the `EdFiEndpoint`.
+
 -----
 
 </details>
 
 
 <details>
-<summary><code>total_count</code></summary>
+<summary><code>get_total_count</code></summary>
 
 -----
 
-### total_count
+### get_total_count
 This method returns the total count of rows for the given endpoint, as declared by the API.
 This action is completed by sending a limit 0 GET request to the API with the `Total-Count` header set to `True`.
 
 ```python
->>> students.total_count()
+>>> students.get_total_count()
 4135
 ```
 
-`total_count()` is currently only implemented for resources, not composites.
+`get_total_count()` is currently only implemented for resources, not composites.
+
+Note that `params` and retry-arguments can be passed to override those initialized in the `EdFiEndpoint`.
 
 -----
 
@@ -692,3 +708,34 @@ However, this row will not be lost.
 -----
 
 </details>
+
+
+## Token caching
+[Starting in version 7.3](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation/commit/80970eef722e31020bd9bb232eb92b5ca4a81f12), EdFi Web API instances limit clients to 15 concurrent bearer tokens by default. In case an application uses multiple concurrent `EdFiClient`s using the same client key and hitting the same API on a single machine or shared filesystem, this library provides a barebones on-disk cache to conserve tokens and avoid this limit. 
+
+```python
+from edfi_api_client import EdFiClient
+from edfi_api_client.token_cache import LockfileTokenCache
+
+api = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET, api_version=3, token_cache=LockfileTokenCache())
+```
+
+
+<details>
+<summary>Arguments:</summary>
+
+-----
+
+| Argument                        | Description                                                                                                                                                            |
+|---------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| token_cache_directory           | Path to store tokens in. One cache is a JSON file containing an authentication payload, unique by OAuth URL and client key. (default `~/.edfi-tokens/`)                |
+| write_lock_timeout              | Seconds to wait to acquire a write lock if the cache is to be updated. (default 30)                                                                                    | 
+| write_lock_staleness_threshold  | Seconds to wait after the last modified timestamp before forcibly deleting an existing lockfile (default 60). Aggressive by default, because a client won't try to obtain a write lock unless the payload inside is already expired or is corrupt.     |
+| write_lock_retry_delay          | Seconds to wait before retrying to acquire a write lock. (default 0.5)                                                                                                 |
+
+
+-----
+
+</details>
+
+Other kinds of shared caches may be implemented with the interface defined in `edfi_api_client.token_cache.BaseTokenCache`, should more sophisticated functionality be required (encryption, distributed caching, etc.).
