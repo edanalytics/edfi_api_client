@@ -14,6 +14,7 @@
 
 ## Fixes
 - Fix behavior of `camel_to_snake()` util helper to handle more resource names.
+- Add instance locator to Swagger endpoint URL in `instance_year_specific` ODS instances.
 
 
 # edfi_api_client v0.2.3
