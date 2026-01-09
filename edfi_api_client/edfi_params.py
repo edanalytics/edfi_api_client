@@ -25,6 +25,7 @@ class EdFiParams(dict):
         # These parameters are only used during pagination. They must be explicitly initialized.
         self.page_size = None
         self.change_version_step_size = None
+        self.page_token = None
 
 
     def copy(self) -> 'EdFiParams':
@@ -190,3 +191,24 @@ class EdFiParams(dict):
 
         if self['offset'] < 0:
             raise StopIteration
+        
+    def init_page_by_token(self, page_token: Optional[str] = None, page_size: Optional[int] = None):
+        """
+
+        :param page_size: 
+        :param page_token:
+        :return:
+        """
+
+        # Cursor paging behavior:
+        # - If page_token is None: first request, do NOT include page_size
+        # - If page_token is present: include page_token and page_size
+        self.page_size = page_size
+        self.page_token = page_token
+
+        if page_token is None:
+            self.pop("pageToken", None)
+            self.pop("pageSize", None)
+        else:
+            self["page_token"] = self.page_token
+            self["page_size"] = self.page_size 
