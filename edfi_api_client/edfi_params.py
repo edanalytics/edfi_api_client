@@ -221,5 +221,7 @@ class EdFiParams(dict):
         :return:
         """
 
-        self.partition_size = number
-        self["partition_size"] = number
+        self.number = number
+        self["number"] = number
+    
+
