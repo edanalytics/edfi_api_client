@@ -26,6 +26,7 @@ class EdFiParams(dict):
         self.page_size = None
         self.change_version_step_size = None
         self.page_token = None
+        self.number = None
 
 
     def copy(self) -> 'EdFiParams':
@@ -192,7 +193,7 @@ class EdFiParams(dict):
         if self['offset'] < 0:
             raise StopIteration
         
-    def init_page_by_token(self, page_token: Optional[str] = None, page_size: Optional[int] = None):
+    def init_page_by_token(self, page_token: str, page_size: int):
         """
 
         :param page_size: 
@@ -212,3 +213,13 @@ class EdFiParams(dict):
         else:
             self["page_token"] = self.page_token
             self["page_size"] = self.page_size 
+    
+    def init_page_by_partitions(self, number: int):
+        """
+
+        :param number: 
+        :return:
+        """
+
+        self.partition_size = number
+        self["partition_size"] = number

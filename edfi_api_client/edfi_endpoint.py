@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
 
+from multiprocessing.dummy import Pool as ThreadPool
+
 
 class EdFiEndpoint:
     """
@@ -184,7 +186,9 @@ class EdFiEndpoint:
         reverse_paging: bool = True,
         step_change_version: bool = False,
         cursor_paging: bool = False,
+        partitioning: bool = False,
         change_version_step_size: int = 50000,
+        number: Optional[int] = None,
         **kwargs
     ) -> Iterator[List[dict]]:
         """
@@ -216,70 +220,89 @@ class EdFiEndpoint:
             paged_params.init_page_by_offset(page_size)
             paged_params.init_page_by_change_version_step(change_version_step_size)
         
-        elif cursor_paging:
+        elif cursor_paging and partitioning:
             ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
-            if ods_version < (7, 3):
-                raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
+            if ods_version < (7,3):
+                raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging with Partitions requires v.7.3 or higher. Ending pagination")
+            paged_tokens = self.get(params= {'number': number}, **kwargs).json().get("pageTokens")
+            logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging with Partitions")
+            logging.info(f"[Get {self.component}] Retrieved {len(paged_tokens)} tokens")
+            paged_params_list = []
+            for token in paged_tokens:
+                p = paged_params.copy()
+                p.init_page_by_token(page_token=token, page_size=page_size)
+                paged_params_list.append(p)
 
-            logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
-            paged_params.init_page_by_token(page_token = None, page_size = None)
+            with ThreadPool(processes = len(paged_tokens) ) as pool:
+                for resp in pool.imap_unordered(lambda p: self.get(params=p, **kwargs), paged_params_list):
+                    yield resp.json()
+            return 
+        
+        # elif cursor_paging:
+        #     ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
+        #     if ods_version < (7,3):
+        #         raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
+
+        #     logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
+        #     paged_params.init_page_by_token(page_token = None, page_size = None)
 
         else:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
             paged_params.init_page_by_offset(page_size)
 
+
         # Begin pagination-loop
-        while True:
+        # while True:
 
-            ### GET from the API and yield the resulting JSON payload
-            result = self.get(params=paged_params, **kwargs)
-            paged_rows = result.json()
-            logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
-            yield paged_rows
+        #     ### GET from the API and yield the resulting JSON payload
+        #     result = self.get(params=paged_params, **kwargs)
+        #     paged_rows = result.json()
+        #     logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
+        #     yield paged_rows
 
-            ### Paginate, depending on the method specified in arguments
-            # Reverse offset pagination is only applicable during change-version stepping.
-            if step_change_version and reverse_paging:
-                logging.info(f"[Paged Get {self.component}] @ Reverse-paginating offset...")
-                try:
-                    paged_params.reverse_page_by_offset()
-                except StopIteration:
-                    logging.info(f"[Paged Get {self.component}] @ Reverse-paginated into negatives. Stepping change version...")
-                    try:
-                        paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
-                        total_count = self.get_total_count(params=paged_params, **kwargs)
-                        paged_params.init_reverse_page_by_offset(total_count, page_size)
-                    except StopIteration:
-                        logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
-                        break
+        #     ### Paginate, depending on the method specified in arguments
+        #     # Reverse offset pagination is only applicable during change-version stepping.
+        #     if step_change_version and reverse_paging:
+        #         logging.info(f"[Paged Get {self.component}] @ Reverse-paginating offset...")
+        #         try:
+        #             paged_params.reverse_page_by_offset()
+        #         except StopIteration:
+        #             logging.info(f"[Paged Get {self.component}] @ Reverse-paginated into negatives. Stepping change version...")
+        #             try:
+        #                 paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
+        #                 total_count = self.get_total_count(params=paged_params, **kwargs)
+        #                 paged_params.init_reverse_page_by_offset(total_count, page_size)
+        #             except StopIteration:
+        #                 logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
+        #                 break
 
-            elif cursor_paging: 
-                logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
-                paged_params.init_page_by_token( page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
-                if not result.headers.get("Next-Page-Token"):
-                    logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
-                    break
+        #     elif cursor_paging: 
+        #         logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
+        #         paged_params.init_page_by_token( page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
+        #         if not result.headers.get("Next-Page-Token"):
+        #             logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
+        #             break
 
-            else:
-                # If no rows are returned, end pagination.
-                if len(paged_rows) == 0:
+        #     else:
+        #         # If no rows are returned, end pagination.
+        #         if len(paged_rows) == 0:
 
-                    if step_change_version:
-                        try:
-                            logging.info(f"[Paged Get {self.component}] @ Stepping change version...")
-                            paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
-                        except StopIteration:
-                            logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
-                            break
-                    else:
-                        logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
-                        break
+        #             if step_change_version:
+        #                 try:
+        #                     logging.info(f"[Paged Get {self.component}] @ Stepping change version...")
+        #                     paged_params.page_by_change_version_step()  # This raises a StopIteration if max change version is exceeded.
+        #                 except StopIteration:
+        #                     logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
+        #                     break
+        #             else:
+        #                 logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
+        #                 break
 
-                # Otherwise, paginate offset.
-                else:
-                    logging.info(f"@ Paginating offset...")
-                    paged_params.page_by_offset()
-
+        #         # Otherwise, paginate offset.
+        #         else:
+        #             logging.info(f"@ Paginating offset...")
+        #             paged_params.page_by_offset()
+            
 
     def get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> int:
         """
