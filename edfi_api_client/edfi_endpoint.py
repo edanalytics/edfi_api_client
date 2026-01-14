@@ -240,18 +240,20 @@ class EdFiEndpoint:
                     result = self.get(params=p, **kwargs) 
                     paged_rows = result.json() 
                     results.extend(paged_rows) 
-                    logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows for token: {token}.") 
-                    
-                    token = result.headers.get("Next-Page-Token")
-                    if not token: 
+                    if len(paged_rows) == 0: 
                         logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows for token: {token}. Ending pagination.") 
                         break 
+                    logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows for token: {token}.")                     
+                    token = result.headers.get("Next-Page-Token")
+
                 return results
 
-            Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) 
-
-            return 
-
+            results = Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) 
+            
+            for paged_rows in results:
+                yield paged_rows
+            return
+        
         elif cursor_paging:
             ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
             if ods_version < (7,3):
