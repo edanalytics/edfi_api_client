@@ -231,28 +231,6 @@ class EdFiEndpoint:
             paged_tokens = self.get(url = token_url, params = paged_params.copy().init_page_by_partitions(number = number) , **kwargs).json().get("pageTokens")
             logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging with Partitions")
             logging.info(f"[Get {self.component}] Retrieved {len(paged_tokens)} token(s): {paged_tokens}")
-            
-            def partitioning_with_token(token): 
-                results = [] 
-                p = paged_params.copy() 
-                while True: 
-                    p.init_page_by_token(page_token=token, page_size=page_size) 
-                    result = self.get(params=p, **kwargs) 
-                    paged_rows = result.json() 
-                    results.extend(paged_rows) 
-                    if len(paged_rows) == 0: 
-                        logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows for token: {token}. Ending pagination.") 
-                        break 
-                    logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows for token: {token}.")                     
-                    token = result.headers.get("Next-Page-Token")
-
-                return results
-
-            results = Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) 
-            
-            for paged_rows in results:
-                yield paged_rows
-            return
         
         elif cursor_paging:
             ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
@@ -260,8 +238,7 @@ class EdFiEndpoint:
                 raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
 
             logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
-            paged_params.init_page_by_token(page_token = None, page_size = None)
-
+            paged_params.init_page_by_token(page_token = None, page_size = None)            
         else:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
             paged_params.init_page_by_offset(page_size)
@@ -291,7 +268,28 @@ class EdFiEndpoint:
                     except StopIteration:
                         logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
                         break
-            
+            elif cursor_paging and partitioning:
+                def partitioning_with_token(token): 
+                    results = [] 
+                    p = paged_params.copy() 
+                    while True: 
+                        p.init_page_by_token(page_token=token, page_size=page_size) 
+                        result = self.get(params=p, **kwargs) 
+                        paged_rows = result.json() 
+                        results.extend(paged_rows) 
+                        if len(paged_rows) == 0: 
+                            logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows for token: {token}. Ending pagination.") 
+                            break 
+                        logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows for token: {token}.")                     
+                        token = result.headers.get("Next-Page-Token")
+                    return results
+
+                results = Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) 
+                for paged_page in results:
+                    for paged_row in paged_page:
+                        yield paged_row
+                return
+        
             elif cursor_paging : 
                 logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
                 paged_params.init_page_by_token( page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
