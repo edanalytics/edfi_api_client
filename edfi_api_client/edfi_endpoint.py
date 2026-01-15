@@ -150,9 +150,10 @@ class EdFiEndpoint:
         *,
         params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
-        reverse_paging: bool = True,
+        reverse_paging: bool = False,
         step_change_version: bool = False,
-        cursor_paging: bool = False,
+        cursor_paging: bool = True,
+        partitioning: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
     ) -> Iterator[dict]:
@@ -172,7 +173,7 @@ class EdFiEndpoint:
         """
         paged_result_iter = self.get_pages(
             params=params,
-            page_size=page_size, reverse_paging=reverse_paging, cursor_paging= cursor_paging,
+            page_size=page_size, reverse_paging=reverse_paging, cursor_paging= cursor_paging, partitioning=partitioning,
             step_change_version=step_change_version, change_version_step_size=change_version_step_size,
             **kwargs
         )
@@ -185,9 +186,9 @@ class EdFiEndpoint:
         *,
         params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
-        reverse_paging: bool = True,
+        reverse_paging: bool = False,
         step_change_version: bool = False,
-        cursor_paging: bool = False,
+        cursor_paging: bool = True,
         partitioning: bool = False,
         change_version_step_size: int = 50000,
         number: Optional[int] = None,
@@ -236,7 +237,7 @@ class EdFiEndpoint:
             ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
             if ods_version < (7,3):
                 raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
-
+            logging.info(f"ODS {self.client.get_ods_version()}")
             logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
             paged_params.init_page_by_token(page_token = None, page_size = None)            
         else:
