@@ -249,10 +249,12 @@ class EdFiEndpoint:
         while True:
 
             ### GET from the API and yield the resulting JSON payload
-            result = self.get(params=paged_params, **kwargs)
-            paged_rows = result.json()
-            logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
-            yield paged_rows
+            if not partitioning:
+                result = self.get(params=paged_params, **kwargs)
+                paged_rows = result.json()
+                logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
+                
+                yield paged_rows
 
             ### Paginate, depending on the method specified in arguments
             # Reverse offset pagination is only applicable during change-version stepping.
