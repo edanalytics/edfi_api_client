@@ -287,10 +287,10 @@ class EdFiEndpoint:
                         token = result.headers.get("Next-Page-Token")
                     return results
 
-                results = Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) 
+                results = [element for sublist in Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) for element in sublist]
+                
                 for paged_page in results:
-                    for paged_row in paged_page:
-                        yield paged_row
+                    yield paged_page
                 return
         
             elif cursor_paging : 
