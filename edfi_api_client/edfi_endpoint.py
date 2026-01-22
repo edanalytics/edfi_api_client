@@ -227,9 +227,11 @@ class EdFiEndpoint:
             ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
             if ods_version < (7,3):
                 raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging with Partitions requires v.7.3 or higher. Ending pagination")
-            
+            if self.get_deletes or self.get_key_changes:
+                raise ValueError(f"Cursor Paging with Partitions does not support deletes/key_changes. Ending pagination")
+
             token_url = f"{self.url.rstrip('/')}/partitions"
-            paged_tokens = self.get(url = token_url, params = paged_params.copy().init_page_by_partitions(number = number) , **kwargs).json().get("pageTokens")
+            paged_tokens = self.get(url = token_url, params = paged_params.init_page_by_partitions(number = number) , **kwargs).json().get("pageTokens")
             logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging with Partitions")
             logging.info(f"[Get {self.component}] Retrieved {len(paged_tokens)} token(s): {paged_tokens}")
         
@@ -237,8 +239,11 @@ class EdFiEndpoint:
             ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
             if ods_version < (7,3):
                 raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
+            if self.get_deletes or self.get_key_changes:
+                raise ValueError(f"Cursor Paging does not support deletes/key_changes. Ending pagination")
             logging.info(f"ODS {self.client.get_ods_version()}")
             logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
+            # First request should not have any `page_token` defined
             paged_params.init_page_by_token(page_token = None, page_size = None)            
         else:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
