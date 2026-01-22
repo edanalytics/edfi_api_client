@@ -201,7 +201,7 @@ class EdFiParams(dict):
         :return:
         """
 
-        # Cursor paging behavior:
+        # Cursor paging behavior: page_token is required when page_size is specified.
         # - If page_token is None: first request, do NOT include page_size
         # - If page_token is present: include page_token and page_size
         self.page_size = page_size
