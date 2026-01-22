@@ -186,9 +186,9 @@ class EdFiEndpoint:
         *,
         params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
-        reverse_paging: bool = False,
+        reverse_paging: bool = True,
         step_change_version: bool = False,
-        cursor_paging: bool = True,
+        cursor_paging: bool = False,
         partitioning: bool = False,
         change_version_step_size: int = 50000,
         number: Optional[int] = None,
@@ -288,7 +288,7 @@ class EdFiEndpoint:
                     return results
 
                 results = [element for sublist in Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) for element in sublist]
-                
+                logging.info(f"{len(results)}")
                 for paged_page in results:
                     yield paged_page
                 return
