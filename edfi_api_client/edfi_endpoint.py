@@ -189,9 +189,7 @@ class EdFiEndpoint:
         reverse_paging: bool = True,
         step_change_version: bool = False,
         cursor_paging: bool = False,
-        partitioning: bool = False,
         change_version_step_size: int = 50000,
-        number: Optional[int] = None,
         **kwargs
     ) -> Iterator[List[dict]]:
         """
@@ -223,18 +221,6 @@ class EdFiEndpoint:
             paged_params.init_page_by_offset(page_size)
             paged_params.init_page_by_change_version_step(change_version_step_size)
         
-        elif cursor_paging and partitioning:
-            ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
-            if ods_version < (7,3):
-                raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging with Partitions requires v.7.3 or higher. Ending pagination")
-            if self.get_deletes or self.get_key_changes:
-                raise ValueError(f"Cursor Paging with Partitions does not support deletes/key_changes. Ending pagination")
-
-            token_url = f"{self.url.rstrip('/')}/partitions"
-            paged_tokens = self.get(url = token_url, params = paged_params.init_page_by_partitions(number = number) , **kwargs).json().get("pageTokens")
-            logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging with Partitions")
-            logging.info(f"[Get {self.component}] Retrieved {len(paged_tokens)} token(s): {paged_tokens}")
-        
         elif cursor_paging:
             ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
             if ods_version < (7,3):
@@ -254,12 +240,9 @@ class EdFiEndpoint:
         while True:
 
             ### GET from the API and yield the resulting JSON payload
-            if not partitioning:
-                result = self.get(params=paged_params, **kwargs)
-                paged_rows = result.json()
-                logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
-                
-                yield paged_rows
+            result = self.get(params=paged_params, **kwargs)
+            paged_rows = result.json()
+            logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
 
             ### Paginate, depending on the method specified in arguments
             # Reverse offset pagination is only applicable during change-version stepping.
@@ -276,27 +259,6 @@ class EdFiEndpoint:
                     except StopIteration:
                         logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
                         break
-            elif cursor_paging and partitioning:
-                def partitioning_with_token(token): 
-                    results = [] 
-                    p = paged_params.copy() 
-                    while True: 
-                        p.init_page_by_token(page_token=token, page_size=page_size) 
-                        result = self.get(params=p, **kwargs) 
-                        paged_rows = result.json() 
-                        results.extend(paged_rows) 
-                        if len(paged_rows) == 0: 
-                            logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows for token: {token}. Ending pagination.") 
-                            break 
-                        logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows for token: {token}.")                     
-                        token = result.headers.get("Next-Page-Token")
-                    return results
-
-                results = [element for sublist in Parallel(n_jobs=len(paged_tokens), backend="threading")(delayed(partitioning_with_token)(token) for token in paged_tokens) for element in sublist]
-                logging.info(f"{len(results)}")
-                for paged_page in results:
-                    yield paged_page
-                return
         
             elif cursor_paging : 
                 logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
