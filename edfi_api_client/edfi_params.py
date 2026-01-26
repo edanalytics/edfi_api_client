@@ -209,19 +209,11 @@ class EdFiParams(dict):
 
         if page_token is None:
             self.pop("pageToken", None)
-            self.pop("pageSize", None)
+            self.pop("page_size", None)
         else:
-            self["page_token"] = self.page_token
+            self["pageToken"] = self.page_token
             self["page_size"] = self.page_size 
     
-    def init_page_by_partitions(self, number: int):
-        """
 
-        :param number: 
-        :return:
-        """
-
-        self.number = number
-        self["number"] = number
     
 

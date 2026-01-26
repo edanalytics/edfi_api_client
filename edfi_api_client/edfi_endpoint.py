@@ -126,7 +126,7 @@ class EdFiEndpoint:
         return res
 
 
-    def get(self, url: Optional[str] = None, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> requests.Response:
+    def get(self, url: Optional[str] = None, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
@@ -142,7 +142,7 @@ class EdFiEndpoint:
 
         logging.info(f"[Get {self.component}] Parameters: {params}")
 
-        resp = self.client.session.get_response(end_point, params=params, **kwargs)
+        resp = self.client.session.get_response(end_point, params=params, **kwargs).json()
         return resp
 
 
@@ -152,7 +152,6 @@ class EdFiEndpoint:
         page_size: int = 100,
         reverse_paging: bool = False,
         step_change_version: bool = False,
-        cursor_paging: bool = True,
         partitioning: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
@@ -182,13 +181,14 @@ class EdFiEndpoint:
             yield from paged_result
 
     
-    def get_pages(self,
+    def get_pages_offset(self,
         *,
+        url: Optional[str] = None,
         params: Optional[dict] = None,  # Optional alternative params
+        limit: Optional[int] = None,
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
-        cursor_paging: bool = False,
         change_version_step_size: int = 50000,
         **kwargs
     ) -> Iterator[List[dict]]:
@@ -208,6 +208,11 @@ class EdFiEndpoint:
         """
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
+        end_point = url or self.url
+        logging.info(f"[Get {self.component}] Endpoint: {end_point}")
+
+        if limit:  # Override limit if passed
+            paged_params['limit'] = limit
 
         ### Prepare pagination variables, depending on type of pagination being used
         if step_change_version and reverse_paging:
@@ -219,18 +224,7 @@ class EdFiEndpoint:
         elif step_change_version:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping")
             paged_params.init_page_by_offset(page_size)
-            paged_params.init_page_by_change_version_step(change_version_step_size)
-        
-        elif cursor_paging:
-            ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
-            if ods_version < (7,3):
-                raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
-            if self.get_deletes or self.get_key_changes:
-                raise ValueError(f"Cursor Paging does not support deletes/key_changes. Ending pagination")
-            logging.info(f"ODS {self.client.get_ods_version()}")
-            logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
-            # First request should not have any `page_token` defined
-            paged_params.init_page_by_token(page_token = None, page_size = None)            
+            paged_params.init_page_by_change_version_step(change_version_step_size)         
         else:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
             paged_params.init_page_by_offset(page_size)
@@ -238,10 +232,11 @@ class EdFiEndpoint:
 
         # Begin pagination-loop
         while True:
+            logging.info(f"[Get {self.component}] Parameters: {paged_params}")
 
             ### GET from the API and yield the resulting JSON payload
-            result = self.get(params=paged_params, **kwargs)
-            paged_rows = result.json()
+            paged_rows = self.client.session.get_response(end_point, params=paged_params, **kwargs).json()
+            yield paged_rows
             logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
 
             ### Paginate, depending on the method specified in arguments
@@ -259,13 +254,6 @@ class EdFiEndpoint:
                     except StopIteration:
                         logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
                         break
-        
-            elif cursor_paging : 
-                logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
-                paged_params.init_page_by_token( page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
-                if not result.headers.get("Next-Page-Token"):
-                    logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
-                    break
                 
             else:
                 # If no rows are returned, end pagination.
@@ -286,7 +274,56 @@ class EdFiEndpoint:
                 else:
                     logging.info(f"@ Paginating offset...")
                     paged_params.page_by_offset()
+    
+    def get_pages_cursor(self,
+        *,
+        url: Optional[str] = None,
+        params: Optional[dict] = None,  # Optional alternative params
+        limit: Optional[int] = None,
+        page_size: int = 100,
+        **kwargs
+    ) -> Iterator[List[dict]]:
+        
+        # Override init params if passed
+        paged_params = EdFiParams(params or self.params).copy()
+        end_point = url or self.url
+        logging.info(f"[Get {self.component}] Endpoint: {end_point}")
+
+        if limit:  # Override limit if passed
+            paged_params['limit'] = limit
+
+        ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
+
+        # Check ODS version compatibility for cursor paging
+        if ods_version < (7,3):
+            raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
+
+        # Raise error if User wants to retrieve deletes/keys with cursor paging
+        if self.get_deletes or self.get_key_changes:
+            raise ValueError(f"Cursor Paging does not support deletes/key_changes. Ending pagination")
+        
+        logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
+        
+        ###  Prepare pagination variables 
+        ###  First request should not have any `page_token` and `page_size` defined
+        paged_params.init_page_by_token(page_token = None, page_size = None)            
+        
+        # Begin pagination loop
+        while True:
+            logging.info(f"[Get {self.component}] Parameters: {paged_params}")
+
+            result = self.client.session.get_response(end_point, params = paged_params, **kwargs)
+            paged_rows = result.json()
+            logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows")
+            yield paged_rows
             
+            logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
+            if not result.headers.get("Next-Page-Token"):
+                logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
+                break
+            paged_params.init_page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
+
+
 
     def get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> int:
         """
@@ -346,18 +383,6 @@ class EdFiEndpoint:
             'has_deletes': (self.namespace, self.name) in swagger.deletes,
         }
 
-    def partitioning_with_token(self, params: Optional[dict] = None, token: str = None, page_size: str = None, **kwargs ):
-
-        params.init_page_by_token(page_token=token, page_size=page_size)
-        result = params.get(params=params, **kwargs)
-        paged_rows = result.json()
-        yield paged_rows
-        logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
-
-        token = result.headers.get("Next-Page-Token")
-        if not token:
-            logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
-            return False
 
 class EdFiResource(EdFiEndpoint):
     component: str = 'Resource'
