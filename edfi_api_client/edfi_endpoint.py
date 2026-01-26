@@ -150,10 +150,6 @@ class EdFiEndpoint:
         *,
         params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
-        reverse_paging: bool = False,
-        step_change_version: bool = False,
-        partitioning: bool = False,
-        change_version_step_size: int = 50000,
         **kwargs
     ) -> Iterator[dict]:
         """
@@ -170,10 +166,10 @@ class EdFiEndpoint:
         :param max_wait:
         :return:
         """
-        paged_result_iter = self.get_pages(
+              
+        paged_result_iter = self.get_pages_cursor(
             params=params,
-            page_size=page_size, reverse_paging=reverse_paging, cursor_paging= cursor_paging, partitioning=partitioning,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            page_size=page_size,
             **kwargs
         )
 
