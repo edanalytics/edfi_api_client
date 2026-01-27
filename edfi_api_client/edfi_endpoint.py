@@ -126,14 +126,13 @@ class EdFiEndpoint:
         return res
 
 
-    def get(self, url: Optional[str] = None, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:
+    def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:        
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
         :return:
         """
-        end_point = url or self.url
-        logging.info(f"[Get {self.component}] Endpoint: {end_point}")
+        logging.info(f"[Get {self.component}] Endpoint: {self.url}")
 
         # Override init params if passed
         params = EdFiParams(params or self.params).copy()
@@ -141,9 +140,7 @@ class EdFiEndpoint:
             params['limit'] = limit
 
         logging.info(f"[Get {self.component}] Parameters: {params}")
-
-        resp = self.client.session.get_response(end_point, params=params, **kwargs).json()
-        return resp
+        return self.client.session.get_response(self.url, params=params, **kwargs).json()
 
 
     def get_rows(self,
