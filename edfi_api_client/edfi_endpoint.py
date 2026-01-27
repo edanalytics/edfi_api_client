@@ -225,7 +225,7 @@ class EdFiEndpoint:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
             paged_params.init_page_by_offset(page_size)
 
-
+        total_count = 0
         # Begin pagination-loop
         while True:
             logging.info(f"[Get {self.component}] Parameters: {paged_params}")
@@ -288,25 +288,29 @@ class EdFiEndpoint:
         if limit:  # Override limit if passed
             paged_params['limit'] = limit
 
-        ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
-
-        # Check ODS version compatibility for cursor paging
-        if ods_version < (7,3):
-            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to Reverse-Offset paging")
-            yield from self.get_pages_offset(
+        # Fall back to reverse-offset paging if incompatible with cursor paging
+        def _fall_back_to_pages_by_offset():
+            return self.get_pages_offset(
                 url = url,
                 params = params, 
                 limit = limit, 
                 page_size=page_size,
                 step_change_version = True,
-                **kwargs,
-
+                **kwargs
             )
 
-        # Raise error if User wants to retrieve deletes/keys with cursor paging
+        # Check ODS version compatibility for cursor paging
+        ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
+        if ods_version < (7,3):
+            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to Reverse-Offset paging")
+            yield from _fall_back_to_pages_by_offset()
+            return
+        # deletes/key_changes cannot be retrieved with cursor paging
         if self.get_deletes or self.get_key_changes:
-            raise ValueError(f"Cursor Paging does not support deletes/key_changes. Ending pagination")
-        
+            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to Reverse-Offset paging")
+            yield from _fall_back_to_pages_by_offset()
+            return
+
         logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
         
         ###  Prepare pagination variables 
