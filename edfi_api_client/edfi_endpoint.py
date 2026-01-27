@@ -292,7 +292,16 @@ class EdFiEndpoint:
 
         # Check ODS version compatibility for cursor paging
         if ods_version < (7,3):
-            raise ValueError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination")
+            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to Reverse-Offset paging")
+            yield from self.get_pages_offset(
+                url = url,
+                params = params, 
+                limit = limit, 
+                page_size=page_size,
+                step_change_version = True,
+                **kwargs,
+
+            )
 
         # Raise error if User wants to retrieve deletes/keys with cursor paging
         if self.get_deletes or self.get_key_changes:
