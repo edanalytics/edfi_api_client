@@ -163,13 +163,31 @@ class EdFiEndpoint:
         :param max_wait:
         :return:
         """
-              
+            
+        # Fall back to reverse-offset paging if incompatible with cursor paging
+        ## Check ODS version compatibility for cursor paging
+        ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
+        if ods_version < (7,3):
+            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to another paging method")
+            paged_result_iter = self.get_pages_offset(
+                params = params, 
+                page_size=page_size,
+                **kwargs
+            )
+        ## deletes/key_changes cannot be retrieved with cursor paging
+        if self.get_deletes or self.get_key_changes:
+            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to another paging method")
+            paged_result_iter = self.get_pages_offset(
+                params = params, 
+                page_size=page_size,
+                **kwargs
+            )
+
         paged_result_iter = self.get_pages_cursor(
             params=params,
             page_size=page_size,
             **kwargs
         )
-
         for paged_result in paged_result_iter:
             yield from paged_result
 
@@ -271,31 +289,20 @@ class EdFiEndpoint:
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
         logging.info(f"[Get {self.component}] Endpoint: {self.url}")
+        logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
 
-        # Fall back to reverse-offset paging if incompatible with cursor paging
-        def _fall_back_to_pages_by_offset():
-            return self.get_pages_offset(
-                params = params, 
-                page_size=page_size,
-                **kwargs
-            )
-
-        # Check ODS version compatibility for cursor paging
+        # Cursor paging Checkpoints
+        ## Check ODS version compatibility for cursor paging
         ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
         if ods_version < (7,3):
-            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to another paging method")
-            yield from _fall_back_to_pages_by_offset()
-            return
-        # deletes/key_changes cannot be retrieved with cursor paging
-        if self.get_deletes or self.get_key_changes:
-            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to another paging method")
-            yield from _fall_back_to_pages_by_offset()
-            return
-
-        logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
+            raise RuntimeError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to another paging method")
         
-        ###  Prepare pagination variables 
-        ###  First request should not have any `page_token` and `page_size` defined
+        ## deletes/key_changes cannot be retrieved with cursor paging
+        if self.get_deletes or self.get_key_changes:
+            raise RuntimeError(f"Cursor Paging does not support deletes/key_changes. Falling back to another paging method")
+        
+        #  Prepare pagination variables 
+        ## First request should not have any `page_token` and `page_size` defined
         paged_params.init_page_by_token(page_token = None, page_size = None)            
         # Begin pagination loop
         while True:
