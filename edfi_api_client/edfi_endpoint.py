@@ -174,11 +174,9 @@ class EdFiEndpoint:
             yield from paged_result
 
     
-    def get_pages_offset(self,
+    def get_pages(self,
         *,
-        url: Optional[str] = None,
         params: Optional[dict] = None,  # Optional alternative params
-        limit: Optional[int] = None,
         page_size: int = 100,
         reverse_paging: bool = True,
         step_change_version: bool = False,
@@ -201,11 +199,7 @@ class EdFiEndpoint:
         """
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
-        end_point = url or self.url
-        logging.info(f"[Get {self.component}] Endpoint: {end_point}")
-
-        if limit:  # Override limit if passed
-            paged_params['limit'] = limit
+        logging.info(f"[Get {self.component}] Endpoint: {self.url}")
 
         ### Prepare pagination variables, depending on type of pagination being used
         if step_change_version and reverse_paging:
@@ -222,15 +216,14 @@ class EdFiEndpoint:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
             paged_params.init_page_by_offset(page_size)
 
-        total_count = 0
         # Begin pagination-loop
         while True:
             logging.info(f"[Get {self.component}] Parameters: {paged_params}")
 
             ### GET from the API and yield the resulting JSON payload
-            paged_rows = self.client.session.get_response(end_point, params=paged_params, **kwargs).json()
-            yield paged_rows
+            paged_rows = self.client.session.get_response(self.url, params=paged_params, **kwargs).json()
             logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
+            yield paged_rows
 
             ### Paginate, depending on the method specified in arguments
             # Reverse offset pagination is only applicable during change-version stepping.
@@ -270,27 +263,19 @@ class EdFiEndpoint:
     
     def get_pages_cursor(self,
         *,
-        url: Optional[str] = None,
         params: Optional[dict] = None,  # Optional alternative params
-        limit: Optional[int] = None,
         page_size: int = 100,
         **kwargs
     ) -> Iterator[List[dict]]:
         
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
-        end_point = url or self.url
-        logging.info(f"[Get {self.component}] Endpoint: {end_point}")
-
-        if limit:  # Override limit if passed
-            paged_params['limit'] = limit
+        logging.info(f"[Get {self.component}] Endpoint: {self.url}")
 
         # Fall back to reverse-offset paging if incompatible with cursor paging
         def _fall_back_to_pages_by_offset():
             return self.get_pages_offset(
-                url = url,
                 params = params, 
-                limit = limit, 
                 page_size=page_size,
                 **kwargs
             )
@@ -312,19 +297,18 @@ class EdFiEndpoint:
         ###  Prepare pagination variables 
         ###  First request should not have any `page_token` and `page_size` defined
         paged_params.init_page_by_token(page_token = None, page_size = None)            
-        
         # Begin pagination loop
         while True:
             logging.info(f"[Get {self.component}] Parameters: {paged_params}")
 
-            result = self.client.session.get_response(end_point, params = paged_params, **kwargs)
+            result = self.client.session.get_response(self.url, params = paged_params, **kwargs)
             paged_rows = result.json()
             logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows")
             yield paged_rows
             
             logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
             if not result.headers.get("Next-Page-Token"):
-                logging.info(f"[Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
+                logging.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
                 break
             paged_params.init_page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
 
