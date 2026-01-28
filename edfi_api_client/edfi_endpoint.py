@@ -168,16 +168,18 @@ class EdFiEndpoint:
         ## Check ODS version compatibility for cursor paging
         ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
         if ods_version < (7,3):
-            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to another paging method")
+            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to Reverse-paginating offset")
             paged_result_iter = self.get_pages(
+                step_change_version = True,
                 params = params, 
                 page_size=page_size,
                 **kwargs
             )
         ## deletes/key_changes cannot be retrieved with cursor paging
         if self.get_deletes or self.get_key_changes:
-            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to another paging method")
+            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to Reverse-paginating offset")
             paged_result_iter = self.get_pages(
+                step_change_version = True,
                 params = params, 
                 page_size=page_size,
                 **kwargs
@@ -299,18 +301,15 @@ class EdFiEndpoint:
         
         ## deletes/key_changes cannot be retrieved with cursor paging
         if self.get_deletes or self.get_key_changes:
-            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to reverse-offset paging method")
+            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to Reverse-paginating offset")
             yield from self.get_pages(
-                params = params, 
+                step_change_version = True,
+                params = paged_params, 
                 page_size=page_size,
                 **kwargs
             )
             return
 
-        #  Prepare pagination variables 
-        ## First request should not have any `page_token` and `page_size` defined
-        paged_params.init_page_by_token(page_token = None, page_size = None)            
-        
         # Begin pagination loop
         while True:
             logging.info(f"[Get {self.component}] Parameters: {paged_params}")
