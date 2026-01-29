@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
 
+from functools import partial
+
 
 class EdFiEndpoint:
     """
@@ -123,7 +125,7 @@ class EdFiEndpoint:
         return res
 
 
-    def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:
+    def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:        
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
@@ -163,10 +165,29 @@ class EdFiEndpoint:
         :param max_wait:
         :return:
         """
-        paged_result_iter = self.get_pages(
+        paginator = self.get_pages_cursor
+        # Fall back to reverse-offset paging if incompatible with cursor paging
+        ## Check ODS version compatibility for cursor paging
+        ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
+        if ods_version < (7,3):
+            logging.warning(f"ODS version {ods_version} is incompatible with cursor-pagination (requires v7.3 or higher). Falling back to reverse-offset pagination...")
+            paginator = partial(self.get_pages,
+                reverse_paging = reverse_paging,
+                step_change_version=step_change_version,
+                change_version_step_size=change_version_step_size
+            )
+        ## deletes/key_changes cannot be retrieved with cursor paging
+        if self.get_deletes or self.get_key_changes:
+            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to Reverse-paginating offset")
+            paginator = partial(self.get_pages,
+                reverse_paging = reverse_paging,
+                step_change_version=step_change_version,
+                change_version_step_size=change_version_step_size
+            )
+
+        paged_result_iter = paginator(
             params=params,
-            page_size=page_size, reverse_paging=reverse_paging,
-            step_change_version=step_change_version, change_version_step_size=change_version_step_size,
+            page_size=page_size,
             **kwargs
         )
 
@@ -199,6 +220,7 @@ class EdFiEndpoint:
         """
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
+        logging.info(f"[Get {self.component}] Endpoint: {self.url}")
 
         ### Prepare pagination variables, depending on type of pagination being used
         if step_change_version and reverse_paging:
@@ -210,17 +232,17 @@ class EdFiEndpoint:
         elif step_change_version:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping")
             paged_params.init_page_by_offset(page_size)
-            paged_params.init_page_by_change_version_step(change_version_step_size)
-
+            paged_params.init_page_by_change_version_step(change_version_step_size)         
         else:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
             paged_params.init_page_by_offset(page_size)
 
         # Begin pagination-loop
         while True:
+            logging.info(f"[Get {self.component}] Parameters: {paged_params}")
 
             ### GET from the API and yield the resulting JSON payload
-            paged_rows = self.get(params=paged_params, **kwargs)
+            paged_rows = self.client.session.get_response(self.url, params=paged_params, **kwargs).json()
             logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
             yield paged_rows
 
@@ -239,7 +261,7 @@ class EdFiEndpoint:
                     except StopIteration:
                         logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
                         break
-
+                
             else:
                 # If no rows are returned, end pagination.
                 if len(paged_rows) == 0:
@@ -259,6 +281,33 @@ class EdFiEndpoint:
                 else:
                     logging.info(f"@ Paginating offset...")
                     paged_params.page_by_offset()
+    
+    def get_pages_cursor(self,
+        *,
+        params: Optional[dict] = None,  # Optional alternative params
+        page_size: int = 100,
+        **kwargs
+    ) -> Iterator[List[dict]]:
+        
+        # Override init params if passed
+        paged_params = EdFiParams(params or self.params).copy()
+        logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
+
+        # Begin pagination loop
+        while True:
+            logging.info(f"[Get {self.component}] Parameters: {paged_params}")
+
+            result = self.client.session.get_response(self.url, params = paged_params, **kwargs)
+            paged_rows = result.json()
+            logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows")
+            yield paged_rows
+            
+            logging.info(f"[Paged Get {self.component}] @ Checking next page token...")
+            if not result.headers.get("Next-Page-Token"):
+                logging.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
+                break
+            paged_params.page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
+
 
 
     def get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> int:
