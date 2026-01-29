@@ -193,7 +193,7 @@ class EdFiParams(dict):
         if self['offset'] < 0:
             raise StopIteration
         
-    def init_page_by_token(self, page_token: str, page_size: int):
+    def page_by_token(self, page_token: str, page_size: int):
         """
 
         :param page_size: 

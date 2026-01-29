@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_client import EdFiClient
 
-from joblib import Parallel, delayed 
 from functools import partial
 
 
@@ -147,6 +146,9 @@ class EdFiEndpoint:
         *,
         params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
+        reverse_paging: bool = True,
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
         **kwargs
     ) -> Iterator[dict]:
         """
@@ -163,33 +165,32 @@ class EdFiEndpoint:
         :param max_wait:
         :return:
         """
-            
+        paginator = self.get_pages_cursor
         # Fall back to reverse-offset paging if incompatible with cursor paging
         ## Check ODS version compatibility for cursor paging
         ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
         if ods_version < (7,3):
-            logging.warning(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Falling back to Reverse-paginating offset")
-            paged_result_iter = self.get_pages(
-                step_change_version = True,
-                params = params, 
-                page_size=page_size,
-                **kwargs
+            logging.warning(f"ODS version {ods_version} is incompatible with cursor-pagination (requires v7.3 or higher). Falling back to reverse-offset pagination...")
+            paginator = partial(self.get_pages,
+                reverse_paging = reverse_paging,
+                step_change_version=step_change_version,
+                change_version_step_size=change_version_step_size
             )
         ## deletes/key_changes cannot be retrieved with cursor paging
         if self.get_deletes or self.get_key_changes:
             logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to Reverse-paginating offset")
-            paged_result_iter = self.get_pages(
-                step_change_version = True,
-                params = params, 
-                page_size=page_size,
-                **kwargs
+            paginator = partial(self.get_pages,
+                reverse_paging = reverse_paging,
+                step_change_version=step_change_version,
+                change_version_step_size=change_version_step_size
             )
 
-        paged_result_iter = self.get_pages_cursor(
+        paged_result_iter = paginator(
             params=params,
             page_size=page_size,
             **kwargs
         )
+
         for paged_result in paged_result_iter:
             yield from paged_result
 
@@ -290,25 +291,7 @@ class EdFiEndpoint:
         
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
-        logging.info(f"[Get {self.component}] Endpoint: {self.url}")
         logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
-
-        # Cursor paging Checkpoints
-        ## Check ODS version compatibility for cursor paging
-        ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
-        if ods_version < (7,3):
-            raise RuntimeError(f"ODS {self.client.get_ods_version()} is incompatible. Cursor Paging requires v.7.3 or higher. Ending pagination.")
-        
-        ## deletes/key_changes cannot be retrieved with cursor paging
-        if self.get_deletes or self.get_key_changes:
-            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to Reverse-paginating offset")
-            yield from self.get_pages(
-                step_change_version = True,
-                params = paged_params, 
-                page_size=page_size,
-                **kwargs
-            )
-            return
 
         # Begin pagination loop
         while True:
@@ -319,11 +302,11 @@ class EdFiEndpoint:
             logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows")
             yield paged_rows
             
-            logging.info(f"[Paged Get {self.component}] @ Cursor paging ...")
+            logging.info(f"[Paged Get {self.component}] @ Checking next page token...")
             if not result.headers.get("Next-Page-Token"):
                 logging.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
                 break
-            paged_params.init_page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
+            paged_params.page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
 
 
 
