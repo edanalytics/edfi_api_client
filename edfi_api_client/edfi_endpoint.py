@@ -457,7 +457,7 @@ class EdFiComposite(EdFiEndpoint):
         raise NotImplementedError("Total counts have not been implemented in Ed-Fi composites!")
     
     def get_pages_cursor(self, *args, **kwargs):
-        logging.info(f"Composite endpoints are incompatible with cursor-pagination. Falling back to reverse-offset pagination...")
+        logging.info(f"Composite endpoints are incompatible with cursor-pagination. Falling back to offset pagination...")
         yield from self.get_pages(*args, **kwargs)
 
     def get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
