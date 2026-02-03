@@ -125,7 +125,7 @@ class EdFiEndpoint:
         return res
 
 
-    def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:        
+    def get(self, limit: Optional[int] = None, *, params: Optional[dict] = None, **kwargs) -> List[dict]:
         """
         This method returns the rows from a single GET request using the exact params passed by the user.
 
@@ -178,7 +178,7 @@ class EdFiEndpoint:
             )
         ## deletes/key_changes cannot be retrieved with cursor paging
         if self.get_deletes or self.get_key_changes:
-            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to Reverse-paginating offset")
+            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to reverse-offset pagination...")
             paginator = partial(self.get_pages,
                 reverse_paging = reverse_paging,
                 step_change_version=step_change_version,
@@ -220,7 +220,6 @@ class EdFiEndpoint:
         """
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
-        logging.info(f"[Get {self.component}] Endpoint: {self.url}")
 
         ### Prepare pagination variables, depending on type of pagination being used
         if step_change_version and reverse_paging:
@@ -261,7 +260,7 @@ class EdFiEndpoint:
                     except StopIteration:
                         logging.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
                         break
-                
+
             else:
                 # If no rows are returned, end pagination.
                 if len(paged_rows) == 0:

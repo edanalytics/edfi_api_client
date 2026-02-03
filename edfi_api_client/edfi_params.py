@@ -21,7 +21,7 @@ class EdFiParams(dict):
 
         self.min_change_version = self.get('minChangeVersion')
         self.max_change_version = self.get('maxChangeVersion')
-        
+
         # These parameters are only used during pagination. They must be explicitly initialized.
         self.page_size = None
         self.change_version_step_size = None
@@ -213,7 +213,3 @@ class EdFiParams(dict):
         else:
             self["pageToken"] = self.page_token
             self["pageSize"] = self.page_size 
-    
-
-    
-
