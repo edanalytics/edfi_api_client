@@ -165,8 +165,9 @@ class EdFiEndpoint:
         :param max_wait:
         :return:
         """
+        # Always default to cursor-pagination; fall back to reverse-offset paging if unsupported
         paginator = self.get_pages_cursor
-        # Fall back to reverse-offset paging if incompatible with cursor paging
+        
         ## Check ODS version compatibility for cursor paging
         ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
         if ods_version < (7,3):
@@ -176,9 +177,10 @@ class EdFiEndpoint:
                 step_change_version=step_change_version,
                 change_version_step_size=change_version_step_size
             )
+        
         ## deletes/key_changes cannot be retrieved with cursor paging
         if self.get_deletes or self.get_key_changes:
-            logging.warning(f"Cursor Paging does not support deletes/key_changes. Falling back to reverse-offset pagination...")
+            logging.warning(f"Cursor-pagination is unsupported in deletes/key_changes endpoints. Falling back to reverse-offset pagination...")
             paginator = partial(self.get_pages,
                 reverse_paging = reverse_paging,
                 step_change_version=step_change_version,
@@ -231,7 +233,8 @@ class EdFiEndpoint:
         elif step_change_version:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping")
             paged_params.init_page_by_offset(page_size)
-            paged_params.init_page_by_change_version_step(change_version_step_size)         
+            paged_params.init_page_by_change_version_step(change_version_step_size)
+
         else:
             logging.info(f"[Paged Get {self.component}] Pagination Method: Offset Pagination")
             paged_params.init_page_by_offset(page_size)
@@ -281,6 +284,7 @@ class EdFiEndpoint:
                     logging.info(f"@ Paginating offset...")
                     paged_params.page_by_offset()
     
+
     def get_pages_cursor(self,
         *,
         params: Optional[dict] = None,  # Optional alternative params
@@ -305,7 +309,8 @@ class EdFiEndpoint:
             if not result.headers.get("Next-Page-Token"):
                 logging.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
                 break
-            paged_params.page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size = page_size)
+
+            paged_params.page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size=page_size)
 
 
 
@@ -450,6 +455,10 @@ class EdFiComposite(EdFiEndpoint):
         :return:
         """
         raise NotImplementedError("Total counts have not been implemented in Ed-Fi composites!")
+    
+    def get_pages_cursor(self, *args, **kwargs):
+        logging.info(f"Composite endpoints are incompatible with cursor-pagination. Falling back to reverse-offset pagination...")
+        yield from self.get_pages(*args, **kwargs)
 
     def get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
         """

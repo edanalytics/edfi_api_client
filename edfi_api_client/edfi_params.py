@@ -192,18 +192,18 @@ class EdFiParams(dict):
 
         if self['offset'] < 0:
             raise StopIteration
-        
+    
+    
     def page_by_token(self, page_token: str, page_size: int):
         """
+        Cursor paging behavior: page_token is required when page_size is specified.
+        - If page_token is None: first request, do NOT include page_size
+        - If page_token is present: include page_token and page_size
 
         :param page_size: 
         :param page_token:
         :return:
         """
-
-        # Cursor paging behavior: page_token is required when page_size is specified.
-        # - If page_token is None: first request, do NOT include page_size
-        # - If page_token is present: include page_token and page_size
         self.page_size = page_size
         self.page_token = page_token
 
