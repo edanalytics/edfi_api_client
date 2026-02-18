@@ -50,6 +50,14 @@ class EdFiClient:
         if verbose:
             logging.getLogger("edfi_api_client").setLevel(logging.INFO)
 
+            # If no logger is enabled at the application level, enable it here.
+            if not logging.getLogger().handlers:
+                logging.basicConfig(
+                level=logging.INFO,
+                format='[%(asctime)s] %(levelname)s: %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S',
+            )
+
         self.base_url = base_url
         self.client_key = client_key
         self.client_secret = client_secret
