@@ -9,13 +9,10 @@ from edfi_api_client.edfi_swagger import EdFiSwagger
 from edfi_api_client.session import EdFiSession
 from edfi_api_client.token_cache import BaseTokenCache
 
-
 import logging
-logging.basicConfig(
-    level="WARNING",
-    format='[%(asctime)s] %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-)
+
+logger = logging.getLogger(__name__)
+
 
 class EdFiClient:
     """
@@ -49,9 +46,17 @@ class EdFiClient:
         token_cache: Optional[BaseTokenCache] = None,
         **kwargs
     ):
-        # Update logger first
+        # Update package logger level when verbose mode is enabled
         if verbose:
-            logging.getLogger().setLevel(logging.INFO)
+            logging.getLogger("edfi_api_client").setLevel(logging.INFO)
+
+            # If no logger is enabled at the application level, enable it here.
+            if not logging.getLogger().handlers:
+                logging.basicConfig(
+                    level=logging.INFO,
+                    format='[%(asctime)s] %(levelname)s: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S',
+                )
 
         self.base_url = base_url
         self.client_key = client_key
@@ -188,7 +193,7 @@ class EdFiClient:
         :return:
         """
         if self.swaggers.get(component) is None:
-            logging.info(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
+            logger.info(f"[Get {component.title()} Swagger] Retrieving Swagger into memory...")
             self.get_swagger(component)
 
 
@@ -296,7 +301,7 @@ class EdFiClient:
         https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V520/pages/25100511/Authorization
         """
         token_info_url = util.url_join(self.base_url, "oauth/token_info")
-        logging.info(f"[Get Token Info] Endpoint: {token_info_url}")
+        logger.info(f"[Get Token Info] Endpoint: {token_info_url}")
 
         token_response = self.session.post_response(
             token_info_url,
@@ -314,7 +319,7 @@ class EdFiClient:
         :return:
         """
         change_version_url = util.url_join(self.base_url, 'changeQueries/v1', self.instance_locator, 'availableChangeVersions')
-        logging.info(f"[Get Newest Change Version] Endpoint: {change_version_url}")
+        logger.info(f"[Get Newest Change Version] Endpoint: {change_version_url}")
 
         res = self.session.get_response(change_version_url)
         if not res.ok:
