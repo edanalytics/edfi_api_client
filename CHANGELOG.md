@@ -1,3 +1,8 @@
+# edfi_api_client v0.3.1
+## Under the Hood
+- Configure base logger handlers only when not preconfigured by the executing script.
+
+
 # edfi_api_client v0.3.0
 ## New Features
 - Remove support for Ed-Fi 2. 
