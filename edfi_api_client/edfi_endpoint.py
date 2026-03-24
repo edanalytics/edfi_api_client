@@ -171,11 +171,11 @@ class EdFiEndpoint:
         paginator = self.get_pages_cursor
         
         ## Check ODS version compatibility for cursor paging
-        ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
-        if ods_version < (7,3):
+        ods_version = self.client.get_ods_version()
+        if not ods_version or tuple(map(int, ods_version.split(".")[:2])) < (7,3):
             logger.warning(f"ODS version {ods_version} is incompatible with cursor-pagination (requires v7.3 or higher). Falling back to reverse-offset pagination...")
             paginator = partial(self.get_pages,
-                reverse_paging = reverse_paging,
+                reverse_paging=reverse_paging,
                 step_change_version=step_change_version,
                 change_version_step_size=change_version_step_size
             )
@@ -184,7 +184,7 @@ class EdFiEndpoint:
         if self.get_deletes or self.get_key_changes:
             logger.warning(f"Cursor-pagination is unsupported in deletes/key_changes endpoints. Falling back to reverse-offset pagination...")
             paginator = partial(self.get_pages,
-                reverse_paging = reverse_paging,
+                reverse_paging=reverse_paging,
                 step_change_version=step_change_version,
                 change_version_step_size=change_version_step_size
             )
@@ -302,17 +302,17 @@ class EdFiEndpoint:
         while True:
             logger.info(f"[Get {self.component}] Parameters: {paged_params}")
 
-            result = self.client.session.get_response(self.url, params = paged_params, **kwargs)
+            result = self.client.session.get_response(self.url, params=paged_params, **kwargs)
             paged_rows = result.json()
             logger.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows")
             yield paged_rows
             
             logger.info(f"[Paged Get {self.component}] @ Checking next page token...")
-            if not result.headers.get("Next-Page-Token"):
+            if not (page_token := result.headers.get("Next-Page-Token")):
                 logger.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
                 break
 
-            paged_params.page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size=page_size)
+            paged_params.page_by_token(page_token=page_token, page_size=page_size)
 
 
 

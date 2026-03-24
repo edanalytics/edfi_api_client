@@ -196,7 +196,7 @@ class EdFiParams(dict):
             raise StopIteration
     
     
-    def page_by_token(self, page_token: str, page_size: int):
+    def page_by_token(self, page_token: Optional[str], page_size: int):
         """
         Cursor paging behavior: page_token is required when page_size is specified.
         - If page_token is None: first request, do NOT include page_size
