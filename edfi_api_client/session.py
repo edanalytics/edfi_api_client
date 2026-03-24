@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.edfi_params import EdFiParams
 
+logger = logging.getLogger(__name__)
+
 
 class EdFiSession:
     """
@@ -125,7 +127,7 @@ class EdFiSession:
         # Only re-authenticate when necessary.
         if self.authenticated_at:
             if self.refresh_at < int(time.time()):
-                logging.info("Session authentication is expired. Attempting reconnection...")
+                logger.info("Session authentication is expired. Attempting reconnection...")
             else:
                 return self.auth_headers
 
@@ -137,7 +139,7 @@ class EdFiSession:
         self._last_auth_payload = auth_payload
 
         self._access_token = auth_payload.get('access_token', '')
-        logging.info(f'Using token starting with {self._access_token[:5]}')
+        logger.info(f'Using token starting with {self._access_token[:5]}')
 
         # Update headers
         self.auth_headers.update({
@@ -165,7 +167,7 @@ class EdFiSession:
                 return self._load_or_update_token_from_cache(force_write_lock=True)
         
         else:
-            logging.info('Token cache is stale; attempting to get write lock')
+            logger.info('Token cache is stale; attempting to get write lock')
 
             with self.token_cache.get_write_lock():
                 auth_payload = None
@@ -261,7 +263,7 @@ class EdFiSession:
                 except RequestsWarning as retry_warning:
                     # If an API call fails, it may be due to rate-limiting.
                     sleep_secs = min((2 ** n_tries) * 2, max_wait)
-                    logging.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
+                    logger.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
                     self.safe_sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.

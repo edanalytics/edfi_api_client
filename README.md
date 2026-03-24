@@ -61,7 +61,7 @@ If either `client_key` or `client_secret` are empty, a session with the ODS will
 
 
 All code examples in this document use verbose-logging to more-explicitly show interactions with the API.
-It is recommended to set `verbose=True` while working interactively with the API.
+It is recommended to set `verbose=True` while working interactively with the API. If logging handlers have not been configured before enabling verbose-logging, default package handlers will be used.
 
 ```python
 >>> from edfi_api_client import EdFiClient
