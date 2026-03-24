@@ -173,7 +173,7 @@ class EdFiEndpoint:
         ## Check ODS version compatibility for cursor paging
         ods_version = tuple(map(int, self.client.get_ods_version().split(".")[:2]))
         if ods_version < (7,3):
-            logging.warning(f"ODS version {ods_version} is incompatible with cursor-pagination (requires v7.3 or higher). Falling back to reverse-offset pagination...")
+            logger.warning(f"ODS version {ods_version} is incompatible with cursor-pagination (requires v7.3 or higher). Falling back to reverse-offset pagination...")
             paginator = partial(self.get_pages,
                 reverse_paging = reverse_paging,
                 step_change_version=step_change_version,
@@ -182,7 +182,7 @@ class EdFiEndpoint:
         
         ## deletes/key_changes cannot be retrieved with cursor paging
         if self.get_deletes or self.get_key_changes:
-            logging.warning(f"Cursor-pagination is unsupported in deletes/key_changes endpoints. Falling back to reverse-offset pagination...")
+            logger.warning(f"Cursor-pagination is unsupported in deletes/key_changes endpoints. Falling back to reverse-offset pagination...")
             paginator = partial(self.get_pages,
                 reverse_paging = reverse_paging,
                 step_change_version=step_change_version,
@@ -243,11 +243,11 @@ class EdFiEndpoint:
 
         # Begin pagination-loop
         while True:
-            logging.info(f"[Get {self.component}] Parameters: {paged_params}")
+            logger.info(f"[Get {self.component}] Parameters: {paged_params}")
 
             ### GET from the API and yield the resulting JSON payload
             paged_rows = self.client.session.get_response(self.url, params=paged_params, **kwargs).json()
-            logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
+            logger.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows.")
             yield paged_rows
 
             ### Paginate, depending on the method specified in arguments
@@ -296,20 +296,20 @@ class EdFiEndpoint:
         
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
-        logging.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
+        logger.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
 
         # Begin pagination loop
         while True:
-            logging.info(f"[Get {self.component}] Parameters: {paged_params}")
+            logger.info(f"[Get {self.component}] Parameters: {paged_params}")
 
             result = self.client.session.get_response(self.url, params = paged_params, **kwargs)
             paged_rows = result.json()
-            logging.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows")
+            logger.info(f"[Get {self.component}] Retrieved {len(paged_rows)} rows")
             yield paged_rows
             
-            logging.info(f"[Paged Get {self.component}] @ Checking next page token...")
+            logger.info(f"[Paged Get {self.component}] @ Checking next page token...")
             if not result.headers.get("Next-Page-Token"):
-                logging.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
+                logger.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
                 break
 
             paged_params.page_by_token(page_token = result.headers.get("Next-Page-Token"), page_size=page_size)
@@ -459,7 +459,7 @@ class EdFiComposite(EdFiEndpoint):
         raise NotImplementedError("Total counts have not been implemented in Ed-Fi composites!")
     
     def get_pages_cursor(self, *args, **kwargs):
-        logging.info(f"Composite endpoints are incompatible with cursor-pagination. Falling back to offset pagination...")
+        logger.info(f"Composite endpoints are incompatible with cursor-pagination. Falling back to offset pagination...")
         yield from self.get_pages(*args, **kwargs)
 
     def get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> Iterator[List[dict]]:
