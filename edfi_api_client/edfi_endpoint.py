@@ -263,11 +263,15 @@ class EdFiEndpoint:
                     paged_params.page_by_offset()
 
 
-    def get_total_count(self, *, params: Optional[dict] = None, **kwargs) -> int:
+    def get_total_count(self, *, params: Optional[dict] = None, total_count_change_version_step_size: int = 50000, **kwargs) -> int:
         """
         Ed-Fi 3 resources/descriptors can be fed an optional 'totalCount' parameter in GETs.
         This returns a 'Total-Count' in the response headers that gives the total number of rows for that resource with the specified params.
         Non-pagination params (i.e., offset and limit) have no impact on the returned total.
+
+        Upon failure, e.g. for high-volume resource deletes, will attempt to
+        paginate by change version stepping in the forward direction to get
+        total counts. 
 
         :return:
         """
@@ -278,9 +282,35 @@ class EdFiEndpoint:
         params['totalCount'] = True
         params['limit'] = 0
 
-        logger.info(f"[Get Total Count {self.component}] Parameters: {params}")
-        res = self.client.session.get_response(self.url, params, **kwargs)
-        return int(res.headers.get('Total-Count'))
+        try:
+            logger.info(f"[Get Total Count {self.component}] Parameters: {params}")
+            res = self.client.session.get_response(self.url, params, **kwargs)
+            return int(res.headers.get('Total-Count'))
+        except requests.HTTPError as e:
+            if e.response.status_code != 504:
+                raise
+            else:
+                logger.info(f"[Get Total Count {self.component}] Applying change version window of {total_count_change_version_step_size} due to timeout on total count across full change window.")
+
+                if not params.min_change_version:
+                    params.min_change_version = 0
+                if not params.max_change_version:
+                    params.max_change_version = self.client.get_newest_change_version()
+                params.init_page_by_change_version_step(total_count_change_version_step_size)
+                    
+                running_count = 0
+                while True:
+                    logger.info(f"[Get Total Count {self.component}] Parameters: {paged_params}")
+                    res = self.client.session.get_response(self.url, paged_params, **kwargs)
+                    running_count += int(res.headers.get('Total-Count'))
+                    try:
+                        paged_params.page_by_change_version_step()
+                    except StopIteration:
+                        break
+
+                return running_count
+
+            
 
     def total_count(self, *args, **kwargs) -> int:
         logger.warning("`EdFiEndpoint.total_count()` is deprecated. Use `EdFiEndpoint.get_total_count()` instead.")
