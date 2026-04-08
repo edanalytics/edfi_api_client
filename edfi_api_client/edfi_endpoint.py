@@ -289,26 +289,26 @@ class EdFiEndpoint:
         except requests.HTTPError as e:
             if e.response.status_code != 504:
                 raise
-            else:
-                logger.info(f"[Get Total Count {self.component}] Applying change version window of {total_count_change_version_step_size} due to timeout on total count across full change window.")
 
-                if not params.min_change_version:
-                    params.min_change_version = 0
-                if not params.max_change_version:
-                    params.max_change_version = self.client.get_newest_change_version()
-                params.init_page_by_change_version_step(total_count_change_version_step_size)
-                    
-                running_count = 0
-                while True:
-                    logger.info(f"[Get Total Count {self.component}] Parameters: {paged_params}")
-                    res = self.client.session.get_response(self.url, paged_params, **kwargs)
-                    running_count += int(res.headers.get('Total-Count'))
-                    try:
-                        paged_params.page_by_change_version_step()
-                    except StopIteration:
-                        break
+            logger.info(f"[Get Total Count {self.component}] Applying change version window of {total_count_change_version_step_size} due to timeout on total count across full change window.")
 
-                return running_count
+            if not params.min_change_version:
+                params.min_change_version = 0
+            if not params.max_change_version:
+                params.max_change_version = self.client.get_newest_change_version()
+            params.init_page_by_change_version_step(total_count_change_version_step_size)
+                
+            running_count = 0
+            while True:
+                logger.info(f"[Get Total Count {self.component}] Parameters: {paged_params}")
+                res = self.client.session.get_response(self.url, paged_params, **kwargs)
+                running_count += int(res.headers.get('Total-Count'))
+                try:
+                    paged_params.page_by_change_version_step()
+                except StopIteration:
+                    break
+
+            return running_count
 
             
 
