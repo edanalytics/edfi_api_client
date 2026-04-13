@@ -28,7 +28,6 @@ class EdFiParams(dict):
         self.page_size = None
         self.change_version_step_size = None
         self.page_token = None
-        self.number = None
 
 
     def copy(self) -> 'EdFiParams':
