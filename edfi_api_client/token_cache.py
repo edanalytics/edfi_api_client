@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.session import EdFiSession
 
+logger = logging.getLogger(__name__)
+
 
 class TokenCacheError(Exception):
     pass
@@ -128,7 +130,7 @@ class LockfileTokenCache(BaseTokenCache):
     def load(self) -> dict: 
         """Loads value from cache"""
         try:
-            logging.info(f'Loading cache from {self.cache_path}')
+            logger.info(f'Loading cache from {self.cache_path}')
             with open(self.cache_path, 'r') as fp:
                 value = json.loads(fp.read())
         except json.JSONDecodeError:
@@ -141,7 +143,7 @@ class LockfileTokenCache(BaseTokenCache):
     def update(self, value: dict):
         """Updates cache with new value"""
         with open(self.cache_path, 'w') as fp:
-            logging.info(f'Writing cache to {self.cache_path}')
+            logger.info(f'Writing cache to {self.cache_path}')
             fp.write(json.dumps(value))
 
     @contextlib.contextmanager
@@ -161,7 +163,7 @@ class LockfileTokenCache(BaseTokenCache):
                         lockfile_age = time.time() - os.path.getmtime(self.lockfile_path)
                         if lockfile_age > self.write_lock_staleness_threshold: 
                             # assume another client died while holding the lock
-                            logging.info(f'Lockfile at {self.lockfile_path} touched more than {self.write_lock_staleness_threshold}s ago. Removing lockfile.')
+                            logger.info(f'Lockfile at {self.lockfile_path} touched more than {self.write_lock_staleness_threshold}s ago. Removing lockfile.')
                             os.remove(self.lockfile_path)
                     
                     with open(self.lockfile_path, 'x') as f:

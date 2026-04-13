@@ -5,6 +5,8 @@ from typing import List, Optional
 
 from edfi_api_client import util
 
+logger = logging.getLogger(__name__)
+
 
 class EdFiParams(dict):
     """
@@ -21,7 +23,7 @@ class EdFiParams(dict):
 
         self.min_change_version = self.get('minChangeVersion')
         self.max_change_version = self.get('maxChangeVersion')
-        
+
         # These parameters are only used during pagination. They must be explicitly initialized.
         self.page_size = None
         self.change_version_step_size = None
@@ -71,17 +73,17 @@ class EdFiParams(dict):
         cc_kwargs = [util.snake_to_camel(key) for key in _kwargs.keys()]
 
         for key in __get_duplicates(cc_params):
-            logging.warning(f"Duplicate key `{key}` found in `params`! The last will be used.")
+            logger.warning(f"Duplicate key `{key}` found in `params`! The last will be used.")
 
         for key in __get_duplicates(cc_kwargs):
-            logging.warning(f"Duplicate key `{key}` found in `kwargs`! The last will be used.")
+            logger.warning(f"Duplicate key `{key}` found in `kwargs`! The last will be used.")
 
 
         # Make sure the user does not pass in duplicates between params and kwargs.
         cc_kwargs_params = list(set(cc_params)) + list(set(cc_kwargs))
 
         for key in __get_duplicates(cc_kwargs_params):
-            logging.warning(f"Duplicate key `{key}` found between `params` and `kwargs`! The kwarg will be used.")
+            logger.warning(f"Duplicate key `{key}` found between `params` and `kwargs`! The kwarg will be used.")
 
         # Populate the final parameters.
         final_params = {}
@@ -106,7 +108,7 @@ class EdFiParams(dict):
         self.page_size = page_size
 
         if 'limit' in self or 'offset' in self:
-            logging.warning("The previously-defined limit and offset will be reset for paging.")
+            logger.warning("The previously-defined limit and offset will be reset for paging.")
 
         self['limit'] = self.page_size
         self['offset'] = 0
@@ -192,18 +194,18 @@ class EdFiParams(dict):
 
         if self['offset'] < 0:
             raise StopIteration
-        
-    def page_by_token(self, page_token: str, page_size: int):
+    
+    
+    def page_by_token(self, page_token: Optional[str], page_size: int):
         """
+        Cursor paging behavior: page_token is required when page_size is specified.
+        - If page_token is None: first request, do NOT include page_size
+        - If page_token is present: include page_token and page_size
 
         :param page_size: 
         :param page_token:
         :return:
         """
-
-        # Cursor paging behavior: page_token is required when page_size is specified.
-        # - If page_token is None: first request, do NOT include page_size
-        # - If page_token is present: include page_token and page_size
         self.page_size = page_size
         self.page_token = page_token
 
@@ -213,7 +215,3 @@ class EdFiParams(dict):
         else:
             self["pageToken"] = self.page_token
             self["pageSize"] = self.page_size 
-    
-
-    
-
