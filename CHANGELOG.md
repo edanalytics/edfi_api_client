@@ -1,3 +1,12 @@
+# edfi_api_client v0.4.0
+## New Features
+- Support cursor-pagination by default in `EdFiEndpoint.get_rows()`.
+  - Fall back to reverse change-version stepping on deletes/key-changes, or before ODS version 7.3.
+
+## Under the Hood
+- Paginate total-counts in `EdFiEndpoint.get_total_count()` if the call times out due to high data volume. 
+
+
 # edfi_api_client v0.3.1
 ## Under the Hood
 - Configure base logger handlers only when not preconfigured by the executing script.
