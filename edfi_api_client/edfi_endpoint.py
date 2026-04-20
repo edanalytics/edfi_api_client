@@ -144,6 +144,34 @@ class EdFiEndpoint:
         return self.client.session.get_response(self.url, params=params, **kwargs).json()
 
 
+    def get_by_id(self, resource_id: str, *, params: Optional[dict] = None, **kwargs) -> dict:
+        """
+        GET a single resource by id (Ed-Fi ``GET {collectionUrl}/{resource_id}``). The URL is built by joining ``resource_id`` to this 
+        endpoint's collection URL (same path pattern as delete-by-id).
+
+        Query parameters are merged with those from endpoint construction the same
+        way as :meth:`get`; pagination parameters are usually irrelevant for a
+        single-resource GET.
+
+        :param resource_id: The resource ``id``: a GUID string without hyphens (32 hexadecimal characters), as returned by the Ed-Fi API.
+        :param params: Optional params overriding those set on the endpoint.
+        :return: A single resource as a dict (not a list).
+        :raises ValueError: If ``get_deletes`` or ``get_key_changes`` was set on this endpoint.
+        """
+        if self.get_deletes or self.get_key_changes:
+            raise ValueError(
+                "get_by_id is not supported when get_deletes or get_key_changes is True."
+            )
+
+        url = util.url_join(self.url, resource_id)
+        logger.info(f"[Get by id {self.component}] Endpoint: {url}")
+
+        params = EdFiParams(params or self.params).copy()
+        logger.info(f"[Get by id {self.component}] Parameters: {params}")
+
+        return self.client.session.get_response(url, params=params, **kwargs).json()
+
+
     def get_rows(self,
         *,
         params: Optional[dict] = None,  # Optional alternative params
@@ -477,6 +505,11 @@ class EdFiComposite(EdFiEndpoint):
 
         else:
             raise ValueError("`filter_type` and `filter_id` must both be specified if a filter is being applied!")
+
+    def get_by_id(self, resource_id: str, *, params: Optional[dict] = None, **kwargs) -> dict:
+        raise NotImplementedError(
+            "get_by_id is not supported for composite endpoints; composites use collection URLs, not GET {resource}/{id}."
+        )
 
     def get_total_count(self, *args, **kwargs):
         """
