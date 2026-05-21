@@ -1,10 +1,12 @@
 from edfi_api_client import EdFiClient
 
+from http.client import RemoteDisconnected
 import pytest
 from requests.auth import _basic_auth_str
-from requests.exceptions import HTTPError
+from requests.exceptions import ConnectionError as RequestsConnectionError, HTTPError
 import responses
 from responses import matchers
+from urllib3.exceptions import ProtocolError
 
 import json
 
@@ -15,6 +17,50 @@ CLIENT_SECRET = 'client_secret'
 BASIC_AUTH_HEADER = _basic_auth_str(CLIENT_KEY, CLIENT_SECRET)
 TOKEN = 'token'
 INSTANCE_CODE = 'instance_code'
+
+
+def mock_connection_responses():
+    responses.get(
+        BASE_URL,
+        json={
+            'version': '7.1',
+            'informationalVersion': '7.1',
+            'suite': '3',
+            'build': '2025.5.1.1636',
+            'apiMode': 'District Specific',
+            'dataModels': [{'informationalVersion': 'The Ed-Fi Data Model 5.0',
+                 'name': 'Ed-Fi',
+                 'version': '5.0.0'}],
+            'urls': {
+                'dependencies': f'{BASE_URL}/metadata/data/v3/dependencies',
+                'openApiMetadata': f'{BASE_URL}/metadata/',
+                'oauth': f'{BASE_URL}/oauth/token',
+                'dataManagementApi': f'{BASE_URL}/data/v3/',
+                'xsdMetadata': f'{BASE_URL}/metadata/xsd'
+            }
+        }
+    )
+    responses.post(
+        f'{BASE_URL}/oauth/token',
+        json={
+            "access_token": TOKEN,
+            "expires_in": 1800,
+            "token_type": "bearer"
+        },
+        match=[
+            matchers.header_matcher({"Authorization": BASIC_AUTH_HEADER})
+        ]
+    )
+
+
+def remote_disconnected_error():
+    return RequestsConnectionError(
+        ProtocolError(
+            "Connection aborted.",
+            RemoteDisconnected("Remote end closed connection without response")
+        )
+    )
+
 
 @responses.activate
 def test_max_retries():
@@ -185,3 +231,56 @@ def test_default_no_retry():
         assert(school_rsp.call_count == 1)
 
 
+@responses.activate
+def test_retries_get_connection_errors():
+    """Test retrying GET requests when the connection closes unexpectedly"""
+    mock_connection_responses()
+
+    total_calls = 0
+    max_retries = 3
+    def school_callback(request):
+        nonlocal total_calls
+        total_calls += 1
+        if total_calls < max_retries:
+            raise remote_disconnected_error()
+        else:
+            return(200, {}, json.dumps([]))
+
+    responses.add_callback(
+        responses.GET,
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        callback=school_callback,
+        content_type='application/json'
+    )
+
+    client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    client.connect(retry_on_failure=True, max_retries=max_retries, max_wait=1)
+    schools = list(client.resource('schools').get_rows(page_size=1))
+
+    assert(schools == [])
+    assert(total_calls == max_retries)
+
+
+@responses.activate
+def test_default_no_retry_get_connection_errors():
+    """Test that GET connection errors are not retried by default"""
+    mock_connection_responses()
+
+    total_calls = 0
+    def school_callback(request):
+        nonlocal total_calls
+        total_calls += 1
+        raise remote_disconnected_error()
+
+    responses.add_callback(
+        responses.GET,
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        callback=school_callback,
+        content_type='application/json'
+    )
+
+    client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    with pytest.raises(RequestsConnectionError):
+        _ = list(client.resource('schools').get_rows(page_size=1))
+
+    assert(total_calls == 1)
