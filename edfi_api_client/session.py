@@ -5,7 +5,8 @@ import time
 import requests
 from requests import HTTPError
 from requests.auth import HTTPBasicAuth
-from requests.exceptions import ConnectionError, RequestsWarning
+from requests.exceptions import ChunkedEncodingError, ConnectionError, RequestsWarning
+from urllib3.exceptions import ProtocolError
 
 from edfi_api_client import util
 from edfi_api_client.token_cache import BaseTokenCache, TokenCacheError
@@ -253,8 +254,7 @@ class EdFiSession:
             max_wait = max_wait or self.max_wait
 
             response = None  # Save the response between retries to raise after all retries.
-            retry_connection_errors = func.__name__ == 'get_response'
-            connection_error = None
+            retry_error = None
             for n_tries in range(max_retries):
 
                 try:
@@ -268,20 +268,18 @@ class EdFiSession:
                     logger.warning(f"{retry_warning} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
                     self.safe_sleep(sleep_secs)
 
-                except ConnectionError as retry_error:
-                    if not retry_connection_errors:
-                        raise
-
-                    connection_error = retry_error
+                except (ConnectionError, ChunkedEncodingError, ProtocolError) as caught_error:
+                    retry_error = caught_error
                     sleep_secs = min((2 ** n_tries) * 2, max_wait)
-                    logger.warning(f"{retry_error} Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
+                    error_type = type(caught_error).__name__
+                    logger.warning(f"Caught {error_type}: {caught_error}. Sleeping for {sleep_secs} seconds before retry number {n_tries + 1}...")
                     self.safe_sleep(sleep_secs)
 
             # This block is reached only if max_retries has been reached.
             else:
                 message = "API retry failed: max retries exceeded for URL."
-                if connection_error:
-                    raise HTTPError(message, response=response) from connection_error
+                if retry_error:
+                    raise HTTPError(message, response=response) from retry_error
                 raise HTTPError(message, response=response)
 
         return wrapped

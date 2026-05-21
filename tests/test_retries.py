@@ -3,7 +3,7 @@ from edfi_api_client import EdFiClient
 from http.client import RemoteDisconnected
 import pytest
 from requests.auth import _basic_auth_str
-from requests.exceptions import ConnectionError as RequestsConnectionError, HTTPError
+from requests.exceptions import ChunkedEncodingError, ConnectionError as RequestsConnectionError, HTTPError
 import responses
 from responses import matchers
 from urllib3.exceptions import ProtocolError
@@ -60,6 +60,14 @@ def remote_disconnected_error():
             RemoteDisconnected("Remote end closed connection without response")
         )
     )
+
+
+def response_ended_prematurely_error():
+    return ProtocolError("Response ended prematurely")
+
+
+def chunked_encoding_error():
+    return ChunkedEncodingError(ProtocolError("Response ended prematurely"))
 
 
 @responses.activate
@@ -258,6 +266,99 @@ def test_retries_get_connection_errors():
     schools = list(client.resource('schools').get_rows(page_size=1))
 
     assert(schools == [])
+    assert(total_calls == max_retries)
+
+
+@responses.activate
+def test_retries_protocol_errors():
+    """Test retrying requests when urllib3 raises ProtocolError directly"""
+    mock_connection_responses()
+
+    total_calls = 0
+    max_retries = 3
+    def school_callback(request):
+        nonlocal total_calls
+        total_calls += 1
+        if total_calls < max_retries:
+            raise response_ended_prematurely_error()
+        else:
+            return(200, {}, json.dumps([]))
+
+    responses.add_callback(
+        responses.GET,
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        callback=school_callback,
+        content_type='application/json'
+    )
+
+    client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    client.connect(retry_on_failure=True, max_retries=max_retries, max_wait=1)
+    schools = list(client.resource('schools').get_rows(page_size=1))
+
+    assert(schools == [])
+    assert(total_calls == max_retries)
+
+
+@responses.activate
+def test_retries_chunked_encoding_errors():
+    """Test retrying requests when requests raises ChunkedEncodingError"""
+    mock_connection_responses()
+
+    total_calls = 0
+    max_retries = 3
+    def school_callback(request):
+        nonlocal total_calls
+        total_calls += 1
+        if total_calls < max_retries:
+            raise chunked_encoding_error()
+        else:
+            return(200, {}, json.dumps([]))
+
+    responses.add_callback(
+        responses.GET,
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        callback=school_callback,
+        content_type='application/json'
+    )
+
+    client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    client.connect(retry_on_failure=True, max_retries=max_retries, max_wait=1)
+    schools = list(client.resource('schools').get_rows(page_size=1))
+
+    assert(schools == [])
+    assert(total_calls == max_retries)
+
+
+@responses.activate
+def test_retries_post_connection_errors():
+    """Test retrying POST requests when the connection closes unexpectedly"""
+    mock_connection_responses()
+
+    total_calls = 0
+    max_retries = 3
+    def school_callback(request):
+        nonlocal total_calls
+        total_calls += 1
+        if total_calls < max_retries:
+            raise remote_disconnected_error()
+        else:
+            return(200, {}, json.dumps({'id': 'abc123'}))
+
+    responses.add_callback(
+        responses.POST,
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        callback=school_callback,
+        content_type='application/json'
+    )
+
+    client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    client.connect(retry_on_failure=True, max_retries=max_retries, max_wait=1)
+    response = client.session.post_response(
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        data={'nameOfInstitution': 'School'}
+    )
+
+    assert(response.status_code == 200)
     assert(total_calls == max_retries)
 
 
