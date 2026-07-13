@@ -3,6 +3,7 @@ import functools
 import json
 import logging
 import os
+import time
 import requests
 
 from requests import HTTPError
@@ -12,7 +13,7 @@ from edfi_api_client import util
 from edfi_api_client.response_log import ResponseLog
 from edfi_api_client.session import EdFiSession
 
-from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Awaitable, AsyncIterator, Callable, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.client import EdFiClient
@@ -29,6 +30,29 @@ else:
     _has_async = True
 
 
+# Keyword arguments consumed by EdFiClient.async_connect / AsyncEdFiSession.connect.
+_ASYNC_CONNECT_KWARGS = frozenset({'retry_on_failure', 'max_retries', 'max_wait', 'pool_size'})
+
+
+class AsyncBufferedResponse:
+    """
+    HTTP response with body read before the aiohttp context manager closes.
+    Mirrors the attributes callers expect from requests/aiohttp responses.
+    """
+    def __init__(self, status: int, headers: Mapping, body: str, reason: str = ''):
+        self.status = status
+        self.status_code = status
+        self.headers = headers
+        self.reason = reason or str(status)
+        self._body = body
+
+    async def text(self) -> str:
+        return self._body
+
+    async def json(self):
+        return json.loads(self._body) if self._body else {}
+
+
 class AsyncEdFiSession(EdFiSession):
     """
 
@@ -42,7 +66,7 @@ class AsyncEdFiSession(EdFiSession):
         self.session: 'aiohttp.ClientSession' = None
         self.pool_size: int = None
 
-        # Build a client-specific non-blocking lock for authentication and retries.
+        # Serialize token refresh so concurrent requests share one OAuth round-trip.
         self.lock: asyncio.Lock = asyncio.Lock()
 
     async def __aenter__(self) -> 'AsyncEdFiSession':
@@ -89,9 +113,24 @@ class AsyncEdFiSession(EdFiSession):
     async def authenticate(self) -> dict:
         """
         Lock to ensure authentication only happens once.
+        Blocking OAuth I/O runs in a thread pool so the event loop stays responsive.
         """
+        if self.authenticated_at and self.refresh_at >= int(time.time()):
+            return self.auth_headers
+
         async with self.lock:
-            return super().authenticate()
+            if self.authenticated_at and self.refresh_at >= int(time.time()):
+                return self.auth_headers
+            return await asyncio.to_thread(super().authenticate)
+
+    async def _read_response(self, response: 'aiohttp.ClientResponse') -> AsyncBufferedResponse:
+        body = await response.text()
+        return AsyncBufferedResponse(
+            status=response.status,
+            headers=response.headers,
+            body=body,
+            reason=response.reason,
+        )
 
     def _async_with_exponential_backoff(func: Callable):
         """
@@ -141,8 +180,7 @@ class AsyncEdFiSession(EdFiSession):
 
     async def safe_sleep(self, secs: int):
         """ Sync and async methods require different approaches to sleeping. """
-        async with self.lock:
-            await asyncio.sleep(secs)
+        await asyncio.sleep(secs)
 
 
     @_async_with_exponential_backoff
@@ -167,9 +205,7 @@ class AsyncEdFiSession(EdFiSession):
             verify_ssl=self.verify_ssl, raise_for_status=False,
             **kwargs
         ) as response:
-            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            text = await response.text()
-            return response
+            return await self._read_response(response)
 
     @_async_with_exponential_backoff
     async def post_response(self,
@@ -203,9 +239,7 @@ class AsyncEdFiSession(EdFiSession):
             verify_ssl=self.verify_ssl, raise_for_status=False,
             **kwargs
         ) as response:
-            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            text = await response.text()
-            return response
+            return await self._read_response(response)
 
     @_async_with_exponential_backoff
     async def delete_response(self,
@@ -232,9 +266,7 @@ class AsyncEdFiSession(EdFiSession):
             verify_ssl=self.verify_ssl, raise_for_status=False,
             **kwargs
         ) as response:
-            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            text = await response.text()
-            return response
+            return await self._read_response(response)
 
     @_async_with_exponential_backoff
     async def put_response(self,
@@ -262,9 +294,7 @@ class AsyncEdFiSession(EdFiSession):
             verify_ssl=self.verify_ssl, raise_for_status=False,
             **kwargs
         ) as response:
-            response.status_code = response.status  # requests.Response and aiohttp.ClientResponse use diff attributes
-            text = await response.text()
-            return response
+            return await self._read_response(response)
 
 
 class AsyncEdFiClientMixin:
@@ -310,8 +340,10 @@ class AsyncEdFiEndpointMixin:
         """
         @functools.wraps(func)
         def wrapped(self, *args, **kwargs) -> Union[object, Awaitable[object]]:
+            connect_kwargs = {key: kwargs[key] for key in _ASYNC_CONNECT_KWARGS if key in kwargs}
+
             async def main():
-                async with self.client.async_connect(**kwargs):
+                async with self.client.async_connect(**connect_kwargs):
                     return await func(self, *args, **kwargs)
 
             if not self.client.async_session:
@@ -335,7 +367,7 @@ class AsyncEdFiEndpointMixin:
 
         # Override init params if passed
         params = (params or self.params).copy()
-        params['totalCount'] = "true"
+        params['totalCount'] = True
         params['limit'] = 0
 
         res = await self.client.async_session.get_response(self.url, params, **kwargs)
@@ -428,7 +460,9 @@ class AsyncEdFiEndpointMixin:
         )
 
         async for page in paged_results:
-            for row in await page:
+            if asyncio.iscoroutine(page):
+                page = await page
+            for row in page:
                 yield row
 
     @async_main
@@ -456,9 +490,11 @@ class AsyncEdFiEndpointMixin:
         """
         logging.info(f"[Async Get to JSON {self.component}] Filepath: `{path}`")
 
-        async def write_async_page(page: Awaitable[List[dict]], fp: 'aiofiles.threadpool'):
+        async def write_async_page(page: Union[Awaitable[List[dict]], List[dict]], fp: 'aiofiles.threadpool'):
             """ There are no asynchronous lambdas in Python. """
-            await fp.write(util.page_to_bytes(await page))
+            if asyncio.iscoroutine(page):
+                page = await page
+            await fp.write(util.page_to_bytes(page))
 
         paged_results = self.async_get_pages(
             params=params,
@@ -583,7 +619,7 @@ class AsyncEdFiEndpointMixin:
         logging.info(f"[Async Post from JSON {self.component}] Posting rows from disk: `{path}`")
 
         return await self.async_post_rows(
-            id_rows=self.aiterate(util.stream_filter_rows(path, include=include, exclude=exclude)),
+            id_rows=self.aenumerate(self.astream_filter_rows(path, include=include, exclude=exclude)),
             log_every=log_every, **kwargs
         )
 
@@ -677,26 +713,57 @@ class AsyncEdFiEndpointMixin:
 
     ### Async Utilities
     @staticmethod
+    async def astream_filter_rows(path: str, *, include: Iterator[int] = None, exclude: Iterator[int] = None) -> AsyncIterator[Tuple[int, bytes]]:
+        """
+        Async counterpart to util.stream_filter_rows for JSONL uploads.
+        """
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"File not found: {path}")
+
+        include_set = set(include) if include is not None else None
+        exclude_set = set(exclude) if exclude is not None else None
+
+        async with aiofiles.open(path, 'rb') as fp:
+            idx = 0
+            async for row in fp:
+                if include_set is not None and idx not in include_set:
+                    idx += 1
+                    continue
+                if exclude_set is not None and idx in exclude_set:
+                    idx += 1
+                    continue
+                yield idx, row
+                idx += 1
+
+    @staticmethod
     async def iterate_taskpool(callable: Callable[[object], object], iterator: AsyncIterator[object], pool_size: int = 8):
         """
         Alternative to `asyncio.gather()`. Does not require all awaitables to be defined in memory at once.
         """
         pending = set()
 
+        def _raise_task_failures(tasks):
+            for task in tasks:
+                if task.done() and not task.cancelled():
+                    task.result()
+
         async for item in iterator:
             if len(pending) >= pool_size:
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                _raise_task_failures(done)
             pending.add(asyncio.create_task(callable(item)))
 
-        return await asyncio.wait(pending)
+        if pending:
+            done, _ = await asyncio.wait(pending)
+            _raise_task_failures(done)
 
     @staticmethod
     async def aiterate(iterable: Iterator):
         """ Iterator wrapper that accepts both sync and async iterators. """
-        try:
+        if hasattr(iterable, '__aiter__'):
             async for elem in iterable:
                 yield elem
-        except Exception:
+        else:
             for elem in iterable:
                 yield elem
 

@@ -10,7 +10,7 @@ from edfi_api_client.async_mixin import AsyncEdFiEndpointMixin
 from edfi_api_client.params import EdFiParams
 from edfi_api_client.response_log import ResponseLog
 
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import AsyncIterator, Dict, Iterator, List, Optional, Tuple, Union
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from edfi_api_client.client import EdFiClient
@@ -679,3 +679,35 @@ class EdFiComposite(EdFiEndpoint):
 
     def put(self, *args, **kwargs):
         raise NotImplementedError("Rows cannot be put to a composite directly!")
+
+    async def async_get_total_count(self, *args, **kwargs):
+        raise NotImplementedError("Total counts have not been implemented in Ed-Fi composites!")
+
+    async def async_get_pages(self, *, params: Optional[dict] = None, page_size: int = 100, **kwargs) -> AsyncIterator[List[dict]]:
+        """
+        Dynamic offset pagination for composites (no total-count header).
+        Mirrors sync EdFiComposite.get_pages().
+        """
+        if kwargs.get('step_change_version'):
+            logging.warning("Change versions are not implemented in composites! Change version stepping arguments are ignored.")
+
+        logging.info(f"[Async Paged Get {self.component}] Endpoint: {self.url}")
+        logging.info(f"[Async Paged Get {self.component}] Pagination Method: Offset Pagination")
+
+        paged_params = (params or self.params).copy()
+        paged_params.init_page_by_offset(page_size)
+
+        while True:
+            logging.info(f"[Async Paged Get {self.component}] Parameters: {paged_params}")
+            res = await self.client.async_session.get_response(self.url, params=paged_params, **kwargs)
+            page = await res.json()
+
+            if page:
+                logging.info(f"[Async Paged Get {self.component}] Retrieved {len(page)} rows.")
+                yield page
+
+                logging.info(f"    @ Paginating offset...")
+                paged_params.page_by_offset(page_size)
+            else:
+                logging.info(f"[Async Paged Get {self.component}] @ Retrieved zero rows. Ending pagination.")
+                break
