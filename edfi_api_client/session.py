@@ -39,8 +39,8 @@ class EdFiSession:
         self.session: Optional[requests.Session] = None
         self.verify_ssl: bool = kwargs.get('verify_ssl')
         self.retry_on_failure: bool = kwargs.get('retry_on_failure', False)
-        self.max_retries: int = kwargs.get('max_retries')
-        self.max_wait: int = kwargs.get('max_wait')
+        self.max_retries: int = kwargs.get('max_retries', 5)
+        self.max_wait: int = kwargs.get('max_wait', 1200)
         self.use_snapshot: bool = kwargs.get('use_snapshot', False)
 
         # Authentication attributes refresh on EdFiSession.connect().
