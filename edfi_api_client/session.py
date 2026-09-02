@@ -29,19 +29,26 @@ class EdFiSession:
         client_key: Optional[str],
         client_secret: Optional[str],
         token_cache: Optional[BaseTokenCache] = None,
+
+        # Session parameters
+        retry_on_failure: bool = False,
+        max_retries: int = 5,
+        max_wait: int = 1200,
+        use_snapshot: bool = False,
+        verify_ssl: bool = True,
         **kwargs
     ):
         self.oauth_url: str = oauth_url
         self.client_key: Optional[str] = client_key
         self.client_secret: Optional[str] = client_secret
 
-        # Session attributes refresh on EdFiSession.connect().
+        # Session attributes can be refreshed on EdFiSession.connect().
         self.session: Optional[requests.Session] = None
-        self.verify_ssl: bool = None
-        self.retry_on_failure: bool = None
-        self.max_retries: int = None
-        self.max_wait: int = None
-        self.use_snapshot: bool = False
+        self.verify_ssl: bool = verify_ssl
+        self.retry_on_failure: bool = retry_on_failure
+        self.max_retries: int = max_retries
+        self.max_wait: int = max_wait
+        self.use_snapshot: bool = use_snapshot
 
         # Authentication attributes refresh on EdFiSession.connect().
         self.authenticated_at: int = None
@@ -68,12 +75,7 @@ class EdFiSession:
             self.session.close()
             self.session = None  # Force session to reset between context loops.
 
-    def connect(self, *,
-        retry_on_failure: bool = False,
-        max_retries: int = 5,
-        max_wait: int = 1200,
-        use_snapshot: bool = False,
-        verify_ssl: bool = True,
+    def connect(self,
         **kwargs
     ) -> 'EdFiSession':
         """
@@ -81,12 +83,12 @@ class EdFiSession:
 
         :return:
         """
-        # Overwrite session attributes.
-        self.retry_on_failure = retry_on_failure
-        self.max_retries = max_retries
-        self.max_wait = max_wait
-        self.use_snapshot = use_snapshot
-        self.verify_ssl = verify_ssl
+        # Overwrite session attributes if provided
+        self.retry_on_failure = kwargs.get('retry_on_failure', self.retry_on_failure)
+        self.max_retries = kwargs.get('max_retries', self.max_retries)
+        self.max_wait = kwargs.get('max_wait', self.max_wait)
+        self.use_snapshot = kwargs.get('use_snapshot', self.use_snapshot)
+        self.verify_ssl = kwargs.get('verify_ssl', self.verify_ssl)
 
         self.session = requests.Session()
         self.session.verify = self.verify_ssl  # Only synchronous session uses `verify` attribute.
