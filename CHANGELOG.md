@@ -1,3 +1,8 @@
+# edfi_api_client v0.4.1
+## Fixes
+- Add default values for `EdFiSession` retry-arguments instead of relying on lazy-init to circumvent cases where the session is called without being explicitly initialized.
+
+
 # edfi_api_client v0.4.0
 ## New Features
 - Support cursor-pagination by default in `EdFiEndpoint.get_rows()`.
