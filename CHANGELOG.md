@@ -1,3 +1,8 @@
+# Unreleased
+## Fixes
+- Add `502 Bad Gateway` to retry list.
+
+
 # edfi_api_client v0.4.0
 ## New Features
 - Support cursor-pagination by default in `EdFiEndpoint.get_rows()`.
