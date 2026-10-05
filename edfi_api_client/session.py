@@ -22,7 +22,7 @@ class EdFiSession:
     """
 
     """
-    retry_status_codes: Set[int] = {401, 429, 500, 501, 503, 504}
+    retry_status_codes: Set[int] = {401, 429, 500, 501, 502, 503, 504}
 
     def __init__(self,
         oauth_url: str,
@@ -372,6 +372,7 @@ class EdFiSession:
             404: "404: Resource not found.",
             429: "429: Too many requests. The ODS is overwhelmed.",
             500: "500: Internal server error.",
+            502: "502: Bad gateway for URL. The connection may need to be reset.",
             504: "504: Gateway time-out for URL. The connection may need to be reset.",
         }
 
