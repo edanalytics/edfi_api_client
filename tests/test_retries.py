@@ -16,10 +16,10 @@ BASIC_AUTH_HEADER = _basic_auth_str(CLIENT_KEY, CLIENT_SECRET)
 TOKEN = 'token'
 INSTANCE_CODE = 'instance_code'
 
-@responses.activate
-def test_max_retries():
-    """Test that max retries applies to each page"""
-    responses.get(
+
+@pytest.fixture
+def auth_responses():
+    base_url_rsp = responses.get(
         BASE_URL,
         json={
             'version': '7.1',
@@ -39,7 +39,7 @@ def test_max_retries():
             }
         }
     )
-    responses.post(
+    oauth_rsp = responses.post(
         f'{BASE_URL}/oauth/token',
         json={
             "access_token": TOKEN,
@@ -50,7 +50,7 @@ def test_max_retries():
             matchers.header_matcher({"Authorization": BASIC_AUTH_HEADER})
         ]
     )
-    responses.post(
+    token_info_rsp = responses.post(
         f'{BASE_URL}/oauth/token_info',
         json={
             "active": True,
@@ -72,6 +72,12 @@ def test_max_retries():
             matchers.header_matcher({"Authorization": f"Bearer {TOKEN}"})
         ]
     )
+
+    return [base_url_rsp, oauth_rsp, token_info_rsp]
+
+@responses.activate
+def test_max_retries(auth_responses):
+    """Test that max retries applies to each page"""
 
     # mock resource paging; force HTTP errors to max out retries
     total_calls = 0
@@ -117,61 +123,9 @@ def test_max_retries():
 
 
 @responses.activate()
-def test_default_no_retry():
+def test_default_no_retry(auth_responses):
     """Test that retries are off by default"""
-    responses.get(
-        BASE_URL,
-        json={
-            'version': '7.1',
-            'informationalVersion': '7.1',
-            'suite': '3',
-            'build': '2025.5.1.1636',
-            'apiMode': 'District Specific',
-            'dataModels': [{'informationalVersion': 'The Ed-Fi Data Model 5.0',
-                 'name': 'Ed-Fi',
-                 'version': '5.0.0'}],
-            'urls': {
-                'dependencies': f'{BASE_URL}/metadata/data/v3/dependencies',
-                'openApiMetadata': f'{BASE_URL}/metadata/',
-                'oauth': f'{BASE_URL}/oauth/token',
-                'dataManagementApi': f'{BASE_URL}/data/v3/',
-                'xsdMetadata': f'{BASE_URL}/metadata/xsd'
-            }
-        }
-    )
-    responses.post(
-        f'{BASE_URL}/oauth/token',
-        json={
-            "access_token": TOKEN,
-            "expires_in": 1800,
-            "token_type": "bearer"
-        },
-        match=[
-            matchers.header_matcher({"Authorization": BASIC_AUTH_HEADER})
-        ]
-    )
-    responses.post(
-        f'{BASE_URL}/oauth/token_info',
-        json={
-            "active": True,
-            "client_id": CLIENT_KEY,
-            "assigned_profiles": [],
-            "education_organizations": [
-                {
-                    'education_organization_id': 9999,
-                    'local_education_agency_id': 9999,
-                    'name_of_institution': 'District1',
-                    'state_education_agency_id': 1,
-                    'type': 'edfi.LocalEducationAgency'
-                }
-            ],
-            "namespace_prefixes": ['uri://ed-fi.org/']
-        },
-        match=[
-            matchers.urlencoded_params_matcher({'token': TOKEN}),
-            matchers.header_matcher({"Authorization": f"Bearer {TOKEN}"})
-        ]
-    )
+
     school_rsp = responses.get(
         f'{BASE_URL}/data/v3/ed-fi/schools',
         json={'error': 'Timed out.'},
@@ -184,4 +138,23 @@ def test_default_no_retry():
         _ = list(client.resource('schools').get_rows())
         assert(school_rsp.call_count == 1)
 
+
+@responses.activate
+def test_default_retry_params_populated(auth_responses):
+    """Test that defaults (max_retries, max_wait) are populated when not passed
+    to .connect() or any endpoint methods"""
+
+    # Mock an HTTP 504 error to trigger retries
+    responses.get(
+        f'{BASE_URL}/data/v3/ed-fi/schools',
+        status=504,
+        json={'error': 'Timed out.'}
+    )
+
+
+    client = EdFiClient(BASE_URL, CLIENT_KEY, CLIENT_SECRET)
+    with pytest.raises(HTTPError):
+        # Should not hit a TypeError due to `max_wait` or `max_retries` being None
+        schools = list(client.resource('schools').get_rows(page_size=1, retry_on_failure=True))
+    
 
