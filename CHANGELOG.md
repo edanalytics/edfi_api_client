@@ -1,5 +1,9 @@
-# Unreleased
+# edfi_api_client v0.4.1
+## New Features
+- Add `EdFiEndpoint.get_by_id()` method to get a single resource record by internal ID.
+
 ## Fixes
+- Add default values for `EdFiSession` retry-arguments instead of relying on lazy-init to circumvent cases where the session is called without being explicitly initialized.
 - Add `502 Bad Gateway` to retry list.
 
 
