@@ -217,11 +217,17 @@ class EdFiEndpoint:
                 change_version_step_size=change_version_step_size
             )
 
-        paged_result_iter = paginator(
-            params=params,
-            page_size=page_size,
-            **kwargs
-        )
+        page_kwargs = {
+            "params": params,
+            "page_size": page_size,
+            **kwargs,
+        }
+
+        if paginator == self.get_pages_cursor:
+            page_kwargs["step_change_version"] = step_change_version
+            page_kwargs["change_version_step_size"] = change_version_step_size
+
+        paged_result_iter = paginator(**page_kwargs)
 
         for paged_result in paged_result_iter:
             yield from paged_result
@@ -319,12 +325,18 @@ class EdFiEndpoint:
         *,
         params: Optional[dict] = None,  # Optional alternative params
         page_size: int = 100,
+        step_change_version: bool = False,
+        change_version_step_size: int = 50000,
         **kwargs
     ) -> Iterator[List[dict]]:
         
         # Override init params if passed
         paged_params = EdFiParams(params or self.params).copy()
-        logger.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
+        if step_change_version:
+            logger.info(f"[Paged Get {self.component}] Pagination Method: Change Version Stepping with Cursor Paging")
+            paged_params.init_page_by_change_version_step(change_version_step_size)
+        else:
+            logger.info(f"[Paged Get {self.component}] Pagination Method: Cursor Paging")
 
         # Begin pagination loop
         while True:
@@ -336,11 +348,26 @@ class EdFiEndpoint:
             yield paged_rows
             
             logger.info(f"[Paged Get {self.component}] @ Checking next page token...")
-            if not (page_token := result.headers.get("Next-Page-Token")):
+            page_token = result.headers.get("Next-Page-Token")
+            if page_token:
+                paged_params.page_by_token(page_token=page_token, page_size=page_size)
+                continue
+
+            if not step_change_version:
                 logger.info(f"[Paged Get {self.component}] @ Retrieved empty page token. Ending pagination.")
                 break
 
-            paged_params.page_by_token(page_token=page_token, page_size=page_size)
+            try:
+                paged_params.page_by_change_version_step()
+            except StopIteration:
+                logger.info(f"[Paged Get {self.component}] @ Change version exceeded max. Ending pagination.")
+                break
+
+            paged_params.page_by_token(page_token=None, page_size=page_size)
+            logger.info(
+                f"[Paged Get {self.component}] @ Stepped change version to "
+                f"{paged_params.get('minChangeVersion')}-{paged_params.get('maxChangeVersion')}."
+            )
 
 
 
