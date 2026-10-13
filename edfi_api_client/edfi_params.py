@@ -208,6 +208,8 @@ class EdFiParams(dict):
         self.page_size = page_size
         self.page_token = page_token
 
+        self.pop("offset", None)
+
         if page_token is None:
             self.pop("pageToken", None)
             self.pop("pageSize", None)
